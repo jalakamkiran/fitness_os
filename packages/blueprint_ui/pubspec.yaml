@@ -1,0 +1,11 @@
+name: blueprint_ui
+description: Blueprint Design System for FitnessOs app
+version: 0.1.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter

@@ -1,0 +1,5 @@
+bricks:
+  app:
+    path: /Users/kiranjalakam/.mason/bricks/app
+  feature:
+    path: /Users/kiranjalakam/.mason/bricks/feature
