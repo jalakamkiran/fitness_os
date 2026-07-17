@@ -1,7 +1,7 @@
 ---
 title: "feat: Huawei GT5 companion Gate A pair + Gate B sync"
 type: feat
-status: active
+status: completed
 date: 2026-07-17
 origin: docs/brainstorms/2026-07-17-huawei-gt5-companion-mvp-requirements.md
 deepened: 2026-07-17
