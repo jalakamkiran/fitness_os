@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -72,6 +71,21 @@ class HuaweiBtChannel {
   Future<bool?> lastSocketSecure() =>
       _method.invokeMethod<bool>('lastSocketSecure');
 
+  Future<String> authenticate() async {
+    final outcome = await _method.invokeMethod<String>('authenticate');
+    return outcome ?? 'AuthFailed';
+  }
+
+  Future<void> setAuthKey(String userId) =>
+      _method.invokeMethod<void>('setAuthKey', {'userId': userId});
+
+  Future<bool> hasSecrets() async {
+    final ok = await _method.invokeMethod<bool>('hasSecrets');
+    return ok ?? false;
+  }
+
+  Future<void> clearSecrets() => _method.invokeMethod<void>('clearSecrets');
+
   static bool matchesGt5Name(String name) {
     return name.toLowerCase().startsWith(namePrefix);
   }
@@ -109,6 +123,17 @@ class HuaweiBtChannel {
         return ErrorEvent(
           code: map['code'] as String? ?? 'error',
           message: map['message'] as String? ?? 'Unknown error',
+        );
+      case 'session_state':
+        return SessionStateEvent(
+          state: map['state'] as String? ?? 'unknown',
+          message: map['message'] as String?,
+          hint: map['hint'] as String?,
+        );
+      case 'session_frame':
+        return SessionFrameEvent(
+          serviceId: map['serviceId'] as int? ?? 0,
+          commandId: map['commandId'] as int? ?? 0,
         );
       default:
         return UnknownEvent(map);
@@ -161,4 +186,24 @@ final class ErrorEvent extends HuaweiBtEvent {
 final class UnknownEvent extends HuaweiBtEvent {
   const UnknownEvent(this.raw);
   final Map<String, dynamic> raw;
+}
+
+final class SessionStateEvent extends HuaweiBtEvent {
+  const SessionStateEvent({
+    required this.state,
+    this.message,
+    this.hint,
+  });
+  final String state;
+  final String? message;
+  final String? hint;
+}
+
+final class SessionFrameEvent extends HuaweiBtEvent {
+  const SessionFrameEvent({
+    required this.serviceId,
+    required this.commandId,
+  });
+  final int serviceId;
+  final int commandId;
 }

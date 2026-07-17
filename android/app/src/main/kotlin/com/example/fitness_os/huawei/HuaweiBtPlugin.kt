@@ -10,6 +10,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.Executors
 
 class HuaweiBtPlugin(
     private val activity: Activity,
@@ -23,24 +24,35 @@ class HuaweiBtPlugin(
 
     private var eventSink: EventChannel.EventSink? = null
     private var transport: RfcommTransport? = null
+    private var secrets: HuaweiSecretStore? = null
+    private var session: HuaweiSession? = null
     private var permissionResult: MethodChannel.Result? = null
+    private val sessionIo = Executors.newSingleThreadExecutor()
 
     fun register(engine: FlutterEngine) {
         MethodChannel(engine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
             .setMethodCallHandler(this)
         EventChannel(engine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(this)
+
+        secrets = HuaweiSecretStore(activity.applicationContext)
         transport = RfcommTransport(activity.applicationContext) { event ->
-            activity.runOnUiThread {
-                eventSink?.success(event)
-            }
+            forwardEvent(event)
         }
+        session = HuaweiSession(
+            transport = transport!!,
+            secrets = secrets!!,
+            emit = { event -> emitOnUi(event) },
+        )
     }
 
     fun dispose() {
         transport?.dispose()
         transport = null
+        session = null
+        secrets = null
         eventSink = null
+        sessionIo.shutdownNow()
     }
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -80,8 +92,25 @@ class HuaweiBtPlugin(
                     transport?.connect(mac, sdpUuid)
                     result.success(null)
                 }
+                "authenticate" -> {
+                    sessionIo.execute {
+                        val outcome = session?.authenticate()
+                        activity.runOnUiThread {
+                            result.success(outcome?.name ?: "AuthFailed")
+                        }
+                    }
+                }
+                "setAuthKey" -> {
+                    val key = call.argument<String>("userId")
+                    secrets?.setUserId(key)
+                    result.success(null)
+                }
+                "hasSecrets" -> result.success(secrets?.hasSecrets() == true)
+                "clearSecrets" -> {
+                    secrets?.clearSecrets()
+                    result.success(null)
+                }
                 "write" -> {
-                    // Debug-only raw write surface (U1 proof).
                     if (!isDebuggable()) {
                         result.error("debug_only", "write(bytes) is debug-only", null)
                         return
@@ -112,10 +141,28 @@ class HuaweiBtPlugin(
         grantResults: IntArray,
     ): Boolean {
         if (requestCode != PERMISSION_REQUEST) return false
-        val ok = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        val ok = grantResults.isNotEmpty() &&
+            grantResults.all { it == PackageManager.PERMISSION_GRANTED }
         permissionResult?.success(ok)
         permissionResult = null
         return true
+    }
+
+    private fun forwardEvent(event: Map<String, Any?>) {
+        val type = event["type"] as? String
+        if (type == "data") {
+            val bytes = event["bytes"] as? ByteArray
+            if (bytes != null) {
+                session?.onRawBytes(bytes)
+            }
+        }
+        emitOnUi(event)
+    }
+
+    private fun emitOnUi(event: Map<String, Any?>) {
+        activity.runOnUiThread {
+            eventSink?.success(event)
+        }
     }
 
     private fun requestPermissions(result: MethodChannel.Result) {
@@ -155,6 +202,7 @@ class HuaweiBtPlugin(
     }
 
     private fun isDebuggable(): Boolean {
-        return (activity.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        return (activity.applicationInfo.flags and
+            android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
     }
 }
