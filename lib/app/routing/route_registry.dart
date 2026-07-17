@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:fitness_os/features/home/presentation/view/home_route.dart';
 import 'app_router.dart';
 
 /// Central place to register all feature routes
@@ -13,7 +12,6 @@ class RouteRegistry {
       ),
     );
 
-        HomeRoute.register();
     // [routes]
   }
 }
