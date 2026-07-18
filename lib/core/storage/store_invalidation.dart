@@ -1,0 +1,16 @@
+import 'dart:async';
+
+/// Broadcast when local stores are wiped (e.g. Forget Device) so tab UIs reload.
+class StoreInvalidation {
+  final _controller = StreamController<void>.broadcast();
+
+  Stream<void> get stream => _controller.stream;
+
+  void notify() {
+    if (!_controller.isClosed) {
+      _controller.add(null);
+    }
+  }
+
+  Future<void> dispose() => _controller.close();
+}

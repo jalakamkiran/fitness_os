@@ -9,11 +9,33 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
   DevicePairingRepositoryImpl({
     required HuaweiLink link,
     required SharedPreferences prefs,
+    Future<void> Function()? onForgetWipeExtras,
+    void Function()? onForgot,
+    bool Function()? isForgetBlocked,
   })  : _link = link,
-        _prefs = prefs;
+        _prefs = prefs,
+        _onForgetWipeExtras = onForgetWipeExtras,
+        _onForgot = onForgot,
+        _isForgetBlocked = isForgetBlocked;
 
   final HuaweiLink _link;
   final SharedPreferences _prefs;
+  Future<void> Function()? _onForgetWipeExtras;
+  void Function()? _onForgot;
+  bool Function()? _isForgetBlocked;
+
+  /// Registered by vitals DI — clears sleep/HR without pairing constructing that graph.
+  set onForgetWipeExtras(Future<void> Function()? callback) {
+    _onForgetWipeExtras = callback;
+  }
+
+  set onForgot(void Function()? callback) {
+    _onForgot = callback;
+  }
+
+  set isForgetBlocked(bool Function()? callback) {
+    _isForgetBlocked = callback;
+  }
 
   @override
   Stream<HuaweiLinkEvent> get linkEvents => _link.events;
@@ -114,6 +136,13 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
 
   @override
   Future<Either<Failure, void>> forgetDevice() async {
+    if (_link.syncInFlight || (_isForgetBlocked?.call() ?? false)) {
+      return const Left(
+        ValidationFailure(
+          'Sync in progress — wait for it to finish, then Forget',
+        ),
+      );
+    }
     await _prefs.remove(GateAPrefs.rememberedMac);
     await _prefs.remove(GateAPrefs.rememberedName);
     await _prefs.remove(GateAPrefs.gateAKillOk);
@@ -122,8 +151,20 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
     await _prefs.remove(GateAPrefs.gateAPassed);
     await _prefs.remove(GateAPrefs.lastSyncCursor);
     await _prefs.remove(GateAPrefs.workoutsJson);
+    await _onForgetWipeExtras?.call();
+    // Verify vitals keys gone when wipe callback was registered.
+    if (_onForgetWipeExtras != null) {
+      final sleepLeft = _prefs.containsKey(GateAPrefs.sleepSessionsJson);
+      final hrLeft = _prefs.containsKey(GateAPrefs.dailyHrJson);
+      if (sleepLeft || hrLeft) {
+        return const Left(
+          ValidationFailure('Forget verify failed — vitals residue remains'),
+        );
+      }
+    }
     await _link.clearSecrets();
     await _link.disconnect();
+    _onForgot?.call();
     return const Right(null);
   }
 

@@ -10,4 +10,8 @@ abstract final class GateAPrefs {
   static const lastR11Path = 'last_r11_winning_path';
   /// JSON list of synced workout summaries (Gate B local store).
   static const workoutsJson = 'workouts_json';
+  /// JSON list of sleep session intervals (begin/end).
+  static const sleepSessionsJson = 'sleep_sessions_json';
+  /// JSON list of daily HR day summaries (min/avg/max/count).
+  static const dailyHrJson = 'daily_hr_json';
 }

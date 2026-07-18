@@ -95,6 +95,41 @@ void main() {
     expect(prefs.getBool(GateAPrefs.gateAPassed), isNull);
     expect(prefs.getString(GateAPrefs.lastSyncCursor), isNull);
   });
+
+  test('Forget clears vitals keys via wipe callback and is idempotent', () async {
+    SharedPreferences.setMockInitialValues({
+      GateAPrefs.rememberedMac: 'AA:BB:CC:DD:EE:FF',
+      GateAPrefs.gateAPassed: true,
+      GateAPrefs.sleepSessionsJson: '[{"beginUnix":1,"endUnix":2}]',
+      GateAPrefs.dailyHrJson:
+          '[{"dayKey":"2023-01-01","minBpm":1,"avgBpm":1,"maxBpm":1,"sampleCount":1}]',
+      GateAPrefs.workoutsJson:
+          '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final link = _StubLink();
+    var wipeCalls = 0;
+    final repo = DevicePairingRepositoryImpl(
+      link: link,
+      prefs: prefs,
+      onForgetWipeExtras: () async {
+        wipeCalls++;
+        await prefs.remove(GateAPrefs.sleepSessionsJson);
+        await prefs.remove(GateAPrefs.dailyHrJson);
+      },
+    );
+
+    final first = await repo.forgetDevice();
+    expect(first.isRight, isTrue);
+    expect(wipeCalls, 1);
+    expect(prefs.getString(GateAPrefs.sleepSessionsJson), isNull);
+    expect(prefs.getString(GateAPrefs.dailyHrJson), isNull);
+    expect(prefs.getString(GateAPrefs.workoutsJson), isNull);
+
+    final second = await repo.forgetDevice();
+    expect(second.isRight, isTrue);
+    expect(wipeCalls, 2);
+  });
 }
 
 extension<L, R> on Either<L, R> {

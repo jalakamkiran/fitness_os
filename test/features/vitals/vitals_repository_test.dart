@@ -1,0 +1,201 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/core/utils/either.dart';
+import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
+import 'package:fitness_os/features/vitals/data/repositories/vitals_repository_impl.dart';
+
+class _StubLink extends HuaweiLink {
+  _StubLink({this.result});
+
+  ActivitySyncResult? result;
+  int activityCalls = 0;
+
+  @override
+  Future<ActivitySyncResult> syncActivity({
+    int? startUnix,
+    int? endUnix,
+  }) async {
+    activityCalls++;
+    return result ??
+        const ActivitySyncResult(status: ActivitySyncStatus.empty);
+  }
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('VitalsRepositoryImpl', () {
+    test('blocks sync when gate_a_passed is false', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink();
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Left>());
+      expect(link.activityCalls, 0);
+    });
+
+    test('sync ok with overnight + nap + HR', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      const overnightBegin = 1700000000;
+      const overnightEnd = overnightBegin + 8 * 3600;
+      const napBegin = overnightEnd + 3600;
+      const napEnd = napBegin + 40 * 60;
+      final link = _StubLink(
+        result: const ActivitySyncResult(
+          status: ActivitySyncStatus.ok,
+          sleepSessions: [
+            SleepSessionSummary(
+              beginUnix: overnightBegin,
+              endUnix: overnightEnd,
+            ),
+            SleepSessionSummary(beginUnix: napBegin, endUnix: napEnd),
+          ],
+          dailyHrSamples: [
+            DailyHrSample(timestampUnix: overnightBegin + 12 * 3600, bpm: 70),
+            DailyHrSample(timestampUnix: overnightBegin + 12 * 3600 + 60, bpm: 80),
+          ],
+          completedContainers: {'sleep', 'daily_hr'},
+        ),
+      );
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      final snap = (out as Right).value;
+      expect(snap.sleepSessions, hasLength(2));
+      expect(snap.dailyHr, hasLength(1));
+      expect(await repo.loadSleepSessions(), hasLength(2));
+      expect(await repo.loadDailyHr(), hasLength(1));
+    });
+
+    test('second sync empty keeps prior', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.sleepSessionsJson:
+            '[{"beginUnix":100,"endUnix":200}]',
+        GateAPrefs.dailyHrJson:
+            '[{"dayKey":"2023-11-14","minBpm":60,"avgBpm":70,"maxBpm":80,"sampleCount":2}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const ActivitySyncResult(status: ActivitySyncStatus.empty),
+      );
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      expect(await repo.loadSleepSessions(), hasLength(1));
+      expect(await repo.loadDailyHr(), hasLength(1));
+    });
+
+    test('partial_batch sleep-only leaves HR unchanged', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.dailyHrJson:
+            '[{"dayKey":"2023-11-14","minBpm":60,"avgBpm":70,"maxBpm":80,"sampleCount":2}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const ActivitySyncResult(
+          status: ActivitySyncStatus.partialBatch,
+          sleepSessions: [
+            SleepSessionSummary(beginUnix: 300, endUnix: 400),
+          ],
+          completedContainers: {'sleep'},
+          message: 'partial',
+        ),
+      );
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+      await repo.syncFromWatch();
+      expect(await repo.loadSleepSessions(), hasLength(1));
+      expect(await repo.loadDailyHr(), hasLength(1));
+      expect((await repo.loadDailyHr()).first.dayKey, '2023-11-14');
+    });
+
+    test('upsert same begin/end twice → one session', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const ActivitySyncResult(
+          status: ActivitySyncStatus.ok,
+          sleepSessions: [
+            SleepSessionSummary(beginUnix: 100, endUnix: 200),
+            SleepSessionSummary(beginUnix: 100, endUnix: 200),
+          ],
+          completedContainers: {'sleep'},
+        ),
+      );
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+      await repo.syncFromWatch();
+      expect(await repo.loadSleepSessions(), hasLength(1));
+    });
+
+    test('corrupt sleep JSON is fail-closed', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.sleepSessionsJson: '{not-json',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final repo = VitalsRepositoryImpl(
+        link: _StubLink(),
+        prefs: prefs,
+      );
+      expect(repo.loadSleepSessions(), throwsA(isA<FormatException>()));
+
+      final out = await repo.syncFromWatch();
+      // empty must not confirm wipe while corrupt
+      expect(out, isA<Left>());
+      expect(prefs.getString(GateAPrefs.sleepSessionsJson), '{not-json');
+    });
+
+    test('busy leaves stores unchanged', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.sleepSessionsJson:
+            '[{"beginUnix":100,"endUnix":200}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const ActivitySyncResult(
+          status: ActivitySyncStatus.busy,
+          message: 'Another Sync is already in progress',
+        ),
+      );
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Left>());
+      expect(await repo.loadSleepSessions(), hasLength(1));
+    });
+
+    test('clearLocal removes prefs keys; workouts untouched', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.sleepSessionsJson:
+            '[{"beginUnix":100,"endUnix":200}]',
+        GateAPrefs.dailyHrJson:
+            '[{"dayKey":"2023-11-14","minBpm":60,"avgBpm":70,"maxBpm":80,"sampleCount":1}]',
+        GateAPrefs.workoutsJson:
+            '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final repo = VitalsRepositoryImpl(
+        link: _StubLink(),
+        prefs: prefs,
+      );
+      await repo.clearLocal();
+      expect(prefs.getString(GateAPrefs.sleepSessionsJson), isNull);
+      expect(prefs.getString(GateAPrefs.dailyHrJson), isNull);
+      expect(prefs.getString(GateAPrefs.workoutsJson), isNotNull);
+    });
+  });
+}
