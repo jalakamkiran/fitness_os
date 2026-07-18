@@ -79,5 +79,27 @@ void main() {
       expect(prefs.getInt(GateAPrefs.lastSyncCursor), 1_700_003_601);
       expect(await repo.loadLocal(), hasLength(1));
     });
+
+    test('busy while activity in flight does not wipe workout list', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.workoutsJson:
+            '[{"number":1,"startTime":100,"endTime":200,"durationSec":100,"type":1}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.busy,
+          message: 'Another Sync is already in progress',
+          workouts: [],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(link: link, prefs: prefs);
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Left>());
+      expect(await repo.loadLocal(), hasLength(1));
+      expect(prefs.getString(GateAPrefs.workoutsJson), isNotNull);
+    });
   });
 }

@@ -28,6 +28,7 @@ class HuaweiBtPlugin(
     private var session: HuaweiSession? = null
     private var permissionResult: MethodChannel.Result? = null
     private val sessionIo = Executors.newSingleThreadExecutor()
+    private val syncLock = HuaweiSyncLock()
 
     fun register(engine: FlutterEngine) {
         MethodChannel(engine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
@@ -121,6 +122,16 @@ class HuaweiBtPlugin(
                         ?: HuaweiWorkoutSync.FALLBACK_START_UNIX
                     val endUnix = (call.argument<Number>("endUnix")?.toLong())
                         ?: (System.currentTimeMillis() / 1000L)
+                    if (!syncLock.tryAcquire()) {
+                        result.success(
+                            mapOf(
+                                "status" to "busy",
+                                "message" to "Another Sync is already in progress",
+                                "workouts" to emptyList<Map<String, Any?>>(),
+                            ),
+                        )
+                        return
+                    }
                     sessionIo.execute {
                         val payload = try {
                             if (transport?.isConnected() != true) {
@@ -144,6 +155,64 @@ class HuaweiBtPlugin(
                                 "message" to (e.message ?: "sync failed"),
                                 "workouts" to emptyList<Map<String, Any?>>(),
                             )
+                        } finally {
+                            syncLock.release()
+                        }
+                        activity.runOnUiThread { result.success(payload) }
+                    }
+                }
+                "syncActivity" -> {
+                    val startUnix = (call.argument<Number>("startUnix")?.toLong())
+                        ?: (System.currentTimeMillis() / 1000L - 14L * 86400L)
+                    val endUnix = (call.argument<Number>("endUnix")?.toLong())
+                        ?: (System.currentTimeMillis() / 1000L)
+                    if (!syncLock.tryAcquire()) {
+                        result.success(
+                            mapOf(
+                                "status" to "busy",
+                                "message" to "Another Sync is already in progress",
+                                "sleepSessions" to emptyList<Map<String, Any?>>(),
+                                "dailyHrSamples" to emptyList<Map<String, Any?>>(),
+                                "completedContainers" to emptyList<String>(),
+                                "enableSkipped" to false,
+                            ),
+                        )
+                        return
+                    }
+                    sessionIo.execute {
+                        val payload = try {
+                            if (transport?.isConnected() != true) {
+                                mapOf(
+                                    "status" to "not_ready",
+                                    "message" to "Not connected",
+                                    "sleepSessions" to emptyList<Map<String, Any?>>(),
+                                    "dailyHrSamples" to emptyList<Map<String, Any?>>(),
+                                    "completedContainers" to emptyList<String>(),
+                                    "enableSkipped" to false,
+                                )
+                            } else {
+                                session?.syncActivity(startUnix, endUnix)
+                                    ?: mapOf(
+                                        "status" to "error",
+                                        "message" to "No session",
+                                        "sleepSessions" to emptyList<Map<String, Any?>>(),
+                                        "dailyHrSamples" to emptyList<Map<String, Any?>>(),
+                                        "completedContainers" to emptyList<String>(),
+                                        "enableSkipped" to false,
+                                    )
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("FOS_HUAWEI", "syncActivity error", e)
+                            mapOf(
+                                "status" to "error",
+                                "message" to (e.message ?: "sync failed"),
+                                "sleepSessions" to emptyList<Map<String, Any?>>(),
+                                "dailyHrSamples" to emptyList<Map<String, Any?>>(),
+                                "completedContainers" to emptyList<String>(),
+                                "enableSkipped" to false,
+                            )
+                        } finally {
+                            syncLock.release()
                         }
                         activity.runOnUiThread { result.success(payload) }
                     }

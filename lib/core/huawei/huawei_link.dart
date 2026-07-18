@@ -18,6 +18,7 @@ class HuaweiLink {
   String? _recoveryHint;
   final List<DiscoveredDevice> _discovered = [];
   bool _pairInFlight = false;
+  bool _syncInFlight = false;
 
   LinkState get state => _state;
   String? get lastError => _lastError;
@@ -25,6 +26,11 @@ class HuaweiLink {
   List<DiscoveredDevice> get discovered => List.unmodifiable(_discovered);
   Stream<HuaweiLinkEvent> get events => _controller.stream;
   bool get pairInFlight => _pairInFlight;
+  /// Flutter mirror of native Sync single-flight (native remains SoT).
+  bool get syncInFlight => _syncInFlight;
+
+  /// Default activity Sync window: last 14 local days.
+  static const activityWindowDays = 14;
 
   Future<void> start() async {
     FosHuaweiLog.i('link.start — subscribe to BT events', op: 'link');
@@ -242,10 +248,17 @@ class HuaweiLink {
     required int startUnix,
     required int endUnix,
   }) async {
-    if (_state != LinkState.connected &&
-        _state != LinkState.gateAIncomplete) {
+    if (_syncInFlight) {
+      return const WorkoutSyncResult(
+        status: WorkoutSyncStatus.busy,
+        message: 'Another Sync is already in progress',
+        workouts: [],
+      );
+    }
+    if (state != LinkState.connected &&
+        state != LinkState.gateAIncomplete) {
       FosHuaweiLog.w(
-        'syncWorkouts rejected — linkState=$_state',
+        'syncWorkouts rejected — linkState=$state',
         op: 'sync',
       );
       return const WorkoutSyncResult(
@@ -254,6 +267,7 @@ class HuaweiLink {
         workouts: [],
       );
     }
+    _syncInFlight = true;
     FosHuaweiLog.i(
       'syncWorkouts window=[$startUnix,$endUnix]',
       op: 'sync',
@@ -271,6 +285,55 @@ class HuaweiLink {
         message: e.message ?? 'sync failed',
         workouts: const [],
       );
+    } finally {
+      _syncInFlight = false;
+    }
+  }
+
+  /// Activity Sync (sleep + whole-day HR). Shares single-flight with workouts.
+  Future<ActivitySyncResult> syncActivity({
+    int? startUnix,
+    int? endUnix,
+  }) async {
+    if (_syncInFlight) {
+      return const ActivitySyncResult(
+        status: ActivitySyncStatus.busy,
+        message: 'Another Sync is already in progress',
+      );
+    }
+    if (state != LinkState.connected &&
+        state != LinkState.gateAIncomplete) {
+      FosHuaweiLog.w(
+        'syncActivity rejected — linkState=$state',
+        op: 'sync',
+      );
+      return const ActivitySyncResult(
+        status: ActivitySyncStatus.notReady,
+        message: 'Connect and authenticate first',
+      );
+    }
+    final end = endUnix ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final start = startUnix ??
+        end - activityWindowDays * 24 * 60 * 60;
+    _syncInFlight = true;
+    FosHuaweiLog.i(
+      'syncActivity window=[$start,$end] (${activityWindowDays}d)',
+      op: 'sync',
+    );
+    try {
+      final map = await _channel.syncActivity(
+        startUnix: start,
+        endUnix: end,
+      );
+      return ActivitySyncResult.fromMap(map);
+    } on PlatformException catch (e) {
+      FosHuaweiLog.e('syncActivity failed', error: e, op: 'sync');
+      return ActivitySyncResult(
+        status: ActivitySyncStatus.error,
+        message: e.message ?? 'sync failed',
+      );
+    } finally {
+      _syncInFlight = false;
     }
   }
 
@@ -421,7 +484,171 @@ final class DevicesUpdated extends HuaweiLinkEvent {
   final List<DiscoveredDevice> devices;
 }
 
-enum WorkoutSyncStatus { ok, empty, stuck, notReady, error }
+enum WorkoutSyncStatus { ok, empty, stuck, notReady, error, busy, partialBatch }
+
+enum ActivitySyncStatus {
+  ok,
+  empty,
+  partialBatch,
+  stuck,
+  notReady,
+  error,
+  busy,
+}
+
+class SleepSessionSummary {
+  const SleepSessionSummary({
+    required this.beginUnix,
+    required this.endUnix,
+    this.wireType,
+  });
+
+  final int beginUnix;
+  final int endUnix;
+  final int? wireType;
+
+  int get durationSec => (endUnix - beginUnix).clamp(0, 1 << 31);
+
+  factory SleepSessionSummary.fromMap(Map<String, dynamic> map) {
+    int? asInt(Object? v) => v == null ? null : (v as num).toInt();
+    return SleepSessionSummary(
+      beginUnix: asInt(map['beginUnix']) ?? 0,
+      endUnix: asInt(map['endUnix']) ?? 0,
+      wireType: asInt(map['wireType']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'beginUnix': beginUnix,
+        'endUnix': endUnix,
+        if (wireType != null) 'wireType': wireType,
+      };
+}
+
+class DailyHrSample {
+  const DailyHrSample({
+    required this.timestampUnix,
+    required this.bpm,
+  });
+
+  final int timestampUnix;
+  final int bpm;
+
+  factory DailyHrSample.fromMap(Map<String, dynamic> map) {
+    int asInt(Object? v) => v == null ? 0 : (v as num).toInt();
+    return DailyHrSample(
+      timestampUnix: asInt(map['timestampUnix']),
+      bpm: asInt(map['bpm']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'timestampUnix': timestampUnix,
+        'bpm': bpm,
+      };
+}
+
+class DailyHrDaySummary {
+  const DailyHrDaySummary({
+    required this.dayKey,
+    required this.minBpm,
+    required this.avgBpm,
+    required this.maxBpm,
+    required this.sampleCount,
+  });
+
+  /// Local calendar day `yyyy-MM-dd`.
+  final String dayKey;
+  final int minBpm;
+  final int avgBpm;
+  final int maxBpm;
+  final int sampleCount;
+
+  factory DailyHrDaySummary.fromMap(Map<String, dynamic> map) {
+    int asInt(Object? v) => v == null ? 0 : (v as num).toInt();
+    return DailyHrDaySummary(
+      dayKey: map['dayKey'] as String? ?? '',
+      minBpm: asInt(map['minBpm']),
+      avgBpm: asInt(map['avgBpm']),
+      maxBpm: asInt(map['maxBpm']),
+      sampleCount: asInt(map['sampleCount']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'dayKey': dayKey,
+        'minBpm': minBpm,
+        'avgBpm': avgBpm,
+        'maxBpm': maxBpm,
+        'sampleCount': sampleCount,
+      };
+}
+
+class ActivitySyncResult {
+  const ActivitySyncResult({
+    required this.status,
+    this.message,
+    this.sleepSessions = const [],
+    this.dailyHrSamples = const [],
+    this.completedContainers = const {},
+    this.enableSkipped = false,
+  });
+
+  final ActivitySyncStatus status;
+  final String? message;
+  final List<SleepSessionSummary> sleepSessions;
+  final List<DailyHrSample> dailyHrSamples;
+  final Set<String> completedContainers;
+  final bool enableSkipped;
+
+  factory ActivitySyncResult.fromMap(Map<String, dynamic> map) {
+    final statusStr = map['status'] as String? ?? 'error';
+    final status = switch (statusStr) {
+      'ok' => ActivitySyncStatus.ok,
+      'empty' => ActivitySyncStatus.empty,
+      'partial_batch' => ActivitySyncStatus.partialBatch,
+      'stuck' => ActivitySyncStatus.stuck,
+      'not_ready' => ActivitySyncStatus.notReady,
+      'busy' => ActivitySyncStatus.busy,
+      _ => ActivitySyncStatus.error,
+    };
+    final sleep = <SleepSessionSummary>[];
+    final rawSleep = map['sleepSessions'];
+    if (rawSleep is List) {
+      for (final item in rawSleep) {
+        if (item is Map) {
+          sleep.add(
+            SleepSessionSummary.fromMap(Map<String, dynamic>.from(item)),
+          );
+        }
+      }
+    }
+    final hr = <DailyHrSample>[];
+    final rawHr = map['dailyHrSamples'];
+    if (rawHr is List) {
+      for (final item in rawHr) {
+        if (item is Map) {
+          hr.add(DailyHrSample.fromMap(Map<String, dynamic>.from(item)));
+        }
+      }
+    }
+    final completed = <String>{};
+    final rawCompleted = map['completedContainers'];
+    if (rawCompleted is List) {
+      for (final item in rawCompleted) {
+        if (item is String) completed.add(item);
+      }
+    }
+    return ActivitySyncResult(
+      status: status,
+      message: map['message'] as String?,
+      sleepSessions: sleep,
+      dailyHrSamples: hr,
+      completedContainers: completed,
+      enableSkipped: map['enableSkipped'] as bool? ?? false,
+    );
+  }
+}
 
 class WorkoutSummary {
   const WorkoutSummary({
@@ -488,6 +715,8 @@ class WorkoutSyncResult {
       'empty' => WorkoutSyncStatus.empty,
       'stuck' => WorkoutSyncStatus.stuck,
       'not_ready' => WorkoutSyncStatus.notReady,
+      'busy' => WorkoutSyncStatus.busy,
+      'partial_batch' => WorkoutSyncStatus.partialBatch,
       _ => WorkoutSyncStatus.error,
     };
     final rawList = map['workouts'];

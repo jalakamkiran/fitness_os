@@ -63,10 +63,24 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
         return Left(
           ServerFailure(result.message ?? 'Session not ready — reconnect'),
         );
+      case WorkoutSyncStatus.busy:
+        // Non-destructive — another Sync owns the radio.
+        return Left(
+          ServerFailure(
+            result.message ?? 'Another Sync is already in progress',
+          ),
+        );
       case WorkoutSyncStatus.stuck:
         return Left(
           ServerFailure(
             result.message ?? 'Sync stuck — disconnect and reconnect',
+          ),
+        );
+      case WorkoutSyncStatus.partialBatch:
+        // Workouts do not merge on partial_batch this cut (vitals path only).
+        return Left(
+          ServerFailure(
+            result.message ?? 'Workout Sync incomplete — retry after reconnect',
           ),
         );
       case WorkoutSyncStatus.error:

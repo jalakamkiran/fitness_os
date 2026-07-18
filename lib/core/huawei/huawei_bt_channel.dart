@@ -100,6 +100,19 @@ class HuaweiBtChannel {
     return Map<String, dynamic>.from(raw as Map? ?? const {});
   }
 
+  /// Activity Sync: FitnessData sleep + daily HR.
+  /// Default window is last 14 local days when native omits bounds.
+  Future<Map<String, dynamic>> syncActivity({
+    required int startUnix,
+    required int endUnix,
+  }) async {
+    final raw = await _method.invokeMethod<dynamic>('syncActivity', {
+      'startUnix': startUnix,
+      'endUnix': endUnix,
+    });
+    return Map<String, dynamic>.from(raw as Map? ?? const {});
+  }
+
   static bool matchesGt5Name(String name) {
     final n = name.toLowerCase().trim();
     return n.contains('huawei') && n.contains('gt 5');

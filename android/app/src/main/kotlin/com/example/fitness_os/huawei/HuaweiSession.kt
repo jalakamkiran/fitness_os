@@ -203,6 +203,10 @@ class HuaweiSession(
         },
     )
 
+    /** Hard-off FeatureUpload (`0x28`) while product Sync is in flight. */
+    @Volatile
+    private var productSyncActive: Boolean = false
+
     /**
      * Gate B: Count → Totals over the authenticated session.
      * Caller must already have a ready encrypted session (post authenticate).
@@ -216,11 +220,57 @@ class HuaweiSession(
                 "workouts" to emptyList<Map<String, Any?>>(),
             )
         }
-        return HuaweiWorkoutSync(
-            exchangeEncrypted = { req, svc, cmd, timeout ->
-                exchangeEncrypted(req, svc, cmd, timeout)
-            },
-        ).sync(startUnix, endUnix)
+        productSyncActive = true
+        try {
+            return HuaweiWorkoutSync(
+                exchangeEncrypted = { req, svc, cmd, timeout ->
+                    exchangeEncrypted(req, svc, cmd, timeout)
+                },
+            ).sync(startUnix, endUnix)
+        } finally {
+            productSyncActive = false
+        }
+    }
+
+    /**
+     * Activity Sync: FitnessData sleep + daily HR (message path).
+     * FileSleep deferred. Caller must hold the shared Sync lock.
+     */
+    fun syncActivity(startUnix: Long, endUnix: Long): Map<String, Any?> {
+        if (sessionKey == null || !encryptionEnabled) {
+            Log.w(TAG, "activity-sync rejected — session not ready")
+            return mapOf(
+                "status" to "not_ready",
+                "message" to "Session not ready — reconnect first",
+                "sleepSessions" to emptyList<Map<String, Any?>>(),
+                "dailyHrSamples" to emptyList<Map<String, Any?>>(),
+                "completedContainers" to emptyList<String>(),
+                "enableSkipped" to false,
+            )
+        }
+        productSyncActive = true
+        try {
+            return HuaweiFitnessDataSync(
+                exchangeEncrypted = { req, svc, cmd, timeout ->
+                    exchangeEncrypted(req, svc, cmd, timeout)
+                },
+                fetchBattery = {
+                    // Opaque idle handoff — level already logged on post-bind.
+                    exchangeEncrypted(
+                        HuaweiFraming.Frame(
+                            SVC,
+                            CMD_BATTERY,
+                            listOf(HuaweiFraming.Tlv(0x01, byteArrayOf())),
+                        ),
+                        SVC,
+                        CMD_BATTERY,
+                        8_000L,
+                    )
+                },
+            ).sync(startUnix, endUnix)
+        } finally {
+            productSyncActive = false
+        }
     }
 
     fun onRawBytes(bytes: ByteArray) {
@@ -332,7 +382,13 @@ class HuaweiSession(
             // DataSync (svc=0x37): selective — featureManager action=2 starts file upload.
             // Bare t=7f OK on all cmds poisoned the session after music-params OK.
             maybeHandleDataSync(decrypted)
-            featureUpload.onFileUploadFrame(decrypted)
+            if (productSyncActive) {
+                if (decrypted.serviceId == HuaweiFeatureUpload.SVC_FILE) {
+                    Log.d(TAG, "feature-upload hard-off during product sync — ignore 0x28")
+                }
+            } else {
+                featureUpload.onFileUploadFrame(decrypted)
+            }
             maybeAckP2P(decrypted)
             maybeAckMusicAsync(decrypted)
         }
