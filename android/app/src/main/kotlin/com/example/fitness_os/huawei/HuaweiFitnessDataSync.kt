@@ -147,6 +147,10 @@ class HuaweiFitnessDataSync(
         }
         // Empty sleep container still "completed" so Flutter can keep prior.
         completed.add("sleep")
+        Log.i(
+            TAG,
+            "activity-sync sleepSessions=${sleepSessions.size} stageContainers=${sleepRefs.size}",
+        )
 
         // stepCount → stepData (HR extract only; drop steps/SpO2)
         val stepCountFrame = exchangeEncrypted(
@@ -294,42 +298,95 @@ class HuaweiFitnessDataSync(
         return out
     }
 
+    data class SleepStage(
+        val timestampUnix: Long,
+        val durationMin: Int,
+        val wireType: Int?,
+    )
+
     data class SleepParse(val sessions: List<SleepSession>, val unknownTags: Int)
 
     /**
-     * Synthetic / pre-promotion sleep data shape:
-     * 0x81 → repeated 0x83 { 0x01 begin u32, 0x02 end u32, optional 0x03 type u8 }
+     * Observed GT5-A07 sleep data (`capture:POC-2026-07-18-activity-sync-sleep`):
+     * 0x81 → 0x02 index u16, repeated 0x83 stages:
+     *   0x04 type u8, 0x06 meta u8, 0x05 = timestamp_be_u32 + duration_be_u16 (minutes)
+     * Stages in one sleepData response aggregate to one session (gap-split > 45m).
      */
     fun parseSleepData(frame: HuaweiFraming.Frame): SleepParse {
         val container = frame.tlvs.firstOrNull { it.tag == 0x81 }?.value
             ?: return SleepParse(emptyList(), 0)
         val tlvs = HuaweiFraming.decodeTlvs(container)
-        val sessions = ArrayList<SleepSession>()
+        val stages = ArrayList<SleepStage>()
         var unknown = 0
         for (tlv in tlvs) {
             when (tlv.tag) {
                 0x83 -> {
-                    val inner = HuaweiFraming.decodeTlvs(tlv.value)
-                    var begin = 0L
-                    var end = 0L
-                    var type: Int? = null
-                    for (child in inner) {
-                        when (child.tag) {
-                            0x01 -> begin = u32(child.value)
-                            0x02 -> end = u32(child.value)
-                            0x03 -> type = u8(child.value)
-                            else -> unknown++
-                        }
-                    }
-                    if (begin > 0L && end > begin) {
-                        sessions.add(SleepSession(begin, end, type))
+                    val stage = parseSleepStage(tlv.value)
+                    if (stage != null) {
+                        stages.add(stage)
+                    } else {
+                        unknown++
                     }
                 }
-                0x02, 0x01 -> Unit // count / meta
+                0x02, 0x01 -> Unit // index / meta
                 else -> unknown++
             }
         }
-        return SleepParse(sessions, unknown)
+        return SleepParse(aggregateSleepSessions(stages), unknown)
+    }
+
+    fun parseSleepStage(value: ByteArray): SleepStage? {
+        val inner = HuaweiFraming.decodeTlvs(value)
+        var type: Int? = null
+        var timestamp = 0L
+        var durationMin = 0
+        for (child in inner) {
+            when (child.tag) {
+                0x04 -> if (child.value.isNotEmpty()) type = u8(child.value)
+                0x05 -> if (child.value.size >= 4) {
+                    timestamp = u32(child.value)
+                    if (child.value.size >= 6) {
+                        durationMin = u16(child.value, 4).coerceAtLeast(0)
+                    }
+                }
+                0x06 -> Unit // observed meta; ignore
+                else -> Unit
+            }
+        }
+        if (timestamp <= 0L) return null
+        return SleepStage(timestamp, durationMin, type)
+    }
+
+    /** Gap > 45 minutes starts a new session within one sleepData container. */
+    fun aggregateSleepSessions(
+        stages: List<SleepStage>,
+        gapSplitSec: Long = 45 * 60L,
+    ): List<SleepSession> {
+        if (stages.isEmpty()) return emptyList()
+        val ordered = stages.sortedBy { it.timestampUnix }
+        val out = ArrayList<SleepSession>()
+        var begin = ordered[0].timestampUnix
+        var end = stageEndUnix(ordered[0])
+        var type = ordered[0].wireType
+        for (i in 1 until ordered.size) {
+            val s = ordered[i]
+            val gap = s.timestampUnix - end
+            if (gap > gapSplitSec) {
+                if (end > begin) out.add(SleepSession(begin, end, type))
+                begin = s.timestampUnix
+                end = stageEndUnix(s)
+                type = s.wireType
+            } else {
+                end = maxOf(end, stageEndUnix(s))
+            }
+        }
+        if (end > begin) out.add(SleepSession(begin, end, type))
+        return out
+    }
+
+    private fun stageEndUnix(stage: SleepStage): Long {
+        val durSec = stage.durationMin.coerceAtLeast(1) * 60L
+        return stage.timestampUnix + durSec
     }
 
     data class StepHrParse(
@@ -339,45 +396,88 @@ class HuaweiFitnessDataSync(
     )
 
     /**
-     * Synthetic / pre-promotion step data HR shape:
-     * 0x81 → 0x02 bitmap u8, repeated 0x84 { 0x01 ts u32, 0x02 bpm u8 } when bitmap & 0x40
+     * Observed GT5-A07 step data (`capture:POC-2026-07-18-activity-sync-sleep`):
+     * 0x81 → 0x02 index, 0x03 dayStart u32, repeated 0x84 minutes:
+     *   0x05 minuteOffset u8, 0x06 payload (first byte = field bitmap)
+     * HR when bitmap & 0x40; SpO2/steps dropped after extract (R13).
      */
     fun parseStepDataHr(frame: HuaweiFraming.Frame): StepHrParse {
         val container = frame.tlvs.firstOrNull { it.tag == 0x81 }?.value
             ?: return StepHrParse(emptyList(), false, 0)
+        // Result-only frames (tag 0x7f) are not HR containers.
+        if (frame.tlvs.any { it.tag == 0x7F } &&
+            frame.tlvs.none { it.tag == 0x81 && it.value.size > 4 }
+        ) {
+            return StepHrParse(emptyList(), false, 0)
+        }
         val tlvs = HuaweiFraming.decodeTlvs(container)
-        var bitmap = 0
+        var dayStart = 0L
         var unknown = 0
+        var sawHrBitmap = false
         val samples = ArrayList<DailyHrSample>()
         for (tlv in tlvs) {
             when (tlv.tag) {
-                0x02 -> bitmap = u8(tlv.value)
+                0x02 -> Unit // day index
+                0x03 -> if (tlv.value.size >= 4) dayStart = u32(tlv.value)
+                0x08 -> Unit // end marker
                 0x84 -> {
                     val inner = HuaweiFraming.decodeTlvs(tlv.value)
-                    var ts = 0L
-                    var bpm = 0
+                    var minute = 0
+                    var payload: ByteArray? = null
                     for (child in inner) {
                         when (child.tag) {
-                            0x01 -> ts = u32(child.value)
-                            0x02 -> bpm = u8(child.value)
+                            0x05 -> if (child.value.isNotEmpty()) minute = u8(child.value)
+                            0x06 -> payload = child.value
                             else -> unknown++
                         }
                     }
-                    if (ts > 0L && bpm > 0) {
-                        samples.add(DailyHrSample(ts, bpm))
+                    val p = payload
+                    if (p != null && p.isNotEmpty()) {
+                        val bitmap = u8(p)
+                        if ((bitmap and BITMAP_HR) != 0) {
+                            sawHrBitmap = true
+                            val bpm = extractHrBpm(p)
+                            if (bpm != null && dayStart > 0L) {
+                                samples.add(
+                                    DailyHrSample(
+                                        timestampUnix = dayStart + minute * 60L,
+                                        bpm = bpm,
+                                    ),
+                                )
+                            }
+                        }
                     }
                 }
                 else -> unknown++
             }
         }
-        val hrPresent = (bitmap and BITMAP_HR) != 0
-        // If samples arrived without bitmap, still treat as present.
-        val completed = hrPresent || samples.isNotEmpty()
         return StepHrParse(
-            samples = if (completed) samples else emptyList(),
-            hrBitmapPresent = completed,
+            samples = samples,
+            hrBitmapPresent = sawHrBitmap,
             unknownTags = unknown,
         )
+    }
+
+    /**
+     * Bitmap-led payload: skip known lower bits' widths, then read HR u8 when 0x40 set.
+     * Widths are directional from observed envelopes (steps/cal/dist 2B each before HR).
+     */
+    fun extractHrBpm(payload: ByteArray): Int? {
+        if (payload.isEmpty()) return null
+        val bitmap = u8(payload)
+        if ((bitmap and BITMAP_HR) == 0) return null
+        var offset = 1
+        // bits below 0x40 commonly: 0x01 steps, 0x02 cal, 0x04 dist, 0x08/0x10 other — 2B each when set
+        var bit = 0x01
+        while (bit < BITMAP_HR) {
+            if ((bitmap and bit) != 0) {
+                offset += 2
+            }
+            bit = bit shl 1
+        }
+        if (offset >= payload.size) return null
+        val bpm = u8(payload, offset)
+        return if (bpm in 30..220) bpm else null
     }
 
     private fun resultMap(

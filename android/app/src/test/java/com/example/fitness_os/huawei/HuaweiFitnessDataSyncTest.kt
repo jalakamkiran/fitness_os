@@ -8,32 +8,86 @@ import org.junit.Test
 class HuaweiFitnessDataSyncTest {
 
     @Test
+    fun parseSleepData_captureShapedStages_aggregateToSession() {
+        // Shape from capture:POC-2026-07-18-activity-sync-sleep (timestamps synthetic).
+        val begin = 1_700_000_000L
+        val sync = HuaweiFitnessDataSync(exchangeEncrypted = { _, _, _, _ -> null })
+        val frame = sleepDataFrame(
+            index = 1,
+            stages = listOf(
+                Stage(begin, 10, 1),
+                Stage(begin + 10 * 60, 15, 1),
+                Stage(begin + 25 * 60, 20, 3),
+            ),
+        )
+        val parsed = sync.parseSleepData(frame)
+        assertEquals(1, parsed.sessions.size)
+        assertEquals(begin, parsed.sessions[0].beginUnix)
+        // last stage ends at begin+25m + 20m
+        assertEquals(begin + 45 * 60, parsed.sessions[0].endUnix)
+    }
+
+    @Test
+    fun parseSleepData_gapSplitCreatesTwoSessions() {
+        val begin = 1_700_000_000L
+        val sync = HuaweiFitnessDataSync(exchangeEncrypted = { _, _, _, _ -> null })
+        val frame = sleepDataFrame(
+            index = 1,
+            stages = listOf(
+                Stage(begin, 30, 1),
+                // 2h later — new session (nap vs overnight)
+                Stage(begin + 3 * 3600, 40, 1),
+            ),
+        )
+        val parsed = sync.parseSleepData(frame)
+        assertEquals(2, parsed.sessions.size)
+        assertEquals(30 * 60L, parsed.sessions[0].endUnix - parsed.sessions[0].beginUnix)
+        assertEquals(40 * 60L, parsed.sessions[1].endUnix - parsed.sessions[1].beginUnix)
+    }
+
+    @Test
+    fun parseSleepData_zeroTimestampStageSkipped() {
+        val sync = HuaweiFitnessDataSync(exchangeEncrypted = { _, _, _, _ -> null })
+        val frame = sleepDataFrame(
+            index = 5,
+            stages = listOf(Stage(0, 0, 0)),
+        )
+        val parsed = sync.parseSleepData(frame)
+        assertTrue(parsed.sessions.isEmpty())
+    }
+
+    @Test
     fun sync_happyPath_overnightNapAndHr() {
         val overnightBegin = 1_700_000_000L
-        val overnightEnd = overnightBegin + 8 * 3600
-        val napBegin = overnightEnd + 4 * 3600
-        val napEnd = napBegin + 45 * 60
+        val napBegin = overnightBegin + 12 * 3600
 
-        val sleepCount = countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, listOf(1, 2))
+        val sleepCount = countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 2)
         val sleep1 = sleepDataFrame(
+            1,
             listOf(
-                Triple(overnightBegin, overnightEnd, null as Int?),
+                Stage(overnightBegin, 60, 1),
+                Stage(overnightBegin + 60 * 60, 60, 3),
+                Stage(overnightBegin + 120 * 60, 60, 1),
             ),
         )
         val sleep2 = sleepDataFrame(
-            listOf(
-                Triple(napBegin, napEnd, 1),
-            ),
+            2,
+            listOf(Stage(napBegin, 45, 1)),
         )
-        val stepCount = countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, listOf(1))
+        val stepCount = countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 1)
         val stepData = stepHrFrame(
-            bitmap = HuaweiFitnessDataSync.BITMAP_HR,
-            samples = listOf(overnightBegin + 12 * 3600 to 72, overnightBegin + 12 * 3600 + 60 to 75),
+            index = 1,
+            dayStart = overnightBegin,
+            samples = listOf(
+                MinuteSample(0, bitmap = 0x00, payloadAfterBitmap = byteArrayOf()),
+                MinuteSample(12, bitmap = HuaweiFitnessDataSync.BITMAP_HR, payloadAfterBitmap = byteArrayOf(72)),
+                MinuteSample(13, bitmap = HuaweiFitnessDataSync.BITMAP_HR, payloadAfterBitmap = byteArrayOf(75)),
+            ),
         )
         val enableOk = HuaweiFraming.Frame(
             HuaweiFitnessDataSync.SVC,
             0,
-            listOf(HuaweiFraming.Tlv(0x7F, HuaweiPacketCrypto.intBe(0))),
+            listOf(HuaweiFraming.Tlv(0x7F, HuaweiPacketCrypto.intBe(HuaweiPacketCrypto.RESULT_OK))),
         )
 
         val queue = ArrayDeque(
@@ -74,23 +128,31 @@ class HuaweiFitnessDataSyncTest {
     @Test
     fun sync_sleepPresentHrBitmapAbsent_notPartialBatch() {
         val begin = 1_700_000_000L
-        val end = begin + 8 * 3600
         val queue = ArrayDeque(
             listOf(
-                null, // enable trusleep skip
-                null, // enable hr skip
-                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, listOf(1)),
-                sleepDataFrame(listOf(Triple(begin, end, null))),
-                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, listOf(1)),
-                stepHrFrame(bitmap = 0x01, samples = emptyList()), // no HR bit
-                null, // fitness totals
+                null,
+                null,
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1),
+                sleepDataFrame(1, listOf(Stage(begin, 90, 1))),
+                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 1),
+                stepHrFrame(
+                    index = 1,
+                    dayStart = begin,
+                    samples = listOf(
+                        MinuteSample(0, bitmap = 0x0E, payloadAfterBitmap = byteArrayOf(0, 31, 3, 0xC0.toByte(), 0, 0x15)),
+                    ),
+                ),
+                null,
             ),
         )
         val sync = HuaweiFitnessDataSync(
             exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
         )
-        val result = sync.sync(begin - 100, end + 100)
+        val result = sync.sync(begin - 100, begin + 10_000)
         assertEquals("ok", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val sleeps = result["sleepSessions"] as List<Map<String, Any?>>
+        assertEquals(1, sleeps.size)
         @Suppress("UNCHECKED_CAST")
         val completed = result["completedContainers"] as List<String>
         assertTrue(completed.contains("sleep"))
@@ -100,44 +162,43 @@ class HuaweiFitnessDataSyncTest {
     @Test
     fun sync_napOnly() {
         val begin = 1_700_010_000L
-        val end = begin + 40 * 60
         val queue = ArrayDeque(
             listOf(
                 null,
                 null,
-                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, listOf(1)),
-                sleepDataFrame(listOf(Triple(begin, end, null))),
-                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, emptyList()),
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1),
+                sleepDataFrame(1, listOf(Stage(begin, 40, 1))),
+                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 0),
                 null,
             ),
         )
         val sync = HuaweiFitnessDataSync(
             exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
         )
-        val result = sync.sync(begin - 100, end + 100)
+        val result = sync.sync(begin - 100, begin + 10_000)
         @Suppress("UNCHECKED_CAST")
         val sleeps = result["sleepSessions"] as List<Map<String, Any?>>
         assertEquals(1, sleeps.size)
         assertEquals(begin, sleeps[0]["beginUnix"])
+        assertEquals(begin + 40 * 60, sleeps[0]["endUnix"])
     }
 
     @Test
     fun sync_timeoutAfterSleepData_partialBatch() {
         val begin = 1_700_000_000L
-        val end = begin + 8 * 3600
         val queue = ArrayDeque(
             listOf(
                 null,
                 null,
-                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, listOf(1, 2)),
-                sleepDataFrame(listOf(Triple(begin, end, null))),
-                null, // second sleepData timeout
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 2),
+                sleepDataFrame(1, listOf(Stage(begin, 60, 1))),
+                null,
             ),
         )
         val sync = HuaweiFitnessDataSync(
             exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
         )
-        val result = sync.sync(begin - 100, end + 100)
+        val result = sync.sync(begin - 100, begin + 10_000)
         assertEquals("partial_batch", result["status"])
         @Suppress("UNCHECKED_CAST")
         val sleeps = result["sleepSessions"] as List<Map<String, Any?>>
@@ -148,42 +209,29 @@ class HuaweiFitnessDataSyncTest {
     }
 
     @Test
-    fun parseSleepData_recordsUnknownTagsWithoutFailing() {
+    fun extractHrBpm_readsAfterLowerBitmapFields() {
         val sync = HuaweiFitnessDataSync(exchangeEncrypted = { _, _, _, _ -> null })
-        val entry = HuaweiFraming.encodeTlvs(
-            listOf(
-                HuaweiFraming.Tlv(0x01, HuaweiPacketCrypto.intBe(100)),
-                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.intBe(200)),
-                HuaweiFraming.Tlv(0x55, byteArrayOf(0x01)),
-            ),
+        // bitmap 0x41 = steps + HR; steps u16 + hr u8
+        val payload = byteArrayOf(
+            (0x01 or HuaweiFitnessDataSync.BITMAP_HR).toByte(),
+            0x00, 0x10, // steps
+            72, // hr
         )
-        val container = HuaweiFraming.encodeTlvs(
-            listOf(
-                HuaweiFraming.Tlv(0x83, entry),
-                HuaweiFraming.Tlv(0x99, byteArrayOf(0x02)),
-            ),
-        )
-        val frame = HuaweiFraming.Frame(
-            HuaweiFitnessDataSync.SVC,
-            HuaweiFitnessDataSync.CMD_SLEEP_DATA,
-            listOf(HuaweiFraming.Tlv(0x81, container)),
-        )
-        val parsed = sync.parseSleepData(frame)
-        assertEquals(1, parsed.sessions.size)
-        assertTrue(parsed.unknownTags >= 1)
+        assertEquals(72, sync.extractHrBpm(payload))
+        assertEquals(null, sync.extractHrBpm(byteArrayOf(0x0E, 0, 1, 0, 2, 0, 3)))
     }
 
-    private fun countFrame(cmd: Int, indices: List<Int>): HuaweiFraming.Frame {
-        val children = indices.map { idx ->
-            HuaweiFraming.Tlv(
-                0x85,
-                HuaweiFraming.encodeTlvs(
-                    listOf(HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(idx))),
-                ),
-            )
-        }
+    private data class Stage(val ts: Long, val durMin: Int, val type: Int)
+
+    private data class MinuteSample(
+        val minute: Int,
+        val bitmap: Int,
+        val payloadAfterBitmap: ByteArray,
+    )
+
+    private fun countFrame(cmd: Int, count: Int): HuaweiFraming.Frame {
         val container = HuaweiFraming.encodeTlvs(
-            listOf(HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(indices.size))) + children,
+            listOf(HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(count))),
         )
         return HuaweiFraming.Frame(
             HuaweiFitnessDataSync.SVC,
@@ -192,43 +240,56 @@ class HuaweiFitnessDataSyncTest {
         )
     }
 
-    private fun sleepDataFrame(
-        sessions: List<Triple<Long, Long, Int?>>,
-    ): HuaweiFraming.Frame {
-        val entries = sessions.map { (b, e, t) ->
-            val inner = mutableListOf(
-                HuaweiFraming.Tlv(0x01, HuaweiPacketCrypto.intBe(b.toInt())),
-                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.intBe(e.toInt())),
-            )
-            if (t != null) inner += HuaweiFraming.Tlv(0x03, byteArrayOf(t.toByte()))
-            HuaweiFraming.Tlv(0x83, HuaweiFraming.encodeTlvs(inner))
-        }
-        val container = HuaweiFraming.encodeTlvs(entries)
-        return HuaweiFraming.Frame(
-            HuaweiFitnessDataSync.SVC,
-            HuaweiFitnessDataSync.CMD_SLEEP_DATA,
-            listOf(HuaweiFraming.Tlv(0x81, container)),
+    private fun sleepDataFrame(index: Int, stages: List<Stage>): HuaweiFraming.Frame {
+        val entries = mutableListOf(
+            HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(index)),
         )
-    }
-
-    private fun stepHrFrame(
-        bitmap: Int,
-        samples: List<Pair<Long, Int>>,
-    ): HuaweiFraming.Frame {
-        val children = mutableListOf(
-            HuaweiFraming.Tlv(0x02, byteArrayOf(bitmap.toByte())),
-        )
-        for ((ts, bpm) in samples) {
-            children += HuaweiFraming.Tlv(
-                0x84,
+        for (s in stages) {
+            val tsBytes = ByteArray(6)
+            val be = HuaweiPacketCrypto.intBe(s.ts.toInt())
+            System.arraycopy(be, 0, tsBytes, 0, 4)
+            tsBytes[4] = ((s.durMin shr 8) and 0xFF).toByte()
+            tsBytes[5] = (s.durMin and 0xFF).toByte()
+            entries += HuaweiFraming.Tlv(
+                0x83,
                 HuaweiFraming.encodeTlvs(
                     listOf(
-                        HuaweiFraming.Tlv(0x01, HuaweiPacketCrypto.intBe(ts.toInt())),
-                        HuaweiFraming.Tlv(0x02, byteArrayOf(bpm.toByte())),
+                        HuaweiFraming.Tlv(0x04, byteArrayOf(s.type.toByte())),
+                        HuaweiFraming.Tlv(0x06, byteArrayOf(0x00)),
+                        HuaweiFraming.Tlv(0x05, tsBytes),
                     ),
                 ),
             )
         }
+        return HuaweiFraming.Frame(
+            HuaweiFitnessDataSync.SVC,
+            HuaweiFitnessDataSync.CMD_SLEEP_DATA,
+            listOf(HuaweiFraming.Tlv(0x81, HuaweiFraming.encodeTlvs(entries))),
+        )
+    }
+
+    private fun stepHrFrame(
+        index: Int,
+        dayStart: Long,
+        samples: List<MinuteSample>,
+    ): HuaweiFraming.Frame {
+        val children = mutableListOf(
+            HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(index)),
+            HuaweiFraming.Tlv(0x03, HuaweiPacketCrypto.intBe(dayStart.toInt())),
+        )
+        for (s in samples) {
+            val payload = byteArrayOf(s.bitmap.toByte()) + s.payloadAfterBitmap
+            children += HuaweiFraming.Tlv(
+                0x84,
+                HuaweiFraming.encodeTlvs(
+                    listOf(
+                        HuaweiFraming.Tlv(0x05, byteArrayOf(s.minute.toByte())),
+                        HuaweiFraming.Tlv(0x06, payload),
+                    ),
+                ),
+            )
+        }
+        children += HuaweiFraming.Tlv(0x08, byteArrayOf(0x00))
         return HuaweiFraming.Frame(
             HuaweiFitnessDataSync.SVC,
             HuaweiFitnessDataSync.CMD_STEP_DATA,

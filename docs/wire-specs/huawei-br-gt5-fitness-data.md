@@ -89,15 +89,32 @@ When owner completes budget with empty HR: set observation `absent-in-observed-s
 
 ---
 
-## Sleep messages (pre-promotion)
+## Sleep messages (promoted — message path)
 
-| Surface | Codes | Notes |
-|---------|-------|-------|
-| Sleep count/data | `0x0C` / `0x0D` | begin/end; stages depend on TruSleep mode |
-| Enable | `0x16` | TruSleep ON preferred for file path |
-| Night budget | max 2 full nights | Prefer night 2 before absent |
+| Item | Value |
+|------|-------|
+| Capture | `POC-2026-07-18-activity-sync-sleep` |
+| Count `0x0C` | Nested `0x81` → `0x02` u16 count; companion requests indices `1..N` via `0x0D` |
+| Data `0x0D` | Nested `0x81` → `0x02` index; repeated **`0x83` stages** (not begin/end pairs) |
+| Stage `0x83` | `0x04` type u8; `0x06` meta u8; `0x05` = timestamp_be_u32 + duration_be_u16 (**minutes**) |
+| Session merge | Aggregate stages in one `0x0D` response; gap **> 45 min** starts a new session |
+| Observation | `present` (overnight + nap-length clusters observed) |
+| Catalog score | Promote S4 toward **4** after owner confirms UI vs watch |
+| Enable `0x16` | Response `t=7f` RESULT_OK (`100000`) observed |
 
 FileDownload sleep_state / sleep_data: see sleep-files stub — **not** promoted here.
+
+---
+
+## Daily HR / step samples (partial — capture)
+
+| Item | Value |
+|------|-------|
+| Capture | `POC-2026-07-18-activity-sync-sleep` |
+| Count `0x0A` | Same count shape as sleep (`0x81`/`0x02`) |
+| Data `0x0B` | `0x02` index; **`0x03` dayStart u32**; repeated `0x84` minutes (`0x05` minute offset u8, `0x06` bitmap-led payload); trailing `0x08` |
+| HR bit | Still **`0x40`** in sample bitmap (wire claim). This capture’s bitmaps were `{0x00,0x04,0x06,0x0a,0x0e,0x1e}` — **no `0x40`**, so companion correctly reports HR absent |
+| Note | Fresh auto-HR consent may not backfill historical minutes; re-wear ≥4h then Sync |
 
 ---
 
