@@ -8,13 +8,16 @@ import 'package:fitness_os/features/device_pairing/presentation/bloc/device_pair
 
 Future<void> initDevicePairingDependencies(GetIt sl) async {
   final prefs = await SharedPreferences.getInstance();
+  if (!sl.isRegistered<SharedPreferences>()) {
+    sl.registerSingleton<SharedPreferences>(prefs);
+  }
 
   sl.registerLazySingleton<HuaweiLink>(() => HuaweiLink());
 
   sl.registerLazySingleton<DevicePairingRepository>(
     () => DevicePairingRepositoryImpl(
       link: sl(),
-      prefs: prefs,
+      prefs: sl(),
     ),
   );
 

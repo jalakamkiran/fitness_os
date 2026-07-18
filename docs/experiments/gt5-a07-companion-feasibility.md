@@ -2,47 +2,28 @@
 
 **Date:** 2026-07-17  
 **Device:** Huawei Watch GT5-A07  
-**App:** Fitness OS Gate A cut (`feat/huawei-gt5-companion-gate-a`)  
-**Secrets:** redacted — do not commit account IDs or auth material
+**App:** Fitness OS Gate A cut (`feat/huawei-gt5-companion-gate-a`)
 
-## Recommendation: **PIVOT** (interim)
+## Recommendation: **GO** (first-pair + reconnect proven)
 
-Gate A transport + framing + pairing UI + reconnect/unlock policy are implemented in-app. **HiChain crypto is not yet clean-room complete** (see wire-spec crypto inventory). On-device authenticated session therefore remains blocked until owner HCI captures unlock challenge→response vectors. Do **not** treat current builds as Gate A passed.
+Owner capture confirmed **HiChain3** (`t=7:04`) and successful **security-nego** (`1:0x33`). Fitness OS implements clean-room HiChain ISO exchange (HMAC/HKDF/AES-GCM + observed JSON wire format).
 
-| Gate | Status | Evidence |
-|------|--------|----------|
-| Gate A transport (U1) | Code complete; on-device smoke pending | Dual-radio FE86→SDP channel |
-| Gate A framing (U2) | Complete with public LPv2 docs | `docs/wire-specs/huawei-br-gt5-gate-a.md` |
-| Gate A auth (U3) | Fail-closed pending crypto | Session sends link-params; auth_failed + R11 hints |
-| Gate A UI / reconnect / unlock (U4–U6) | Code complete | Unit tests for AE1/AE2/AE5 prefs contracts |
-| Gate B (U7) | Not started | Blocked until `gate_a_passed` on-device |
-| R12 | Interim **PIVOT** | Resume after HCI capture → complete crypto inventory → re-run AE1–AE4 |
+**2026-07-18 outcome:** Full GB-shaped configure + FeatureUpload cleared the **watch pairing UI**. App-kill relaunch reconnect also reached `session_ready` / `reconnect auth outcome=Ready`. Owner unlocked `gate_a_passed`. Gate B Count→Totals listed a strength workout on-device. **POC complete — GO.**
 
-## R11 recovery (AE7)
+**POC learning doc (flowcharts + achievements):** `docs/learnings/2026-07-18-huawei-gt5-companion-poc.md`  
+**Stack handoff:** `docs/handoffs/2026-07-18-huawei-gt5-gate-a-stack-handoff.md`.
 
-Winning path on-device: **pending** (no successful Fitness OS auth yet).
+**Hard rules retained:** Bare DataSync `t=7f:100000` poisons GCM — never blanket-ACK. Mode from link-params `t=7` (deviceSupportType), not ServerNonce. Phone MAC override required on privacy-MAC phones (Pixel).
 
-Record when known:
-
-- [ ] no-vendor pair (no account ID)
-- [ ] account ID (17-digit `userId`) — value **not** stored in this doc
-- [ ] factory reset / unlink then first-time pair
-
-## Auth mode observed
-
-Pending HCI: HiChain / HiChain Lite / Normal — see capture notes.
-
-## Interrupt matrix
-
-See `docs/experiments/gate-a-interrupt-matrix.md` (pending on-device fill).
-
-## HCI capture inventory
-
-See `docs/experiments/2026-07-17-hci-capture-notes.md`. Raw snoops stay off-repo.
-
-## Next actions to flip PIVOT → GO/STOP
-
-1. Capture short labeled `gb_pair` / `fos_pair` HCI sessions; redact fixtures into `test/fixtures/huawei/`
-2. Complete clean-room crypto inventory (or STOP if only AGPL paste would unlock it)
-3. Re-run AE1–AE4; credit U6 checklist only on authenticated reconnects
-4. Optionally start U7 after `gate_a_passed`
+| Step | Status |
+|------|--------|
+| HiChain3 auth+bind + product/time/battery/services | On-device OK |
+| Async PhoneInfo `1:0x10` reply | On-device OK (watch ACK) |
+| Accept-agreement `0x30` + connect-status `0x35` | On-device OK |
+| Music params `0x25:0x04` + `0x0D` | On-device OK |
+| DataSync featureManager action=2 + FileUpload + action=1 | On-device OK |
+| Extended Account `0x1A:0x05` + Country `0x1A:0x0A` (late) | On-device OK (Country may soft-timeout on reconnect) |
+| SupportedCommands / SettingRelated / ReverseCapabilities | On-device OK (SupportedCommands response parse still incomplete) |
+| Watch pairing UI clear | Proven |
+| Gate A passed (`gate_a_passed`) | Proven (owner checklist) |
+| Gate B Count→Totals + local list | **On-device OK** (2026-07-18): strength ~112s → `count=1` totals `#2 type=140` listed |

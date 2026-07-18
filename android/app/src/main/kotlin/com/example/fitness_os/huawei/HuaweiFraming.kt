@@ -76,10 +76,84 @@ object HuaweiFraming {
 
     fun encode(frame: Frame): ByteArray {
         require(frame.flags == FLAG_NON_SLICED) {
-            "encode supports non-sliced frames only; slice reassembly is session-layer"
+            "encode supports non-sliced frames only; use encodePossiblySliced for large bodies"
         }
         val body = encodeBody(frame.serviceId, frame.commandId, frame.tlvs)
         return encodeNonSliced(body)
+    }
+
+    /**
+     * Encode svc+cmd followed by a raw (non-TLV) body — used for unencrypted
+     * FileUpload chunk packets (GB serializeFileChunk when no_encrypt=1).
+     */
+    fun encodeRawBody(serviceId: Int, commandId: Int, rawBody: ByteArray): ByteArray {
+        val body = ByteArray(2 + rawBody.size)
+        body[0] = (serviceId and 0xFF).toByte()
+        body[1] = (commandId and 0xFF).toByte()
+        System.arraycopy(rawBody, 0, body, 2, rawBody.size)
+        return encodeNonSliced(body)
+    }
+
+    /**
+     * Encode one or more packets. Uses slicing when [tlvBody] would exceed [sliceSize].
+     */
+    fun encodePossiblySliced(
+        serviceId: Int,
+        commandId: Int,
+        tlvs: List<Tlv>,
+        sliceSize: Int = 0x00F4,
+    ): List<ByteArray> {
+        val tlvBytes = encodeTlvs(tlvs)
+        val headerLength = 5
+        val footerLength = 2
+        val bodyHeaderLength = 2
+        val maxBodySize = sliceSize - headerLength - footerLength
+        val totalPayload = bodyHeaderLength + tlvBytes.size
+        if (totalPayload <= maxBodySize) {
+            return listOf(encode(Frame(serviceId, commandId, tlvs)))
+        }
+
+        val packets = ArrayList<ByteArray>()
+        var offset = 0
+        var sliceFlag = FLAG_SLICE_FIRST
+        var index = 0
+        while (offset < tlvBytes.size) {
+            val isFirst = sliceFlag == FLAG_SLICE_FIRST
+            var contentBudget = maxBodySize
+            if (isFirst) contentBudget -= 2 // svc+cmd
+            val remaining = tlvBytes.size - offset
+            val take = minOf(contentBudget, remaining)
+            val isLast = offset + take >= tlvBytes.size
+            if (isLast) sliceFlag = FLAG_SLICE_LAST
+
+            val chunk = java.io.ByteArrayOutputStream()
+            if (isFirst) {
+                chunk.write(serviceId and 0xFF)
+                chunk.write(commandId and 0xFF)
+            }
+            chunk.write(tlvBytes, offset, take)
+            val sliceBody = chunk.toByteArray()
+            // lengthField = len(SLICE-BODY) + 2
+            val lengthField = sliceBody.size + 2
+            val withoutCrc = ByteArray(1 + 2 + 1 + 1 + sliceBody.size)
+            withoutCrc[0] = MAGIC.toByte()
+            withoutCrc[1] = ((lengthField shr 8) and 0xFF).toByte()
+            withoutCrc[2] = (lengthField and 0xFF).toByte()
+            withoutCrc[3] = sliceFlag.toByte()
+            withoutCrc[4] = (index and 0xFF).toByte()
+            System.arraycopy(sliceBody, 0, withoutCrc, 5, sliceBody.size)
+            val crc = crcCcittXmodem(withoutCrc)
+            packets.add(
+                withoutCrc + byteArrayOf(
+                    ((crc shr 8) and 0xFF).toByte(),
+                    (crc and 0xFF).toByte(),
+                ),
+            )
+            offset += take
+            index++
+            sliceFlag = FLAG_SLICE_MIDDLE
+        }
+        return packets
     }
 
     fun encodeNonSliced(body: ByteArray): ByteArray {
@@ -191,14 +265,6 @@ object HuaweiFraming {
 
                 val sliceIndex = frameBytes[4].toInt() and 0xFF
                 val slicePayload = frameBytes.copyOfRange(5, 5 + sliceBodyLen)
-                if (flags == FLAG_SLICE_FIRST && slicePayload.size >= 2) {
-                    return parseBodyFrame(
-                        slicePayload,
-                        flags,
-                        sliceIndex,
-                        bytesConsumed = frameLen,
-                    )
-                }
                 return ParseResult.Ok(
                     Frame(
                         serviceId = 0,

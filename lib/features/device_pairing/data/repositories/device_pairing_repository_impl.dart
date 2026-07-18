@@ -97,9 +97,16 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
   @override
   Future<Either<Failure, void>> setAuthKey(String userId) async {
     final trimmed = userId.trim();
-    if (trimmed.isNotEmpty &&
-        (trimmed.length != 17 || !RegExp(r'^\d{17}$').hasMatch(trimmed))) {
-      return const Left(ValidationFailure('Auth key must be a 17-digit userId'));
+    final macHex = trimmed.toUpperCase().replaceAll(RegExp(r'[^0-9A-F]'), '');
+    final isMac = macHex.length == 12;
+    final isUserId =
+        trimmed.length == 17 && RegExp(r'^\d{17}$').hasMatch(trimmed);
+    if (trimmed.isNotEmpty && !isMac && !isUserId) {
+      return const Left(
+        ValidationFailure(
+          'Enter a 17-digit Huawei userId or a phone BT MAC (AA:BB:CC:DD:EE:FF)',
+        ),
+      );
     }
     await _link.setAuthKey(trimmed);
     return const Right(null);
@@ -114,6 +121,7 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
     await _prefs.remove(GateAPrefs.gateABtToggleOk);
     await _prefs.remove(GateAPrefs.gateAPassed);
     await _prefs.remove(GateAPrefs.lastSyncCursor);
+    await _prefs.remove(GateAPrefs.workoutsJson);
     await _link.clearSecrets();
     await _link.disconnect();
     return const Right(null);

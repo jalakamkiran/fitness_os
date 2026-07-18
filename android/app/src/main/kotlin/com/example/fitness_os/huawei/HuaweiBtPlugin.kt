@@ -81,7 +81,9 @@ class HuaweiBtPlugin(
                     result.success(null)
                 }
                 "stopBleDiscovery" -> {
-                    transport?.stopBleDiscovery()
+                    val emitDisconnected =
+                        call.argument<Boolean>("emitDisconnected") ?: true
+                    transport?.stopBleDiscovery(emitDisconnected = emitDisconnected)
                     result.success(null)
                 }
                 "connect" -> {
@@ -93,16 +95,75 @@ class HuaweiBtPlugin(
                     result.success(null)
                 }
                 "authenticate" -> {
+                    // Serialize on sessionIo — reject pile-up by checking transport.
                     sessionIo.execute {
-                        val outcome = session?.authenticate()
+                        val outcome = try {
+                            if (transport?.isConnected() != true) {
+                                android.util.Log.w(
+                                    "FOS_HUAWEI",
+                                    "authenticate skipped — not connected",
+                                )
+                                HuaweiSession.SessionOutcome.AuthFailed
+                            } else {
+                                session?.authenticate()
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("FOS_HUAWEI", "authenticate error", e)
+                            HuaweiSession.SessionOutcome.AuthFailed
+                        }
                         activity.runOnUiThread {
                             result.success(outcome?.name ?: "AuthFailed")
                         }
                     }
                 }
+                "syncWorkouts" -> {
+                    val startUnix = (call.argument<Number>("startUnix")?.toLong())
+                        ?: HuaweiWorkoutSync.FALLBACK_START_UNIX
+                    val endUnix = (call.argument<Number>("endUnix")?.toLong())
+                        ?: (System.currentTimeMillis() / 1000L)
+                    sessionIo.execute {
+                        val payload = try {
+                            if (transport?.isConnected() != true) {
+                                mapOf(
+                                    "status" to "not_ready",
+                                    "message" to "Not connected",
+                                    "workouts" to emptyList<Map<String, Any?>>(),
+                                )
+                            } else {
+                                session?.syncWorkouts(startUnix, endUnix)
+                                    ?: mapOf(
+                                        "status" to "error",
+                                        "message" to "No session",
+                                        "workouts" to emptyList<Map<String, Any?>>(),
+                                    )
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("FOS_HUAWEI", "syncWorkouts error", e)
+                            mapOf(
+                                "status" to "error",
+                                "message" to (e.message ?: "sync failed"),
+                                "workouts" to emptyList<Map<String, Any?>>(),
+                            )
+                        }
+                        activity.runOnUiThread { result.success(payload) }
+                    }
+                }
                 "setAuthKey" -> {
-                    val key = call.argument<String>("userId")
-                    secrets?.setUserId(key)
+                    val key = call.argument<String>("userId")?.trim().orEmpty()
+                    when {
+                        key.isEmpty() -> {
+                            secrets?.setUserId(null)
+                            secrets?.setPhoneMac(null)
+                        }
+                        HuaweiSecretStore.looksLikeMac(key) -> {
+                            secrets?.setPhoneMac(key)
+                            android.util.Log.i(
+                                "FOS_HUAWEI",
+                                "stored phone MAC override (privacy-MAC workaround)",
+                            )
+                        }
+                        else -> secrets?.setUserId(key)
+                    }
                     result.success(null)
                 }
                 "hasSecrets" -> result.success(secrets?.hasSecrets() == true)

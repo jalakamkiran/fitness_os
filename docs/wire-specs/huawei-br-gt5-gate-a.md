@@ -134,62 +134,128 @@ sequenceDiagram
 
 **U3 session:** drive link-params + auth state machine; must not invent missing crypto (see inventory).
 
+**Post-bind configure (encrypted, after HiChain3 bind):** product-info `0x07` → set-time `0x05` → battery `0x08` → supported-services `0x02` → timezone `0x32` → ExpandCapability `1:0x37` → locale `0x0C` → date-format `0x04` → setup-device-status `0x3E` (fire-and-forget) → accept-agreement `0x30` → connect-status `0x35` → (if mask has `0x25`) music-info-params `0x25:0x04` + extended-params `0x25:0x0D`.
+
+**Dynamic init (GB order after supported-services):** SupportedCommands `1:0x03` (batched; builds per-cmd map) → ExpandCapability `1:0x37` → **Extended Account `0x1A:0x05`** (gated by cmds `0x05`+`0x06`) → SettingRelated `1:0x31` → AcceptAgreement `1:0x30` → ReverseCapabilities `1:0x3F` → ConnectStatus / Music → **Country Code `0x1A:0x0A` (late)**. Phone `session_ready` ≠ watch pairing UI; GB sets INITIALIZED only after the dynamic queue finishes.
+
+**Async finalize:** watch pushes PhoneInfo `1:0x10` (reply required). DataSync `svc=0x37` / `featureManager` configAction=2: ConfigCommand `"01"` then FileUpload `0x28` of `feature_<CC>_device.txt` then action=`1` notify. Defer FeatureUpload until Extended Account/country have been sent. **Do not blanket-ACK DataSync with `t=7f:100000`**. Classic P2P `svc=0x34` ack `cmdId=3` + int `0xca`. Music: ACK `0x25:0x01` and real `0x25:0x03` only.
+
 ---
 
 ## Auth branch inventory (GT5-A07)
 
-Community / GB behavioral branches after link-params:
+| Branch | Summary | GT5-A07 status |
+|--------|---------|----------------|
+| **HiChain** | HiChain key agreement | — |
+| **HiChain Lite** | Lite then Normal-style auth | — |
+| **HiChain3** | Security nego `0x33` then HiChain `0x28` | **Observed** — link-params `t=7:04` (deviceSupportType=4) |
+| **Normal** | Auth `0x13` → BondParams `0x0F` → Bond `0x0E` | Wrong branch for this watch (returns `100004`) |
 
-| Branch | Summary (behavioral) | GT5-A07 status |
-|--------|----------------------|----------------|
-| **HiChain** | Optional PIN then HiChain key agreement | **Pending owner HCI capture** |
-| **HiChain Lite** | Lite challenge path then bond | **Pending owner HCI capture** |
-| **Normal** | Auth challenge / response then bond params | **Pending owner HCI capture** |
+**Mode selector:** link-params tag **`0x07`** = `deviceSupportType` (not ServerNonce).  
+ServerNonce first bytes are auth **crypto version** (V1) only.
 
-**Observed branch for this watch:** unmarked until `gb_pair` HCI notes land. Do not assume a branch in production code.
-
-Optional recovery material (GB pairing guide, behavioral): 17-digit Huawei account `userId` when the watch was previously Health-bound — entered by owner, stored only in EncryptedSharedPreferences (U3), never logged.
+**Observed branch:** **HiChain3**. Clean-room HiChain crypto still blocked; Fitness OS probes DeviceStatus + SecurityNegotiation then fail-closes.
 
 ---
 
 ## Crypto inventory
 
-### Independently known (public LPv2 RE + GB pairing docs)
+### Known (public MIT LPv2 + owner capture)
 
-| Step | What is known | Source class |
-|------|---------------|--------------|
-| Framing magic / CRC / TLV / VarInt | Fully specified for clean-room framing | Public wire wiki |
-| Post-keying AES | After a session key exists, command bodies may be wrapped as AES-128-CBC + PKCS7 with dedicated crypto TLVs (IV + ciphertext). Fitness OS may implement **AES wrap/unwrap only after key material is obtained by a specified path** | Public LPv2 RE |
-| 17-digit `userId` injection | Owner may supply account `userId` as auth-key material when Health previously owned the watch; used as an input to the auth path that GB documents behaviorally | GB pairing guide (behavior) |
+| Step | Status |
+|------|--------|
+| Framing / TLV / CRC | Done |
+| Link-params exchange | Done on-device |
+| Normal HMAC-SHA256 + AES-CBC bonding key (V1–V3) | Implemented clean-room from MIT `huawei-lpv2` |
+| GT5-A07 auth version | **V1** (owner capture) |
 
-### Not yet independently specified without captures (do not invent)
+### Open risks
 
-| Gap | Why blocked |
-|-----|-------------|
-| HiChain / HiChain Lite KDF | No owner-captured vectors; AGPL crypto must not be pasted |
-| Challenge → response byte vectors for GT5-A07 | Need labeled HCI (`gb_pair`) + redacted fixtures |
-| Exact auth-mode TLV values this firmware emits | Pending link-params response capture |
-| Bond-parameter layout after successful auth | Pending capture |
-| Whether reconnect reuses secrets vs full re-auth every time | Assume full session auth until proven otherwise |
-
-### U2 → U3 gate verdict
-
-**Proceed-with-gaps** for framing and session *orchestration*:
-
-- U3 may implement link-params I/O, state machine scaffolding, secret persistence hooks, and fail-closed auth (`auth_failed` / R11 recovery hints).
-- U3 **must not** invent HiChain KDF, forge challenge responses, or ship AGPL-derived crypto.
-- Auth may fail closed until owner HCI captures unlock the crypto inventory and provide at least one challenge→response fixture.
-- If captures later prove crypto cannot be specified clean-room → escalate to U8 **PIVOT/STOP** (do not paste AGPL).
+| Risk | Mitigation |
+|------|------------|
+| Android privacy MAC `02:00:00:00:00:00` | Clear `r11_phone_mac` error; need real adapter address |
+| Watch requires account-ID / HiChain despite V1 nonce | Fall back to R11 hints |
 
 ---
 
-## Message IDs (early / known from public LPv2)
+## Message IDs (Normal path)
 
-| Service | Command | Role | Notes |
-|---------|---------|------|--------|
-| `0x01` | `0x01` | Link params | First exchange after socket open (public RE / community logs) |
+| Service | Command | Role |
+|---------|---------|------|
+| `0x01` | `0x01` | Link params |
+| `0x01` | `0x13` (19) | Auth |
+| `0x01` | `0x0F` (15) | Bond params |
+| `0x01` | `0x0E` (14) | Bond |
 
-Further SS/CC values for security/auth/bond on GT5-A07: **fill from redacted HCI fixtures** — do not copy from AGPL sources.
+---
+
+## Gate B — Workout history sync (`svc=0x17`)
+
+Behavioral oracle: Gadgetbridge Workout Count → Totals (Data/Pace/Swim/GPS deferred). Clean-room only.
+
+### Commands
+
+| SS | CC | Role |
+|----|----|------|
+| `0x17` | `0x07` | WorkoutCount (time window) |
+| `0x17` | `0x08` | WorkoutTotals (per workoutNumber) |
+| `0x17` | `0x0a` / `0x0c` / `0x0e` | Data / Pace / Swim — **not** Gate B list |
+
+No device ack/delete after totals. Sync end is local.
+
+### Count request / response
+
+Request nested under `0x81`:
+
+| Tag | Width | Meaning |
+|-----|-------|---------|
+| `0x03` | u32 BE | startUnix (seconds) |
+| `0x04` | u32 BE | endUnix (seconds) |
+
+Response nested under `0x81`:
+
+| Tag | Width | Meaning |
+|-----|-------|---------|
+| `0x02` | u16 BE | count |
+| `0x85` | nested | repeated WorkoutNumbers |
+| → `0x06` | u16 | workoutNumber |
+| → `0x07` | u16 | dataCount (ignored for Gate B list) |
+| → `0x08` | u16 | paceCount (ignored) |
+| → `0x09` | u16 | segmentsCount (optional; ignored) |
+
+Sort by `workoutNumber` ascending before fetching totals.
+
+### Totals request / response (list minimum)
+
+Request nested under `0x81`: tag `0x02` = workoutNumber (u16 BE).
+
+Response fields used for Gate B list:
+
+| Tag | Field | Width |
+|-----|-------|-------|
+| `0x02` | number | u16 |
+| `0x04` | startTime | u32 unix |
+| `0x05` | endTime | u32 unix |
+| `0x12` | duration | u32 seconds |
+| `0x14` | type | u8 (Huawei activity type) |
+
+Optional (persist if present): calories `0x06`, distance `0x07`, steps `0x08`.
+
+### Fitness OS sequence
+
+```
+gate_a_passed + session_ready
+  → syncWorkouts(start=cursor|fallback, end=now)
+  → Count 0x17:0x07
+  → for each workoutNumber: Totals 0x17:0x08
+  → emit DTO list to Flutter → persist prefs → update last_sync_cursor
+```
+
+**Window (Gate B testing):** always `start=1654819200` (2022-06-10 UTC) → `end=now` so Sync pulls full stored history. Cursor is still written after success for a later incremental mode; Forget Device clears cursor + local workout rows.
+
+### Product gate
+
+Sync button / channel call requires durable `gate_a_passed`. Phone `session_ready` alone is not enough (AE5).
 
 ---
 

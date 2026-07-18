@@ -66,6 +66,10 @@ void main() {
       isTrue,
     );
     expect(
+      HuaweiBtChannel.matchesGt5Name('HUAWEI Watch GT 5 Pro-ABC'),
+      isTrue,
+    );
+    expect(
       HuaweiBtChannel.matchesGt5Name('Galaxy Watch'),
       isFalse,
     );

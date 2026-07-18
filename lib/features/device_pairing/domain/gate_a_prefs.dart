@@ -8,4 +8,6 @@ abstract final class GateAPrefs {
   static const gateAPassed = 'gate_a_passed';
   static const lastSyncCursor = 'last_sync_cursor';
   static const lastR11Path = 'last_r11_winning_path';
+  /// JSON list of synced workout summaries (Gate B local store).
+  static const workoutsJson = 'workouts_json';
 }

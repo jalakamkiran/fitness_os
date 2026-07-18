@@ -47,8 +47,10 @@ class HuaweiBtChannel {
   Future<void> startBleDiscovery() =>
       _method.invokeMethod<void>('startBleDiscovery');
 
-  Future<void> stopBleDiscovery() =>
-      _method.invokeMethod<void>('stopBleDiscovery');
+  Future<void> stopBleDiscovery({bool emitDisconnected = true}) =>
+      _method.invokeMethod<void>('stopBleDiscovery', {
+        'emitDisconnected': emitDisconnected,
+      });
 
   Future<void> connect({
     required String mac,
@@ -86,8 +88,21 @@ class HuaweiBtChannel {
 
   Future<void> clearSecrets() => _method.invokeMethod<void>('clearSecrets');
 
+  /// Gate B: native Count→Totals. Returns `{status, message?, workouts: [...]}`.
+  Future<Map<String, dynamic>> syncWorkouts({
+    required int startUnix,
+    required int endUnix,
+  }) async {
+    final raw = await _method.invokeMethod<dynamic>('syncWorkouts', {
+      'startUnix': startUnix,
+      'endUnix': endUnix,
+    });
+    return Map<String, dynamic>.from(raw as Map? ?? const {});
+  }
+
   static bool matchesGt5Name(String name) {
-    return name.toLowerCase().startsWith(namePrefix);
+    final n = name.toLowerCase().trim();
+    return n.contains('huawei') && n.contains('gt 5');
   }
 
   /// Visible for unit tests.

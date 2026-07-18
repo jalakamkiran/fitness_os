@@ -6,6 +6,7 @@ import 'package:fitness_os/features/device_pairing/domain/repositories/device_pa
 import 'package:fitness_os/features/device_pairing/presentation/bloc/device_pairing_bloc.dart';
 import 'package:fitness_os/features/device_pairing/presentation/bloc/device_pairing_event.dart';
 import 'package:fitness_os/features/device_pairing/presentation/bloc/device_pairing_state.dart';
+import 'package:fitness_os/features/workout_history/presentation/view/workout_history_route.dart';
 
 class DevicePairingScreen extends StatelessWidget {
   const DevicePairingScreen({super.key});
@@ -27,11 +28,13 @@ class _DevicePairingView extends StatefulWidget {
 }
 
 class _DevicePairingViewState extends State<_DevicePairingView> {
-  final _authKeyController = TextEditingController();
+  final _phoneMacController = TextEditingController();
+  final _userIdController = TextEditingController();
 
   @override
   void dispose() {
-    _authKeyController.dispose();
+    _phoneMacController.dispose();
+    _userIdController.dispose();
     super.dispose();
   }
 
@@ -41,6 +44,10 @@ class _DevicePairingViewState extends State<_DevicePairingView> {
       appBar: AppBar(
         title: const Text('GT5 pairing'),
         actions: [
+          TextButton(
+            onPressed: () => WorkoutHistoryRoute.go(context),
+            child: const Text('Workouts'),
+          ),
           TextButton(
             onPressed: () => context
                 .read<DevicePairingBloc>()
@@ -96,30 +103,120 @@ class _DevicePairingViewState extends State<_DevicePairingView> {
                   'No devices yet. Force-stop Huawei Health and Gadgetbridge, then Scan.',
                 ),
               ...state.devices.map(
-                (d) => ListTile(
-                  title: Text(d.name),
-                  subtitle: Text(_redactMac(d.mac)),
-                  trailing: const Icon(Icons.link),
-                  onTap: () => context.read<DevicePairingBloc>().add(
-                        DevicePairingSelectDevice(mac: d.mac, name: d.name),
-                      ),
-                ),
+                (d) {
+                  final busy = state.linkState == LinkState.connecting ||
+                      state.linkState == LinkState.authenticating;
+                  return ListTile(
+                    title: Text(d.name),
+                    subtitle: Text(_redactMac(d.mac)),
+                    trailing: busy
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.link),
+                    onTap: busy
+                        ? null
+                        : () => context.read<DevicePairingBloc>().add(
+                              DevicePairingSelectDevice(
+                                mac: d.mac,
+                                name: d.name,
+                              ),
+                            ),
+                  );
+                },
               ),
               const SizedBox(height: 24),
+              if (state.recoveryHint == 'r11_phone_mac' ||
+                  state.linkState == LinkState.authFailed)
+                Card(
+                  color: Theme.of(context).colorScheme.errorContainer,
+                    child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      state.recoveryHint == 'r11_phone_mac'
+                          ? 'Android will not give apps your phone Bluetooth MAC '
+                              '(no permission unlocks it on Pixel). '
+                              'Copy it from Settings → About phone → Bluetooth address, '
+                              'paste below (unmasked), Save, then tap the watch again.'
+                          : state.recoveryHint == 'r11_confirm_on_watch'
+                              ? 'HiChain3: look at the watch and accept the pairing prompt '
+                                  '(~30s). Then tap the GT5 again if needed.'
+                              : state.recoveryHint == 'r11_hichain3_required'
+                              ? 'Your GT5 negotiates HiChain3 (not Normal LPv2). '
+                                  'Android Classic “connected” is expected; the watch '
+                                  '“pairing failed” is the missing HiChain step. '
+                                  'Next: pair once with Gadgetbridge and capture HCI (gb_pair), '
+                                  'or wait for clean-room HiChain3 in Fitness OS.'
+                              : state.recoveryHint ==
+                                      'r11_factory_reset_or_account_id'
+                                  ? 'Watch rejected Normal auth. '
+                                      '1) Force-stop Huawei Health & Gadgetbridge  '
+                                      '2) Phone Settings → Bluetooth → forget GT5  '
+                                      '3) Factory-reset the watch, OR paste 17-digit Huawei userId  '
+                                      '4) Save phone MAC again if needed, then Pair.'
+                                  : 'Auth failed. If you saw r11_phone_mac, paste your phone '
+                                      'Bluetooth address below and retry.',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 12),
               Text(
-                'Auth key (17-digit Huawei userId)',
+                'Phone Bluetooth MAC (required on Pixel)',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Not the watch MAC. Find: Settings → About phone → Bluetooth address. '
+                'List/log •• masking is only for the watch address.',
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _phoneMacController,
+                // Never obscure — user must verify the MAC they typed.
+                obscureText: false,
+                autocorrect: false,
+                enableSuggestions: false,
+                textCapitalization: TextCapitalization.characters,
+                keyboardType: TextInputType.visiblePassword,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'AA:BB:CC:DD:EE:FF',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton(
+                  onPressed: () {
+                    context.read<DevicePairingBloc>().add(
+                          DevicePairingAuthKeySubmitted(
+                            _phoneMacController.text,
+                          ),
+                        );
+                  },
+                  child: const Text('Save phone MAC'),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Optional Huawei userId',
                 style: Theme.of(context).textTheme.titleSmall,
               ),
               const SizedBox(height: 8),
               TextField(
-                controller: _authKeyController,
+                controller: _userIdController,
                 obscureText: state.authKeyMasked,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   border: const OutlineInputBorder(),
                   hintText: state.authKeyMasked
                       ? '•••••••••••••••••'
-                      : 'Optional — R11 recovery',
+                      : '17-digit account ID (only if Normal auth needs it)',
                 ),
               ),
               const SizedBox(height: 8),
@@ -129,26 +226,29 @@ class _DevicePairingViewState extends State<_DevicePairingView> {
                   onPressed: () {
                     context.read<DevicePairingBloc>().add(
                           DevicePairingAuthKeySubmitted(
-                            _authKeyController.text,
+                            _userIdController.text,
                           ),
                         );
-                    _authKeyController.clear();
+                    _userIdController.clear();
                   },
-                  child: const Text('Save auth key'),
+                  child: const Text('Save userId'),
                 ),
               ),
               if (state.linkState == LinkState.authFailed) ...[
                 const SizedBox(height: 16),
                 Text(
-                  'R11 recovery',
+                  'R11 recovery chips',
                   style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const Text(
-                  '1) Force-stop Health  2) Enter account userId  3) Factory reset if needed',
                 ),
                 Wrap(
                   spacing: 8,
                   children: [
+                    ActionChip(
+                      label: const Text('Won: phone MAC'),
+                      onPressed: () => context.read<DevicePairingBloc>().add(
+                            const DevicePairingR11Recorded('phone_mac'),
+                          ),
+                    ),
                     ActionChip(
                       label: const Text('Won: account ID'),
                       onPressed: () => context.read<DevicePairingBloc>().add(
@@ -204,7 +304,7 @@ class _DevicePairingViewState extends State<_DevicePairingView> {
               ),
               Text(
                 state.gateA.passed
-                    ? 'Gate A PASSED — sync remains Phase 2 (U7)'
+                    ? 'Gate A PASSED — open Workouts to Sync history'
                     : 'Gate A incomplete — Sync blocked',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
@@ -213,6 +313,13 @@ class _DevicePairingViewState extends State<_DevicePairingView> {
                       : Colors.orange.shade800,
                 ),
               ),
+              if (state.gateA.passed) ...[
+                const SizedBox(height: 8),
+                FilledButton.tonal(
+                  onPressed: () => WorkoutHistoryRoute.go(context),
+                  child: const Text('Open workout history'),
+                ),
+              ],
               if (state.message != null) ...[
                 const SizedBox(height: 16),
                 Text(
