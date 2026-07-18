@@ -27,6 +27,7 @@ class _VitalsView extends StatelessWidget {
       appBar: AppBar(title: const Text('Vitals')),
       body: BlocBuilder<VitalsBloc, VitalsState>(
         builder: (context, state) {
+          final enabling = state.phase == VitalsPhase.enabling;
           final syncing = state.phase == VitalsPhase.syncing;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -39,7 +40,36 @@ class _VitalsView extends StatelessWidget {
                     Text(_statusCopy(state)),
                     const SizedBox(height: 12),
                     FilledButton.icon(
-                      onPressed: !state.gateAPassed || syncing
+                      onPressed: state.enableDisabled
+                          ? null
+                          : () => context
+                              .read<VitalsBloc>()
+                              .add(const VitalsEnableRequested()),
+                      icon: enabling
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.monitor_heart_outlined),
+                      label: Text(
+                        enabling ? 'Enabling…' : 'Enable auto-tracking',
+                      ),
+                    ),
+                    if (state.lastEnable != null) ...[
+                      const SizedBox(height: 8),
+                      _LastEnablePanel(result: state.lastEnable!),
+                    ],
+                    if (state.enableNextStep != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        state.enableNextStep!,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    FilledButton.tonalIcon(
+                      onPressed: state.syncDisabled
                           ? null
                           : () => context
                               .read<VitalsBloc>()
@@ -105,7 +135,10 @@ class _VitalsView extends StatelessWidget {
                         horizontal: 16,
                         vertical: 8,
                       ),
-                      child: _HrSummary(day: state.latestHrDay),
+                      child: _HrSummary(
+                        day: state.latestHrDay,
+                        lastEnable: state.lastEnable,
+                      ),
                     ),
                   ],
                 ),
@@ -121,13 +154,63 @@ class _VitalsView extends StatelessWidget {
     if (!state.gateAPassed) {
       return 'Gate A incomplete — finish the interrupt checklist on Home first.';
     }
+    if (!state.sessionReady) {
+      return 'Connect the watch (encrypted session) before Enable auto-tracking.';
+    }
     if (state.phase == VitalsPhase.stuck) {
       return 'Sync stuck — switch to Home, disconnect and reconnect, then return and Sync.';
     }
     if (!state.everSynced) {
-      return 'Pull sleep and whole-day heart rate from the watch (last 14 days).';
+      return 'Enable auto-tracking on the watch, wear several hours, then Sync.';
     }
-    return 'Gate A unlocked — Sync refreshes sleep and whole-day HR.';
+    return 'Gate A unlocked — Enable arms tracking; Sync refreshes sleep and HR.';
+  }
+}
+
+class _LastEnablePanel extends StatelessWidget {
+  const _LastEnablePanel({required this.result});
+
+  final AutoTrackingEnableResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          switch (result.overall) {
+            AutoTrackingOverall.allArmed => 'Last enable: all armed',
+            AutoTrackingOverall.partial => 'Last enable: partial — tap to retry',
+            AutoTrackingOverall.noneArmed =>
+              'Last enable: none armed — tap to retry',
+          },
+          style: theme.textTheme.titleSmall,
+        ),
+        const SizedBox(height: 4),
+        for (final f in result.features)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              _featureLine(f),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+      ],
+    );
+  }
+
+  String _featureLine(AutoTrackingFeatureOutcome f) {
+    final label = switch (f.id) {
+      'trusleep' => 'TruSleep',
+      'auto_hr' => 'Auto heart rate',
+      'auto_spo2' => 'Auto SpO2',
+      _ => f.id,
+    };
+    final note = f.id == 'auto_spo2' && f.outcome == 'armed'
+        ? ' — tracking armed on watch, not shown in app yet'
+        : '';
+    return '$label: ${f.outcome}$note';
   }
 }
 
@@ -148,13 +231,37 @@ class _SleepRow extends StatelessWidget {
 }
 
 class _HrSummary extends StatelessWidget {
-  const _HrSummary({this.day});
+  const _HrSummary({this.day, this.lastEnable});
 
   final DailyHrDaySummary? day;
+  final AutoTrackingEnableResult? lastEnable;
 
   @override
   Widget build(BuildContext context) {
     if (day == null) {
+      final hrOutcome = lastEnable?.outcomeFor('auto_hr');
+      if (hrOutcome == 'armed') {
+        return const Text(
+          'No whole-day heart rate for a recent day.\n'
+          'Wear the watch for several hours, then Sync — '
+          'fresh auto-HR may not backfill older minutes.',
+        );
+      }
+      if (hrOutcome == 'skipped' ||
+          hrOutcome == 'failed' ||
+          hrOutcome == 'timed_out') {
+        return Text(
+          'No whole-day heart rate for a recent day.\n'
+          'Auto-HR last Enable was $hrOutcome — tap Enable auto-tracking, '
+          'then wear and Sync.',
+        );
+      }
+      if (lastEnable == null) {
+        return const Text(
+          'No whole-day heart rate for a recent day.\n'
+          'Tap Enable auto-tracking, wear several hours, then Sync.',
+        );
+      }
       return const Text(
         'No whole-day heart rate for a recent day.\n'
         'Wear the watch for several hours with auto-HR on, then Sync.',
@@ -168,23 +275,40 @@ class _HrSummary extends StatelessWidget {
 }
 
 String _formatRange(int beginUnix, int endUnix) {
-  final begin = DateTime.fromMillisecondsSinceEpoch(beginUnix * 1000);
-  final end = DateTime.fromMillisecondsSinceEpoch(endUnix * 1000);
+  // Wire timestamps are UTC unix seconds; show device local (IST on your phone).
+  final begin =
+      DateTime.fromMillisecondsSinceEpoch(beginUnix * 1000, isUtc: true)
+          .toLocal();
+  final end =
+      DateTime.fromMillisecondsSinceEpoch(endUnix * 1000, isUtc: true).toLocal();
   String two(int n) => n.toString().padLeft(2, '0');
+  const months = <String>[
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  String dayLabel(DateTime d) => '${d.day} ${months[d.month - 1]} ${d.year}';
+  final start = '${two(begin.hour)}:${two(begin.minute)}';
+  final stop = '${two(end.hour)}:${two(end.minute)}';
   final sameDay = begin.year == end.year &&
       begin.month == end.month &&
       begin.day == end.day;
-  final day =
-      '${begin.year}-${two(begin.month)}-${two(begin.day)}';
-  final start = '${two(begin.hour)}:${two(begin.minute)}';
-  final stop = '${two(end.hour)}:${two(end.minute)}';
-  if (sameDay) return '$day · $start – $stop';
-  return '$day $start – ${end.year}-${two(end.month)}-${two(end.day)} $stop';
+  if (sameDay) return '${dayLabel(begin)} · $start – $stop';
+  return '${dayLabel(begin)} $start – ${dayLabel(end)} $stop';
 }
 
 String _formatDuration(int sec) {
   final h = sec ~/ 3600;
   final m = (sec % 3600) ~/ 60;
-  if (h > 0) return '${h}h ${m}m sleep';
-  return '${m}m sleep';
+  if (h > 0) return '${h}h ${m}m';
+  return '${m}m';
 }

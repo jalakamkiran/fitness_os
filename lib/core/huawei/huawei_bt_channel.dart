@@ -105,11 +105,21 @@ class HuaweiBtChannel {
   Future<Map<String, dynamic>> syncActivity({
     required int startUnix,
     required int endUnix,
+    bool skipTruSleepSoft = false,
+    bool skipAutoHrSoft = false,
   }) async {
     final raw = await _method.invokeMethod<dynamic>('syncActivity', {
       'startUnix': startUnix,
       'endUnix': endUnix,
+      'skipTruSleepSoft': skipTruSleepSoft,
+      'skipAutoHrSoft': skipAutoHrSoft,
     });
+    return Map<String, dynamic>.from(raw as Map? ?? const {});
+  }
+
+  /// Explicit TruSleep / auto-HR / auto-SpO2 enable batch.
+  Future<Map<String, dynamic>> enableAutoTracking() async {
+    final raw = await _method.invokeMethod<dynamic>('enableAutoTracking');
     return Map<String, dynamic>.from(raw as Map? ?? const {});
   }
 

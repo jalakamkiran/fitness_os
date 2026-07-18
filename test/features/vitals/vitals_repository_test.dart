@@ -7,19 +7,50 @@ import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/vitals/data/repositories/vitals_repository_impl.dart';
 
 class _StubLink extends HuaweiLink {
-  _StubLink({this.result});
+  _StubLink({
+    this.result,
+    this.enableResult,
+    this.sessionReadyOverride = true,
+  });
 
   ActivitySyncResult? result;
+  AutoTrackingEnableResult? enableResult;
+  bool sessionReadyOverride;
   int activityCalls = 0;
+  int enableCalls = 0;
+  bool? lastSkipTruSleepSoft;
+  bool? lastSkipAutoHrSoft;
+
+  @override
+  bool get sessionReady => sessionReadyOverride;
 
   @override
   Future<ActivitySyncResult> syncActivity({
     int? startUnix,
     int? endUnix,
+    bool skipTruSleepSoft = false,
+    bool skipAutoHrSoft = false,
   }) async {
     activityCalls++;
+    lastSkipTruSleepSoft = skipTruSleepSoft;
+    lastSkipAutoHrSoft = skipAutoHrSoft;
     return result ??
         const ActivitySyncResult(status: ActivitySyncStatus.empty);
+  }
+
+  @override
+  Future<AutoTrackingEnableResult> enableAutoTracking() async {
+    enableCalls++;
+    return enableResult ??
+        const AutoTrackingEnableResult(
+          status: AutoTrackingEnableStatus.ok,
+          overall: AutoTrackingOverall.allArmed,
+          features: [
+            AutoTrackingFeatureOutcome(id: 'trusleep', outcome: 'armed'),
+            AutoTrackingFeatureOutcome(id: 'auto_hr', outcome: 'armed'),
+            AutoTrackingFeatureOutcome(id: 'auto_spo2', outcome: 'armed'),
+          ],
+        );
   }
 }
 
@@ -208,6 +239,8 @@ void main() {
             '[{"beginUnix":100,"endUnix":200}]',
         GateAPrefs.dailyHrJson:
             '[{"dayKey":"2023-11-14","minBpm":60,"avgBpm":70,"maxBpm":80,"sampleCount":1}]',
+        GateAPrefs.lastAutoTrackingEnableJson:
+            '{"overall":"all_armed","features":[{"id":"auto_hr","outcome":"armed"}]}',
         GateAPrefs.workoutsJson:
             '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
       });
@@ -219,7 +252,78 @@ void main() {
       await repo.clearLocal();
       expect(prefs.getString(GateAPrefs.sleepSessionsJson), isNull);
       expect(prefs.getString(GateAPrefs.dailyHrJson), isNull);
+      expect(prefs.getString(GateAPrefs.lastAutoTrackingEnableJson), isNull);
       expect(prefs.getString(GateAPrefs.workoutsJson), isNotNull);
+    });
+
+    test('enable persists last-run and soft-skips armed features on Sync', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.rememberedMac: 'AA:BB:CC:DD:EE:FF',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const ActivitySyncResult(status: ActivitySyncStatus.empty),
+      );
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+      final enableOut = await repo.enableAutoTracking();
+      expect(enableOut, isA<Right>());
+      expect(link.enableCalls, 1);
+      final loaded = await repo.loadLastEnable();
+      expect(loaded?.outcomeFor('auto_hr'), 'armed');
+      expect(loaded?.outcomeFor('auto_spo2'), 'armed');
+
+      await repo.syncFromWatch();
+      expect(link.lastSkipTruSleepSoft, isTrue);
+      expect(link.lastSkipAutoHrSoft, isTrue);
+    });
+
+    test('empty Sync with armed auto-HR uses wear/emission copy', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.rememberedMac: 'AA:BB:CC:DD:EE:FF',
+        GateAPrefs.lastAutoTrackingEnableJson:
+            '{"overall":"all_armed","features":['
+            '{"id":"trusleep","outcome":"armed"},'
+            '{"id":"auto_hr","outcome":"armed"},'
+            '{"id":"auto_spo2","outcome":"armed"}]}',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const ActivitySyncResult(
+          status: ActivitySyncStatus.empty,
+          enableSkipped: true,
+        ),
+      );
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+      final out = await repo.syncFromWatch();
+      final snap = (out as Right).value;
+      expect(snap.message, contains('Wear the watch'));
+      expect(snap.message, isNot(contains('Enable skipped')));
+    });
+
+    test('enable not ready when session down', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.rememberedMac: 'AA:BB:CC:DD:EE:FF',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(sessionReadyOverride: false);
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+      final out = await repo.enableAutoTracking();
+      expect(out, isA<Left>());
+      expect(link.enableCalls, 0);
+    });
+
+    test('corrupt last-enable JSON fail-closed', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.lastAutoTrackingEnableJson:
+            '{"overall":"all_armed","features":[],"hexFrames":"deadbeef"}',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final repo = VitalsRepositoryImpl(link: _StubLink(), prefs: prefs);
+      expect(await repo.loadLastEnable(), isNull);
     });
   });
 }

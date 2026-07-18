@@ -156,7 +156,9 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
     if (_onForgetWipeExtras != null) {
       final sleepLeft = _prefs.containsKey(GateAPrefs.sleepSessionsJson);
       final hrLeft = _prefs.containsKey(GateAPrefs.dailyHrJson);
-      if (sleepLeft || hrLeft) {
+      final enableLeft =
+          _prefs.containsKey(GateAPrefs.lastAutoTrackingEnableJson);
+      if (sleepLeft || hrLeft || enableLeft) {
         return const Left(
           ValidationFailure('Forget verify failed — vitals residue remains'),
         );

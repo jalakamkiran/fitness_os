@@ -34,6 +34,16 @@ class VitalsRepositoryImpl implements VitalsRepository {
   bool get isSyncOrMergeInFlight => _link.syncInFlight || _mergeInFlight;
 
   @override
+  bool get sessionReady => _link.sessionReady;
+
+  @override
+  Future<AutoTrackingEnableResult?> loadLastEnable() async {
+    return AutoTrackingEnableResult.tryParsePrefs(
+      _prefs.getString(GateAPrefs.lastAutoTrackingEnableJson),
+    );
+  }
+
+  @override
   Future<List<SleepSessionSummary>> loadSleepSessions() async {
     final raw = _prefs.getString(GateAPrefs.sleepSessionsJson);
     if (raw == null || raw.isEmpty) {
@@ -90,7 +100,11 @@ class VitalsRepositoryImpl implements VitalsRepository {
 
     _mergeInFlight = true;
     try {
-      final result = await _link.syncActivity();
+      final last = await loadLastEnable();
+      final result = await _link.syncActivity(
+        skipTruSleepSoft: last?.outcomeFor('trusleep') == 'armed',
+        skipAutoHrSoft: last?.outcomeFor('auto_hr') == 'armed',
+      );
 
       // Late merge after Forget / identity wipe — no-op.
       if (!_gateStillPassed()) {
@@ -122,9 +136,11 @@ class VitalsRepositoryImpl implements VitalsRepository {
             VitalsSnapshot(
               sleepSessions: sleep,
               dailyHr: hr,
-              message: result.enableSkipped
-                  ? 'Enable skipped — watch may need TruSleep / auto-HR armed'
-                  : 'No new sleep or heart-rate data in range',
+              message: _syncEmptyMessage(
+                lastEnable: last,
+                enableSkipped: result.enableSkipped,
+                hrEmpty: hr.isEmpty,
+              ),
               enableSkipped: result.enableSkipped,
             ),
           );
@@ -139,15 +155,17 @@ class VitalsRepositoryImpl implements VitalsRepository {
           final hr = await _safeLoadHr();
           final partial = result.status == ActivitySyncStatus.partialBatch ||
               result.status == ActivitySyncStatus.stuck;
+          final enableMsg = _syncEnableMessage(
+            lastEnable: last,
+            enableSkipped: result.enableSkipped,
+          );
           return Right(
             VitalsSnapshot(
               sleepSessions: sleep,
               dailyHr: hr,
               message: partial
                   ? (result.message ?? 'Partial sync — some containers missing')
-                  : result.enableSkipped
-                      ? 'Synced (enable skipped on watch)'
-                      : null,
+                  : enableMsg,
               partial: partial,
               enableSkipped: result.enableSkipped,
             ),
@@ -156,6 +174,102 @@ class VitalsRepositoryImpl implements VitalsRepository {
     } finally {
       _mergeInFlight = false;
     }
+  }
+
+  @override
+  Future<Either<Failure, AutoTrackingEnableResult>> enableAutoTracking() async {
+    if (!await isGateAPassed()) {
+      return const Left(
+        ServerFailure('Gate A unlock required before Enable'),
+      );
+    }
+    if (!sessionReady) {
+      return const Left(
+        ServerFailure('Session not ready — reconnect first'),
+      );
+    }
+
+    _mergeInFlight = true;
+    try {
+      final result = await _link.enableAutoTracking();
+      switch (result.status) {
+        case AutoTrackingEnableStatus.notReady:
+          return Left(
+            ServerFailure(result.message ?? 'Session not ready — reconnect'),
+          );
+        case AutoTrackingEnableStatus.busy:
+          return Left(
+            ServerFailure(
+              result.message ?? 'Another Sync is already in progress',
+            ),
+          );
+        case AutoTrackingEnableStatus.error:
+          return Left(ServerFailure(result.message ?? 'Enable failed'));
+        case AutoTrackingEnableStatus.ok:
+          final stamped = AutoTrackingEnableResult(
+            status: result.status,
+            overall: result.overall,
+            message: result.message,
+            features: result.features,
+            completedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          );
+          if (_gateStillPassed() && _deviceRemembered()) {
+            await _prefs.setString(
+              GateAPrefs.lastAutoTrackingEnableJson,
+              jsonEncode(stamped.toPrefsJson()),
+            );
+          }
+          return Right(stamped);
+      }
+    } finally {
+      _mergeInFlight = false;
+    }
+  }
+
+  bool _deviceRemembered() {
+    final mac = _prefs.getString(GateAPrefs.rememberedMac);
+    return mac != null && mac.isNotEmpty;
+  }
+
+  String _syncEmptyMessage({
+    required AutoTrackingEnableResult? lastEnable,
+    required bool enableSkipped,
+    required bool hrEmpty,
+  }) {
+    if (hrEmpty) {
+      final hrOutcome = lastEnable?.outcomeFor('auto_hr');
+      if (hrOutcome == 'armed') {
+        return 'Wear the watch for several hours, then Sync — '
+            'fresh auto-HR may not backfill older minutes';
+      }
+      if (hrOutcome == 'skipped' ||
+          hrOutcome == 'failed' ||
+          hrOutcome == 'timed_out') {
+        return 'Auto-HR not armed — tap Enable auto-tracking, then wear and Sync';
+      }
+      if (lastEnable == null) {
+        return 'Tap Enable auto-tracking, wear several hours, then Sync';
+      }
+    }
+    if (lastEnable == null && enableSkipped) {
+      return 'Enable skipped — watch may need TruSleep / auto-HR armed';
+    }
+    return 'No new sleep or heart-rate data in range';
+  }
+
+  String? _syncEnableMessage({
+    required AutoTrackingEnableResult? lastEnable,
+    required bool enableSkipped,
+  }) {
+    if (lastEnable != null) {
+      final hr = lastEnable.outcomeFor('auto_hr');
+      if (hr == 'failed' || hr == 'timed_out' || hr == 'skipped') {
+        return 'Synced — auto-HR last Enable was $hr; retry Enable if needed';
+      }
+      return null;
+    }
+    if (enableSkipped) return 'Synced (enable skipped on watch)';
+    return null;
   }
 
   bool _gateStillPassed() => _prefs.getBool(GateAPrefs.gateAPassed) ?? false;
@@ -279,6 +393,7 @@ class VitalsRepositoryImpl implements VitalsRepository {
   Future<void> clearLocal() async {
     await _prefs.remove(GateAPrefs.sleepSessionsJson);
     await _prefs.remove(GateAPrefs.dailyHrJson);
+    await _prefs.remove(GateAPrefs.lastAutoTrackingEnableJson);
     _sleepLoadFailed = false;
     _hrLoadFailed = false;
     await _wipeSideFiles();

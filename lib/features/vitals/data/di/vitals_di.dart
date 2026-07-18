@@ -31,6 +31,7 @@ Future<void> initVitalsDependencies(GetIt sl) async {
   sl.registerFactory(
     () => VitalsBloc(
       repository: sl(),
+      link: sl(),
       invalidation: sl<StoreInvalidation>(),
     ),
   );

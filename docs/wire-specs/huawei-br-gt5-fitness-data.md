@@ -97,6 +97,7 @@ When owner completes budget with empty HR: set observation `absent-in-observed-s
 | Count `0x0C` | Nested `0x81` → `0x02` u16 count; companion requests indices `1..N` via `0x0D` |
 | Data `0x0D` | Nested `0x81` → `0x02` index; repeated **`0x83` stages** (not begin/end pairs) |
 | Stage `0x83` | `0x04` type u8; `0x06` meta u8; `0x05` = timestamp_be_u32 + duration_be_u16 (**minutes**) |
+| Timestamp | **UTC unix seconds** (not local-as-UTC). Cross-check: step `0x03` block anchors land on real IST midnights when phone TZ is Asia/Kolkata (`capture:POC-2026-07-18-activity-sync-sleep`). UI must `toLocal()` for display. |
 | Session merge | **Collect stages across all `0x0D` pages**, then aggregate; gap **> 45 min** starts a new session. Indices are stage pages, not one-row-per-index product sleeps. Drop sessions **&lt; 15 min**. |
 | Observation | `present` (overnight + nap-length clusters observed) |
 | Catalog score | Promote S4 toward **4** after owner confirms UI vs watch |

@@ -11,21 +11,35 @@ import 'package:fitness_os/features/vitals/presentation/bloc/vitals_state.dart';
 class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
   VitalsBloc({
     required VitalsRepository repository,
+    HuaweiLink? link,
     StoreInvalidation? invalidation,
   })  : _repository = repository,
+        _link = link,
         super(const VitalsState()) {
     on<VitalsStarted>(_onStarted);
     on<VitalsSyncRequested>(_onSync);
+    on<VitalsEnableRequested>(_onEnable);
     on<VitalsReloadRequested>(_onReload);
+    on<VitalsSessionReadyChanged>(_onSessionReady);
     if (invalidation != null) {
       _sub = invalidation.stream.listen((_) {
         add(const VitalsReloadRequested());
       });
     }
+    final link = _link;
+    if (link != null) {
+      _linkSub = link.events.listen((event) {
+        if (event is LinkStateChanged) {
+          add(VitalsSessionReadyChanged(link.sessionReady));
+        }
+      });
+    }
   }
 
   final VitalsRepository _repository;
+  final HuaweiLink? _link;
   StreamSubscription<void>? _sub;
+  StreamSubscription<HuaweiLinkEvent>? _linkSub;
 
   Future<void> _onStarted(
     VitalsStarted event,
@@ -41,8 +55,16 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
     await _reload(emit);
   }
 
+  void _onSessionReady(
+    VitalsSessionReadyChanged event,
+    Emitter<VitalsState> emit,
+  ) {
+    emit(state.copyWith(sessionReady: event.sessionReady));
+  }
+
   Future<void> _reload(Emitter<VitalsState> emit) async {
     final passed = await _repository.isGateAPassed();
+    final sessionReady = _repository.sessionReady;
     var sleep = const <SleepSessionSummary>[];
     var hr = const <DailyHrDaySummary>[];
     String? loadError;
@@ -52,15 +74,20 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
     } catch (_) {
       loadError = 'Local vitals unreadable';
     }
+    final lastEnable = await _repository.loadLastEnable();
     emit(
       state.copyWith(
         gateAPassed: passed,
+        sessionReady: sessionReady,
         sleepSessions: sleep,
         dailyHr: hr,
         phase: passed ? VitalsPhase.idle : VitalsPhase.blocked,
         message: loadError,
         clearMessage: loadError == null,
         everSynced: sleep.isNotEmpty || hr.isNotEmpty,
+        lastEnable: lastEnable,
+        clearLastEnable: lastEnable == null,
+        clearEnableNextStep: true,
       ),
     );
   }
@@ -69,7 +96,10 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
     VitalsSyncRequested event,
     Emitter<VitalsState> emit,
   ) async {
-    if (state.phase == VitalsPhase.syncing) return;
+    if (state.phase == VitalsPhase.syncing ||
+        state.phase == VitalsPhase.enabling) {
+      return;
+    }
     if (!await _repository.isGateAPassed()) {
       emit(
         state.copyWith(
@@ -86,11 +116,14 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
         final msg = value.message;
         final stuck = msg.toLowerCase().contains('stuck');
         final busy = msg.toLowerCase().contains('another sync');
+        final enableBusy = msg.toLowerCase().contains('enable');
         emit(
           state.copyWith(
             phase: stuck ? VitalsPhase.stuck : VitalsPhase.idle,
             message: busy
-                ? 'Workout Sync in progress — try again when it finishes'
+                ? (enableBusy
+                    ? 'Wait for enable to finish, then Sync'
+                    : 'Workout Sync in progress — try again when it finishes')
                 : msg,
           ),
         );
@@ -112,9 +145,65 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
     }
   }
 
+  Future<void> _onEnable(
+    VitalsEnableRequested event,
+    Emitter<VitalsState> emit,
+  ) async {
+    if (state.enableDisabled) return;
+    if (!await _repository.isGateAPassed()) {
+      emit(
+        state.copyWith(
+          phase: VitalsPhase.blocked,
+          message: 'Gate A unlock required before Enable',
+        ),
+      );
+      return;
+    }
+    emit(
+      state.copyWith(
+        phase: VitalsPhase.enabling,
+        clearMessage: true,
+        clearEnableNextStep: true,
+      ),
+    );
+    final result = await _repository.enableAutoTracking();
+    switch (result) {
+      case Left(:final value):
+        final msg = value.message;
+        final busy = msg.toLowerCase().contains('another sync');
+        emit(
+          state.copyWith(
+            phase: VitalsPhase.idle,
+            message: busy
+                ? 'Sync in progress — try Enable when it finishes'
+                : msg,
+          ),
+        );
+      case Right(:final value):
+        emit(
+          state.copyWith(
+            phase: VitalsPhase.idle,
+            lastEnable: value,
+            message: _overallCopy(value),
+            enableNextStep:
+                'Wear several hours, then Sync. Fresh auto-HR may not backfill older minutes.',
+          ),
+        );
+    }
+  }
+
+  String _overallCopy(AutoTrackingEnableResult value) {
+    return switch (value.overall) {
+      AutoTrackingOverall.allArmed => 'Last enable: all armed',
+      AutoTrackingOverall.partial => 'Last enable: partial — tap to retry',
+      AutoTrackingOverall.noneArmed => 'Last enable: none armed — tap to retry',
+    };
+  }
+
   @override
   Future<void> close() async {
     await _sub?.cancel();
+    await _linkSub?.cancel();
     return super.close();
   }
 }

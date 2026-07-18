@@ -236,7 +236,12 @@ class HuaweiSession(
      * Activity Sync: FitnessData sleep + daily HR (message path).
      * FileSleep deferred. Caller must hold the shared Sync lock.
      */
-    fun syncActivity(startUnix: Long, endUnix: Long): Map<String, Any?> {
+    fun syncActivity(
+        startUnix: Long,
+        endUnix: Long,
+        skipTruSleepSoft: Boolean = false,
+        skipAutoHrSoft: Boolean = false,
+    ): Map<String, Any?> {
         if (sessionKey == null || !encryptionEnabled) {
             Log.w(TAG, "activity-sync rejected — session not ready")
             return mapOf(
@@ -250,28 +255,58 @@ class HuaweiSession(
         }
         productSyncActive = true
         try {
-            return HuaweiFitnessDataSync(
-                exchangeEncrypted = { req, svc, cmd, timeout ->
-                    exchangeEncrypted(req, svc, cmd, timeout)
-                },
-                fetchBattery = {
-                    // Opaque idle handoff — level already logged on post-bind.
-                    exchangeEncrypted(
-                        HuaweiFraming.Frame(
-                            SVC,
-                            CMD_BATTERY,
-                            listOf(HuaweiFraming.Tlv(0x01, byteArrayOf())),
-                        ),
-                        SVC,
-                        CMD_BATTERY,
-                        8_000L,
-                    )
-                },
-            ).sync(startUnix, endUnix)
+            return fitnessDataSync().sync(
+                startUnix,
+                endUnix,
+                skipTruSleepSoft = skipTruSleepSoft,
+                skipAutoHrSoft = skipAutoHrSoft,
+            )
         } finally {
             productSyncActive = false
         }
     }
+
+    /**
+     * Explicit auto-tracking enable (TruSleep / auto-HR / auto-SpO2).
+     * Caller must hold the shared Sync lock. FeatureUpload hard-off for the batch.
+     */
+    fun enableAutoTracking(): Map<String, Any?> {
+        if (sessionKey == null || !encryptionEnabled) {
+            Log.w(TAG, "enable-auto rejected — session not ready")
+            return mapOf(
+                "status" to "not_ready",
+                "message" to "Session not ready — reconnect first",
+                "overall" to "none_armed",
+                "features" to emptyList<Map<String, Any?>>(),
+            )
+        }
+        productSyncActive = true
+        try {
+            return fitnessDataSync().enableAutoTracking()
+        } finally {
+            productSyncActive = false
+        }
+    }
+
+    private fun fitnessDataSync(): HuaweiFitnessDataSync =
+        HuaweiFitnessDataSync(
+            exchangeEncrypted = { req, svc, cmd, timeout ->
+                exchangeEncrypted(req, svc, cmd, timeout)
+            },
+            fetchBattery = {
+                exchangeEncrypted(
+                    HuaweiFraming.Frame(
+                        SVC,
+                        CMD_BATTERY,
+                        listOf(HuaweiFraming.Tlv(0x01, byteArrayOf())),
+                    ),
+                    SVC,
+                    CMD_BATTERY,
+                    8_000L,
+                )
+            },
+            isConnected = { transport.isConnected() },
+        )
 
     fun onRawBytes(bytes: ByteArray) {
         bytesReceived.addAndGet(bytes.size)

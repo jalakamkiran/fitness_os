@@ -15,6 +15,19 @@ final class VitalsSyncRequested extends VitalsEvent {
   const VitalsSyncRequested();
 }
 
+final class VitalsEnableRequested extends VitalsEvent {
+  const VitalsEnableRequested();
+}
+
 final class VitalsReloadRequested extends VitalsEvent {
   const VitalsReloadRequested();
+}
+
+final class VitalsSessionReadyChanged extends VitalsEvent {
+  const VitalsSessionReadyChanged(this.sessionReady);
+
+  final bool sessionReady;
+
+  @override
+  List<Object?> get props => [sessionReady];
 }

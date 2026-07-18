@@ -31,6 +31,8 @@ class _ScriptedChannel extends HuaweiBtChannel {
   Future<Map<String, dynamic>> syncActivity({
     required int startUnix,
     required int endUnix,
+    bool skipTruSleepSoft = false,
+    bool skipAutoHrSoft = false,
   }) async {
     activityCalls++;
     if (activityGate != null) return activityGate!.future;
@@ -40,6 +42,15 @@ class _ScriptedChannel extends HuaweiBtChannel {
       'dailyHrSamples': <Map<String, dynamic>>[],
       'completedContainers': <String>[],
       'enableSkipped': false,
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> enableAutoTracking() async {
+    return {
+      'status': 'ok',
+      'overall': 'all_armed',
+      'features': <Map<String, dynamic>>[],
     };
   }
 }
@@ -104,6 +115,28 @@ void main() {
     expect(partial.status, WorkoutSyncStatus.partialBatch);
     // Does not collapse unknown→error for these keys.
     expect(partial.status, isNot(WorkoutSyncStatus.error));
+  });
+
+  test('enableAutoTracking overlaps syncActivity → busy', () async {
+    final channel = _ScriptedChannel()
+      ..activityGate = Completer<Map<String, dynamic>>();
+    final ready = _ReadyLink(channel: channel);
+    final activityFuture = ready.syncActivity();
+    await Future<void>.delayed(Duration.zero);
+    expect(ready.syncInFlight, isTrue);
+
+    final enable = await ready.enableAutoTracking();
+    expect(enable.status, AutoTrackingEnableStatus.busy);
+
+    channel.activityGate!.complete({
+      'status': 'empty',
+      'sleepSessions': <Map<String, dynamic>>[],
+      'dailyHrSamples': <Map<String, dynamic>>[],
+      'completedContainers': <String>[],
+      'enableSkipped': false,
+    });
+    await activityFuture;
+    expect(ready.syncInFlight, isFalse);
   });
 }
 

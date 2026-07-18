@@ -166,6 +166,8 @@ class HuaweiBtPlugin(
                         ?: (System.currentTimeMillis() / 1000L - 14L * 86400L)
                     val endUnix = (call.argument<Number>("endUnix")?.toLong())
                         ?: (System.currentTimeMillis() / 1000L)
+                    val skipTruSleepSoft = call.argument<Boolean>("skipTruSleepSoft") ?: false
+                    val skipAutoHrSoft = call.argument<Boolean>("skipAutoHrSoft") ?: false
                     if (!syncLock.tryAcquire()) {
                         result.success(
                             mapOf(
@@ -191,7 +193,12 @@ class HuaweiBtPlugin(
                                     "enableSkipped" to false,
                                 )
                             } else {
-                                session?.syncActivity(startUnix, endUnix)
+                                session?.syncActivity(
+                                    startUnix,
+                                    endUnix,
+                                    skipTruSleepSoft = skipTruSleepSoft,
+                                    skipAutoHrSoft = skipAutoHrSoft,
+                                )
                                     ?: mapOf(
                                         "status" to "error",
                                         "message" to "No session",
@@ -210,6 +217,50 @@ class HuaweiBtPlugin(
                                 "dailyHrSamples" to emptyList<Map<String, Any?>>(),
                                 "completedContainers" to emptyList<String>(),
                                 "enableSkipped" to false,
+                            )
+                        } finally {
+                            syncLock.release()
+                        }
+                        activity.runOnUiThread { result.success(payload) }
+                    }
+                }
+                "enableAutoTracking" -> {
+                    if (!syncLock.tryAcquire()) {
+                        result.success(
+                            mapOf(
+                                "status" to "busy",
+                                "message" to "Another Sync is already in progress",
+                                "overall" to "none_armed",
+                                "features" to emptyList<Map<String, Any?>>(),
+                            ),
+                        )
+                        return
+                    }
+                    sessionIo.execute {
+                        val payload = try {
+                            if (transport?.isConnected() != true) {
+                                mapOf(
+                                    "status" to "not_ready",
+                                    "message" to "Not connected",
+                                    "overall" to "none_armed",
+                                    "features" to emptyList<Map<String, Any?>>(),
+                                )
+                            } else {
+                                session?.enableAutoTracking()
+                                    ?: mapOf(
+                                        "status" to "error",
+                                        "message" to "No session",
+                                        "overall" to "none_armed",
+                                        "features" to emptyList<Map<String, Any?>>(),
+                                    )
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("FOS_HUAWEI", "enableAutoTracking error", e)
+                            mapOf(
+                                "status" to "error",
+                                "message" to (e.message ?: "enable failed"),
+                                "overall" to "none_armed",
+                                "features" to emptyList<Map<String, Any?>>(),
                             )
                         } finally {
                             syncLock.release()

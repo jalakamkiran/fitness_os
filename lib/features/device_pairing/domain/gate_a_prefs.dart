@@ -14,4 +14,6 @@ abstract final class GateAPrefs {
   static const sleepSessionsJson = 'sleep_sessions_json';
   /// JSON list of daily HR day summaries (min/avg/max/count).
   static const dailyHrJson = 'daily_hr_json';
+  /// Last explicit Enable auto-tracking result (outcomes-only allowlist).
+  static const lastAutoTrackingEnableJson = 'last_auto_tracking_enable_json';
 }

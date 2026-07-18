@@ -19,6 +19,7 @@ class HuaweiFitnessDataSync(
         timeoutMs: Long,
     ) -> HuaweiFraming.Frame?,
     private val fetchBattery: (() -> Unit)? = null,
+    private val isConnected: () -> Boolean = { true },
 ) {
     companion object {
         private const val TAG = "FOS_HUAWEI"
@@ -30,11 +31,21 @@ class HuaweiFitnessDataSync(
         const val CMD_SLEEP_DATA = 0x0D
         const val CMD_TRUSLEEP_ENABLE = 0x16
         const val CMD_AUTO_HR_ENABLE = 0x17
+        const val CMD_AUTO_SPO2_ENABLE = 0x24
         private const val TIMEOUT_MS = 20_000L
+        private const val ENABLE_TIMEOUT_MS = 8_000L
         /** Bitmap bit for interval HR in step/activity samples (wire-spec). */
         const val BITMAP_HR = 0x40
         /** Drop sub-15m fragments (paging noise / empty tails). */
         private const val MIN_SESSION_SEC = 15 * 60L
+
+        private data class FeatureEnable(val id: String, val cmd: Int)
+
+        private val AUTO_TRACK_ENABLES = listOf(
+            FeatureEnable("trusleep", CMD_TRUSLEEP_ENABLE),
+            FeatureEnable("auto_hr", CMD_AUTO_HR_ENABLE),
+            FeatureEnable("auto_spo2", CMD_AUTO_SPO2_ENABLE),
+        )
 
         fun u8(value: ByteArray, offset: Int = 0): Int {
             if (value.size <= offset) return 0
@@ -76,9 +87,74 @@ class HuaweiFitnessDataSync(
     }
 
     /**
+     * Explicit auto-tracking enable batch (TruSleep / auto-HR / auto-SpO2).
+     * Returns overall + features only — never sleep/HR series.
+     *
+     * @param supportedCmds when non-null, cmds absent from the set are `skipped` without send
+     */
+    fun enableAutoTracking(supportedCmds: Set<Int>? = null): Map<String, Any?> {
+        val features = ArrayList<Map<String, Any?>>()
+        var stop = false
+        for (feature in AUTO_TRACK_ENABLES) {
+            if (stop) {
+                features.add(featureResult(feature.id, feature.cmd, "failed", null))
+                continue
+            }
+            if (supportedCmds != null && feature.cmd !in supportedCmds) {
+                Log.i(TAG, "enable-auto 0x${feature.cmd.toString(16)} skipped (unsupported)")
+                features.add(featureResult(feature.id, feature.cmd, "skipped", null))
+                continue
+            }
+            if (!isConnected()) {
+                Log.i(TAG, "enable-auto disconnect before 0x${feature.cmd.toString(16)}")
+                features.add(featureResult(feature.id, feature.cmd, "failed", null))
+                stop = true
+                continue
+            }
+            val frame = exchangeEncrypted(
+                HuaweiFraming.Frame(
+                    SVC,
+                    feature.cmd,
+                    listOf(HuaweiFraming.Tlv(0x01, byteArrayOf(0x01))),
+                ),
+                SVC,
+                feature.cmd,
+                ENABLE_TIMEOUT_MS,
+            )
+            val (outcome, resultCode) = mapHonestEnableOutcome(frame)
+            Log.i(
+                TAG,
+                "enable-auto 0x${feature.cmd.toString(16)} outcome=$outcome" +
+                    (resultCode?.let { " resultCode=$it" } ?: ""),
+            )
+            features.add(featureResult(feature.id, feature.cmd, outcome, resultCode))
+            if (frame == null && !isConnected()) {
+                // In-flight timed out because transport died — remainder failed.
+                stop = true
+            }
+        }
+        val armed = features.count { it["outcome"] == "armed" }
+        val overall = when {
+            armed == features.size -> "all_armed"
+            armed == 0 -> "none_armed"
+            else -> "partial"
+        }
+        return mapOf(
+            "status" to "ok",
+            "overall" to overall,
+            "features" to features,
+        )
+    }
+
+    /**
      * @return status + sleepSessions + dailyHrSamples + completedContainers + flags
      */
-    fun sync(startUnix: Long, endUnix: Long): Map<String, Any?> {
+    fun sync(
+        startUnix: Long,
+        endUnix: Long,
+        skipTruSleepSoft: Boolean = false,
+        skipAutoHrSoft: Boolean = false,
+    ): Map<String, Any?> {
         val start = startUnix.coerceAtLeast(0)
         val end = endUnix.coerceAtLeast(start)
         Log.i(TAG, "activity-sync start window=[$start,$end]")
@@ -89,16 +165,20 @@ class HuaweiFitnessDataSync(
         var enableSkipped = false
         var unknownTlvCount = 0
 
-        // Soft enables — distinct from durable empty.
-        when (requestEnable(CMD_TRUSLEEP_ENABLE)) {
-            EnableResult.Skipped -> enableSkipped = true
-            EnableResult.Failed -> enableSkipped = true
-            EnableResult.Ok -> Unit
+        // Soft enables — distinct from durable empty. Skip when explicit Enable already armed.
+        if (!skipTruSleepSoft) {
+            when (requestEnable(CMD_TRUSLEEP_ENABLE)) {
+                EnableResult.Skipped -> enableSkipped = true
+                EnableResult.Failed -> enableSkipped = true
+                EnableResult.Ok -> Unit
+            }
         }
-        when (requestEnable(CMD_AUTO_HR_ENABLE)) {
-            EnableResult.Skipped -> enableSkipped = true
-            EnableResult.Failed -> enableSkipped = true
-            EnableResult.Ok -> Unit
+        if (!skipAutoHrSoft) {
+            when (requestEnable(CMD_AUTO_HR_ENABLE)) {
+                EnableResult.Skipped -> enableSkipped = true
+                EnableResult.Failed -> enableSkipped = true
+                EnableResult.Ok -> Unit
+            }
         }
 
         // sleepCount → sleepData
@@ -161,11 +241,17 @@ class HuaweiFitnessDataSync(
             "activity-sync sleepSessions=${sleepSessions.size} " +
                 "stages=${allSleepStages.size} pages=${sleepRefs.size}",
         )
+        val tz = java.util.TimeZone.getDefault()
+        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm z", java.util.Locale.US)
+        fmt.timeZone = tz
         for (s in aggregated) {
+            val beginLabel = fmt.format(java.util.Date(s.beginUnix * 1000L))
+            val endLabel = fmt.format(java.util.Date(s.endUnix * 1000L))
             Log.i(
                 TAG,
                 "activity-sync sleep begin=${s.beginUnix} end=${s.endUnix} " +
-                    "durMin=${(s.endUnix - s.beginUnix) / 60}",
+                    "durMin=${(s.endUnix - s.beginUnix) / 60} " +
+                    "local=$beginLabel → $endLabel",
             )
         }
 
@@ -212,16 +298,21 @@ class HuaweiFitnessDataSync(
             }
             val parsed = parseStepDataHr(dataFrame)
             unknownTlvCount += parsed.unknownTags
-            if (parsed.hrBitmapPresent) {
+            for (s in parsed.samples) {
+                hrSamples.add(s.toMap())
+            }
+            // Only mark completed when we extracted usable BPM (bitmap alone can be noise).
+            if (parsed.samples.isNotEmpty()) {
                 hrContainerCompleted = true
-                for (s in parsed.samples) {
-                    hrSamples.add(s.toMap())
-                }
             }
         }
         if (hrContainerCompleted) {
             completed.add("daily_hr")
         }
+        Log.i(
+            TAG,
+            "activity-sync hrSamples=${hrSamples.size} hrCompleted=$hrContainerCompleted",
+        )
         // Absent HR bitmap ⇒ HR not completed — not partial_batch.
 
         // Opaque idle handoff — no Flutter persistence.
@@ -269,13 +360,43 @@ class HuaweiFitnessDataSync(
             ),
             SVC,
             cmd,
-            8_000L,
+            ENABLE_TIMEOUT_MS,
         )
         if (frame == null) {
             Log.i(TAG, "activity-sync enable 0x${cmd.toString(16)} skipped (no response)")
             return EnableResult.Skipped
         }
         return EnableResult.Ok
+    }
+
+    /**
+     * Strict RESULT_OK (`t=7f` / 100000) → armed. Any other non-null frame → failed.
+     * Null → timed_out. Never treat "any response" as armed.
+     */
+    private fun mapHonestEnableOutcome(frame: HuaweiFraming.Frame?): Pair<String, Int?> {
+        if (frame == null) return "timed_out" to null
+        val resultTlv = frame.tlvs.firstOrNull { it.tag == 0x7F }
+        if (resultTlv != null && resultTlv.value.size >= 4) {
+            val code = ByteBuffer.wrap(resultTlv.value).int
+            return if (code == HuaweiPacketCrypto.RESULT_OK) {
+                "armed" to code
+            } else {
+                "failed" to code
+            }
+        }
+        return "failed" to null
+    }
+
+    private fun featureResult(
+        id: String,
+        cmd: Int,
+        outcome: String,
+        resultCode: Int?,
+    ): Map<String, Any?> = buildMap {
+        put("id", id)
+        put("cmd", cmd)
+        put("outcome", outcome)
+        if (resultCode != null) put("resultCode", resultCode)
     }
 
     private fun buildWindowRequest(cmd: Int, startUnix: Long, endUnix: Long): HuaweiFraming.Frame {

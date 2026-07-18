@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:fitness_os/core/huawei/fos_huawei_log.dart';
 import 'package:fitness_os/core/huawei/huawei_bt_channel.dart';
@@ -28,6 +29,10 @@ class HuaweiLink {
   bool get pairInFlight => _pairInFlight;
   /// Flutter mirror of native Sync single-flight (native remains SoT).
   bool get syncInFlight => _syncInFlight;
+
+  /// Encrypted-session radio bar Sync already uses (never BT-up alone).
+  bool get sessionReady =>
+      state == LinkState.connected || state == LinkState.gateAIncomplete;
 
   /// Default activity Sync window: last 14 local days.
   static const activityWindowDays = 14;
@@ -294,6 +299,8 @@ class HuaweiLink {
   Future<ActivitySyncResult> syncActivity({
     int? startUnix,
     int? endUnix,
+    bool skipTruSleepSoft = false,
+    bool skipAutoHrSoft = false,
   }) async {
     if (_syncInFlight) {
       return const ActivitySyncResult(
@@ -301,8 +308,7 @@ class HuaweiLink {
         message: 'Another Sync is already in progress',
       );
     }
-    if (state != LinkState.connected &&
-        state != LinkState.gateAIncomplete) {
+    if (!sessionReady) {
       FosHuaweiLog.w(
         'syncActivity rejected — linkState=$state',
         op: 'sync',
@@ -324,6 +330,8 @@ class HuaweiLink {
       final map = await _channel.syncActivity(
         startUnix: start,
         endUnix: end,
+        skipTruSleepSoft: skipTruSleepSoft,
+        skipAutoHrSoft: skipAutoHrSoft,
       );
       return ActivitySyncResult.fromMap(map);
     } on PlatformException catch (e) {
@@ -331,6 +339,43 @@ class HuaweiLink {
       return ActivitySyncResult(
         status: ActivitySyncStatus.error,
         message: e.message ?? 'sync failed',
+      );
+    } finally {
+      _syncInFlight = false;
+    }
+  }
+
+  /// Explicit auto-tracking enable. Shares Sync single-flight lock.
+  Future<AutoTrackingEnableResult> enableAutoTracking() async {
+    if (_syncInFlight) {
+      return const AutoTrackingEnableResult(
+        status: AutoTrackingEnableStatus.busy,
+        message: 'Another Sync is already in progress',
+        overall: AutoTrackingOverall.noneArmed,
+      );
+    }
+    if (!sessionReady) {
+      FosHuaweiLog.w(
+        'enableAutoTracking rejected — linkState=$state',
+        op: 'enable',
+      );
+      return const AutoTrackingEnableResult(
+        status: AutoTrackingEnableStatus.notReady,
+        message: 'Connect and authenticate first',
+        overall: AutoTrackingOverall.noneArmed,
+      );
+    }
+    _syncInFlight = true;
+    FosHuaweiLog.i('enableAutoTracking start', op: 'enable');
+    try {
+      final map = await _channel.enableAutoTracking();
+      return AutoTrackingEnableResult.fromMap(map);
+    } on PlatformException catch (e) {
+      FosHuaweiLog.e('enableAutoTracking failed', error: e, op: 'enable');
+      return AutoTrackingEnableResult(
+        status: AutoTrackingEnableStatus.error,
+        message: e.message ?? 'enable failed',
+        overall: AutoTrackingOverall.noneArmed,
       );
     } finally {
       _syncInFlight = false;
@@ -582,6 +627,159 @@ class DailyHrDaySummary {
         'maxBpm': maxBpm,
         'sampleCount': sampleCount,
       };
+}
+
+enum AutoTrackingEnableStatus { ok, busy, notReady, error }
+
+enum AutoTrackingOverall { allArmed, partial, noneArmed }
+
+class AutoTrackingFeatureOutcome {
+  const AutoTrackingFeatureOutcome({
+    required this.id,
+    required this.outcome,
+    this.resultCode,
+  });
+
+  final String id;
+  /// armed | skipped | failed | timed_out
+  final String outcome;
+  final int? resultCode;
+
+  factory AutoTrackingFeatureOutcome.fromMap(Map<String, dynamic> map) {
+    return AutoTrackingFeatureOutcome(
+      id: map['id'] as String? ?? '',
+      outcome: map['outcome'] as String? ?? 'failed',
+      resultCode: (map['resultCode'] as num?)?.toInt(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'outcome': outcome,
+        if (resultCode != null) 'resultCode': resultCode,
+      };
+}
+
+class AutoTrackingEnableResult {
+  const AutoTrackingEnableResult({
+    required this.status,
+    required this.overall,
+    this.message,
+    this.features = const [],
+    this.completedAt,
+  });
+
+  final AutoTrackingEnableStatus status;
+  final AutoTrackingOverall overall;
+  final String? message;
+  final List<AutoTrackingFeatureOutcome> features;
+  final int? completedAt;
+
+  String? outcomeFor(String id) {
+    for (final f in features) {
+      if (f.id == id) return f.outcome;
+    }
+    return null;
+  }
+
+  bool get hasArmedAutoHr => outcomeFor('auto_hr') == 'armed';
+
+  factory AutoTrackingEnableResult.fromMap(Map<String, dynamic> map) {
+    final statusStr = map['status'] as String? ?? 'error';
+    final status = switch (statusStr) {
+      'ok' => AutoTrackingEnableStatus.ok,
+      'busy' => AutoTrackingEnableStatus.busy,
+      'not_ready' => AutoTrackingEnableStatus.notReady,
+      _ => AutoTrackingEnableStatus.error,
+    };
+    final overallStr = map['overall'] as String? ?? 'none_armed';
+    final overall = switch (overallStr) {
+      'all_armed' => AutoTrackingOverall.allArmed,
+      'partial' => AutoTrackingOverall.partial,
+      _ => AutoTrackingOverall.noneArmed,
+    };
+    final features = <AutoTrackingFeatureOutcome>[];
+    final raw = map['features'];
+    if (raw is List) {
+      for (final item in raw) {
+        if (item is Map) {
+          features.add(
+            AutoTrackingFeatureOutcome.fromMap(
+              Map<String, dynamic>.from(item),
+            ),
+          );
+        }
+      }
+    }
+    return AutoTrackingEnableResult(
+      status: status,
+      overall: overall,
+      message: map['message'] as String?,
+      features: features,
+      completedAt: (map['completedAt'] as num?)?.toInt(),
+    );
+  }
+
+  Map<String, dynamic> toPrefsJson() => {
+        'overall': switch (overall) {
+          AutoTrackingOverall.allArmed => 'all_armed',
+          AutoTrackingOverall.partial => 'partial',
+          AutoTrackingOverall.noneArmed => 'none_armed',
+        },
+        'features': features.map((f) => f.toJson()).toList(),
+        if (completedAt != null) 'completedAt': completedAt,
+      };
+
+  /// Fail-closed allowlisted decode for prefs SoT.
+  static AutoTrackingEnableResult? tryParsePrefs(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final map = Map<String, dynamic>.from(decoded);
+      // Reject series-shaped / bulky payloads.
+      for (final key in map.keys) {
+        if (key != 'overall' &&
+            key != 'features' &&
+            key != 'completedAt') {
+          return null;
+        }
+      }
+      final featuresRaw = map['features'];
+      if (featuresRaw is! List) return null;
+      final features = <AutoTrackingFeatureOutcome>[];
+      for (final item in featuresRaw) {
+        if (item is! Map) return null;
+        final f = Map<String, dynamic>.from(item);
+        final id = f['id'] as String?;
+        final outcome = f['outcome'] as String?;
+        if (id == null || outcome == null) return null;
+        if (f.keys.any((k) => k != 'id' && k != 'outcome' && k != 'resultCode')) {
+          return null;
+        }
+        features.add(
+          AutoTrackingFeatureOutcome(
+            id: id,
+            outcome: outcome,
+            resultCode: (f['resultCode'] as num?)?.toInt(),
+          ),
+        );
+      }
+      final overallStr = map['overall'] as String? ?? 'none_armed';
+      return AutoTrackingEnableResult(
+        status: AutoTrackingEnableStatus.ok,
+        overall: switch (overallStr) {
+          'all_armed' => AutoTrackingOverall.allArmed,
+          'partial' => AutoTrackingOverall.partial,
+          _ => AutoTrackingOverall.noneArmed,
+        },
+        features: features,
+        completedAt: (map['completedAt'] as num?)?.toInt(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 class ActivitySyncResult {
