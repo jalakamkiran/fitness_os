@@ -10,6 +10,16 @@ Fitness OS–owned clean-room wire-spec for Classic BR companion framing and Gat
 
 **Rules:** No AGPL source paste. No secrets in this doc. GB class/method names are not implementation guides — GB is a behavioral oracle only. Raw HCI snoops stay off-repo; see `docs/experiments/2026-07-17-hci-capture-notes.md`.
 
+**Related wire-specs (companion emission honesty):**
+
+| Doc | Role |
+|-----|------|
+| `docs/catalogs/gt5-a07-full-metrics.md` | Scored catalog (dual-axis) |
+| `docs/wire-specs/huawei-br-gt5-gate-b-enrichment.md` | Workout Data / Pace / Swim / GPS envelopes |
+| `docs/wire-specs/huawei-br-gt5-fitness-data.md` | FitnessData `0x07` + battery honesty |
+| `docs/wire-specs/huawei-br-gt5-sleep-files.md` | TruSleep FileDownload (deferred stub) |
+| `docs/experiments/gt5-a07-full-metrics-probe-matrix.md` | Probe checklist + captures |
+
 ---
 
 ## Identifiers

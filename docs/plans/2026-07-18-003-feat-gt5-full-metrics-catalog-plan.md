@@ -1,7 +1,7 @@
 ---
 title: "feat: GT5-A07 full metrics catalog (companion emission honesty)"
 type: feat
-status: active
+status: completed
 date: 2026-07-18
 deepened: 2026-07-18
 supersedes: docs/plans/2026-07-18-002-feat-gt5-workout-data-catalog-plan.md
