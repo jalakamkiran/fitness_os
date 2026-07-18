@@ -140,6 +140,30 @@ void main() {
       expect(await repo.loadSleepSessions(), hasLength(1));
     });
 
+    test('overlapping re-sync replaces fragmented prior sessions', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.sleepSessionsJson:
+            '[{"beginUnix":100,"endUnix":200},{"beginUnix":180,"endUnix":300}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const ActivitySyncResult(
+          status: ActivitySyncStatus.ok,
+          sleepSessions: [
+            SleepSessionSummary(beginUnix: 100, endUnix: 400),
+          ],
+          completedContainers: {'sleep'},
+        ),
+      );
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+      await repo.syncFromWatch();
+      final sleep = await repo.loadSleepSessions();
+      expect(sleep, hasLength(1));
+      expect(sleep.first.beginUnix, 100);
+      expect(sleep.first.endUnix, 400);
+    });
+
     test('corrupt sleep JSON is fail-closed', () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,

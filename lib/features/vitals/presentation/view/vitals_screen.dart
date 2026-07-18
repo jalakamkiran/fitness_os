@@ -139,9 +139,9 @@ class _SleepRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      title: const Text('Sleep session'),
+      title: Text(_formatDuration(session.durationSec)),
       subtitle: Text(
-        '${_formatWhen(session.beginUnix)} · ${_formatDuration(session.durationSec)}',
+        _formatRange(session.beginUnix, session.endUnix),
       ),
     );
   }
@@ -167,16 +167,24 @@ class _HrSummary extends StatelessWidget {
   }
 }
 
-String _formatWhen(int unixSec) {
-  final dt = DateTime.fromMillisecondsSinceEpoch(unixSec * 1000);
+String _formatRange(int beginUnix, int endUnix) {
+  final begin = DateTime.fromMillisecondsSinceEpoch(beginUnix * 1000);
+  final end = DateTime.fromMillisecondsSinceEpoch(endUnix * 1000);
   String two(int n) => n.toString().padLeft(2, '0');
-  return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
-      '${two(dt.hour)}:${two(dt.minute)}';
+  final sameDay = begin.year == end.year &&
+      begin.month == end.month &&
+      begin.day == end.day;
+  final day =
+      '${begin.year}-${two(begin.month)}-${two(begin.day)}';
+  final start = '${two(begin.hour)}:${two(begin.minute)}';
+  final stop = '${two(end.hour)}:${two(end.minute)}';
+  if (sameDay) return '$day · $start – $stop';
+  return '$day $start – ${end.year}-${two(end.month)}-${two(end.day)} $stop';
 }
 
 String _formatDuration(int sec) {
   final h = sec ~/ 3600;
   final m = (sec % 3600) ~/ 60;
-  if (h > 0) return '${h}h ${m}m';
-  return '${m}m';
+  if (h > 0) return '${h}h ${m}m sleep';
+  return '${m}m sleep';
 }

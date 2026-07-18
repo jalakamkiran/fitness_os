@@ -46,6 +46,33 @@ class HuaweiFitnessDataSyncTest {
     }
 
     @Test
+    fun sync_mergesStagePagesIntoOneContinuousNap() {
+        // One ~1h54m nap paged across three 0x0D indices (observed GT5 shape).
+        val begin = 1_700_000_000L
+        val queue = ArrayDeque(
+            listOf(
+                null,
+                null,
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 3),
+                sleepDataFrame(1, listOf(Stage(begin, 30, 1), Stage(begin + 30 * 60, 20, 1))),
+                sleepDataFrame(2, listOf(Stage(begin + 55 * 60, 40, 3))),
+                sleepDataFrame(3, listOf(Stage(begin + 100 * 60, 14, 1))),
+                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 0),
+                null,
+            ),
+        )
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
+        )
+        val result = sync.sync(begin - 100, begin + 20_000)
+        @Suppress("UNCHECKED_CAST")
+        val sleeps = result["sleepSessions"] as List<Map<String, Any?>>
+        assertEquals(1, sleeps.size)
+        assertEquals(begin, sleeps[0]["beginUnix"])
+        assertEquals(begin + 114 * 60L, sleeps[0]["endUnix"])
+    }
+
+    @Test
     fun parseSleepData_zeroTimestampStageSkipped() {
         val sync = HuaweiFitnessDataSync(exchangeEncrypted = { _, _, _, _ -> null })
         val frame = sleepDataFrame(

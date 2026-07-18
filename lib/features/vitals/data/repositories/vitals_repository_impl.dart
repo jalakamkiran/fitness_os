@@ -185,14 +185,20 @@ class VitalsRepositoryImpl implements VitalsRepository {
 
   Future<void> _mergeSleep(List<SleepSessionSummary> incoming) async {
     if (!_gateStillPassed()) return;
+    final valid = incoming
+        .where((s) => s.beginUnix > 0 && s.endUnix > s.beginUnix)
+        .toList();
+    if (valid.isEmpty) return;
+
     final existing = await _safeLoadSleep();
+    // Re-sync replaces overlapping fragments (old per-page splits, etc.).
+    final kept = existing.where((e) {
+      return !valid.any((i) => _sleepOverlaps(e, i));
+    }).toList();
     final byKey = <String, SleepSessionSummary>{
-      for (final s in existing) _sleepKey(s): s,
+      for (final s in kept) _sleepKey(s): s,
+      for (final s in valid) _sleepKey(s): s,
     };
-    for (final s in incoming) {
-      if (s.beginUnix <= 0 || s.endUnix <= s.beginUnix) continue;
-      byKey[_sleepKey(s)] = s;
-    }
     final merged = byKey.values.toList()
       ..sort((a, b) => b.beginUnix.compareTo(a.beginUnix));
     if (!_gateStillPassed()) return;
@@ -204,6 +210,10 @@ class VitalsRepositoryImpl implements VitalsRepository {
 
   String _sleepKey(SleepSessionSummary s) =>
       '${s.beginUnix}:${s.endUnix}:${s.wireType ?? ''}';
+
+  bool _sleepOverlaps(SleepSessionSummary a, SleepSessionSummary b) {
+    return a.beginUnix < b.endUnix && b.beginUnix < a.endUnix;
+  }
 
   Future<void> _mergeDailyHr(List<DailyHrSample> samples) async {
     if (!_gateStillPassed()) return;

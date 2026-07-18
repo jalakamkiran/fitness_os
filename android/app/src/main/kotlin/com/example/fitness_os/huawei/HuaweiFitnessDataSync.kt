@@ -33,6 +33,8 @@ class HuaweiFitnessDataSync(
         private const val TIMEOUT_MS = 20_000L
         /** Bitmap bit for interval HR in step/activity samples (wire-spec). */
         const val BITMAP_HR = 0x40
+        /** Drop sub-15m fragments (paging noise / empty tails). */
+        private const val MIN_SESSION_SEC = 15 * 60L
 
         fun u8(value: ByteArray, offset: Int = 0): Int {
             if (value.size <= offset) return 0
@@ -120,6 +122,9 @@ class HuaweiFitnessDataSync(
         val sleepRefs = parseCountIndices(sleepCountFrame)
         Log.i(TAG, "activity-sync sleepCount=${sleepRefs.size}")
 
+        // 0x0C count pages stage batches across 0x0D indices — collect ALL stages,
+        // then aggregate once (per-index sessions incorrectly split one nap).
+        val allSleepStages = ArrayList<SleepStage>()
         for (index in sleepRefs) {
             val dataFrame = exchangeEncrypted(
                 buildIndexRequest(CMD_SLEEP_DATA, index),
@@ -129,6 +134,9 @@ class HuaweiFitnessDataSync(
             )
             if (dataFrame == null) {
                 Log.w(TAG, "activity-sync sleepData timeout index=$index")
+                val partial = aggregateSleepSessions(allSleepStages)
+                    .filter { it.endUnix - it.beginUnix >= MIN_SESSION_SEC }
+                for (s in partial) sleepSessions.add(s.toMap())
                 if (sleepSessions.isNotEmpty()) completed.add("sleep")
                 return resultMap(
                     status = "partial_batch",
@@ -139,18 +147,27 @@ class HuaweiFitnessDataSync(
                     enableSkipped = enableSkipped,
                 )
             }
-            val parsed = parseSleepData(dataFrame)
+            val parsed = parseSleepStages(dataFrame)
             unknownTlvCount += parsed.unknownTags
-            for (s in parsed.sessions) {
-                sleepSessions.add(s.toMap())
-            }
+            allSleepStages.addAll(parsed.stages)
         }
+        val aggregated = aggregateSleepSessions(allSleepStages)
+            .filter { it.endUnix - it.beginUnix >= MIN_SESSION_SEC }
+        for (s in aggregated) sleepSessions.add(s.toMap())
         // Empty sleep container still "completed" so Flutter can keep prior.
         completed.add("sleep")
         Log.i(
             TAG,
-            "activity-sync sleepSessions=${sleepSessions.size} stageContainers=${sleepRefs.size}",
+            "activity-sync sleepSessions=${sleepSessions.size} " +
+                "stages=${allSleepStages.size} pages=${sleepRefs.size}",
         )
+        for (s in aggregated) {
+            Log.i(
+                TAG,
+                "activity-sync sleep begin=${s.beginUnix} end=${s.endUnix} " +
+                    "durMin=${(s.endUnix - s.beginUnix) / 60}",
+            )
+        }
 
         // stepCount → stepData (HR extract only; drop steps/SpO2)
         val stepCountFrame = exchangeEncrypted(
@@ -304,17 +321,19 @@ class HuaweiFitnessDataSync(
         val wireType: Int?,
     )
 
+    data class SleepStageParse(val stages: List<SleepStage>, val unknownTags: Int)
+
     data class SleepParse(val sessions: List<SleepSession>, val unknownTags: Int)
 
     /**
      * Observed GT5-A07 sleep data (`capture:POC-2026-07-18-activity-sync-sleep`):
      * 0x81 → 0x02 index u16, repeated 0x83 stages:
      *   0x04 type u8, 0x06 meta u8, 0x05 = timestamp_be_u32 + duration_be_u16 (minutes)
-     * Stages in one sleepData response aggregate to one session (gap-split > 45m).
+     * Indices from sleepCount are **stage pages** for the window — merge across pages.
      */
-    fun parseSleepData(frame: HuaweiFraming.Frame): SleepParse {
+    fun parseSleepStages(frame: HuaweiFraming.Frame): SleepStageParse {
         val container = frame.tlvs.firstOrNull { it.tag == 0x81 }?.value
-            ?: return SleepParse(emptyList(), 0)
+            ?: return SleepStageParse(emptyList(), 0)
         val tlvs = HuaweiFraming.decodeTlvs(container)
         val stages = ArrayList<SleepStage>()
         var unknown = 0
@@ -328,11 +347,16 @@ class HuaweiFitnessDataSync(
                         unknown++
                     }
                 }
-                0x02, 0x01 -> Unit // index / meta
+                0x02, 0x01 -> Unit // page index / meta
                 else -> unknown++
             }
         }
-        return SleepParse(aggregateSleepSessions(stages), unknown)
+        return SleepStageParse(stages, unknown)
+    }
+
+    fun parseSleepData(frame: HuaweiFraming.Frame): SleepParse {
+        val parsed = parseSleepStages(frame)
+        return SleepParse(aggregateSleepSessions(parsed.stages), parsed.unknownTags)
     }
 
     fun parseSleepStage(value: ByteArray): SleepStage? {

@@ -97,7 +97,7 @@ When owner completes budget with empty HR: set observation `absent-in-observed-s
 | Count `0x0C` | Nested `0x81` → `0x02` u16 count; companion requests indices `1..N` via `0x0D` |
 | Data `0x0D` | Nested `0x81` → `0x02` index; repeated **`0x83` stages** (not begin/end pairs) |
 | Stage `0x83` | `0x04` type u8; `0x06` meta u8; `0x05` = timestamp_be_u32 + duration_be_u16 (**minutes**) |
-| Session merge | Aggregate stages in one `0x0D` response; gap **> 45 min** starts a new session |
+| Session merge | **Collect stages across all `0x0D` pages**, then aggregate; gap **> 45 min** starts a new session. Indices are stage pages, not one-row-per-index product sleeps. Drop sessions **&lt; 15 min**. |
 | Observation | `present` (overnight + nap-length clusters observed) |
 | Catalog score | Promote S4 toward **4** after owner confirms UI vs watch |
 | Enable `0x16` | Response `t=7f` RESULT_OK (`100000`) observed |
