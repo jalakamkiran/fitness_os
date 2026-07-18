@@ -9,19 +9,24 @@ import 'package:fitness_os/features/device_pairing/presentation/bloc/device_pair
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_route.dart';
 
 class DevicePairingScreen extends StatelessWidget {
-  const DevicePairingScreen({super.key});
+  const DevicePairingScreen({super.key, this.embedded = false});
+
+  /// When true (Home tab), shell owns bottom chrome — no second nav bar.
+  final bool embedded;
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) => sl<DevicePairingBloc>()..add(const DevicePairingStarted()),
-      child: const _DevicePairingView(),
+      child: _DevicePairingView(embedded: embedded),
     );
   }
 }
 
 class _DevicePairingView extends StatefulWidget {
-  const _DevicePairingView();
+  const _DevicePairingView({required this.embedded});
+
+  final bool embedded;
 
   @override
   State<_DevicePairingView> createState() => _DevicePairingViewState();
@@ -41,6 +46,8 @@ class _DevicePairingViewState extends State<_DevicePairingView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Nested under AppShell when embedded — avoid competing for primary AppBar slot.
+      primary: !widget.embedded,
       appBar: AppBar(
         title: const Text('GT5 pairing'),
         actions: [

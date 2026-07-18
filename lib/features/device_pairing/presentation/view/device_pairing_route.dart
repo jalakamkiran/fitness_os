@@ -6,11 +6,7 @@ class DevicePairingRoute {
   static const String path = '/device_pairing';
 
   static void register() {
-    // Home is pairing for Gate A cut.
-    AppRouter.register(
-      '/',
-      (context) => const DevicePairingScreen(),
-    );
+    // Shell owns `/`. Keep an explicit pairing route for deep links / tests.
     AppRouter.register(
       path,
       (context) => const DevicePairingScreen(),
