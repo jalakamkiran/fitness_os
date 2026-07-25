@@ -1,4 +1,5 @@
 import 'package:get_it/get_it.dart';
+import 'package:fitness_os/core/huawei/one_shot_auto_sync_di.dart';
 import 'package:fitness_os/features/device_pairing/data/di/device_pairing_di.dart';
 import 'package:fitness_os/features/vitals/data/di/vitals_di.dart';
 import 'package:fitness_os/features/workout_history/data/di/workout_history_di.dart';
@@ -12,6 +13,7 @@ Future<void> initDependencies() async {
   await _initDevicePairing();
   await _initWorkoutHistory();
   await _initVitals();
+  registerOneShotAutoSync(sl);
   // [features] — auto-managed by create_feature.sh, do not edit manually
 }
 
