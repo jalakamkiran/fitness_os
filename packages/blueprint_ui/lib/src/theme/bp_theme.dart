@@ -1,53 +1,87 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-/// Central theme configuration for Blueprint UI
+import '../tokens/colors.dart';
+import '../tokens/typography.dart';
+
+/// Central theme configuration for Blueprint UI / Fathom.
+///
+/// Use with [MaterialApp]:
+/// ```dart
+/// MaterialApp(
+///   theme: BpTheme.light(),
+///   darkTheme: BpTheme.dark(),
+/// )
+/// ```
 class BpTheme {
   BpTheme._();
 
-  /// Light theme
-  static ThemeData light() {
+  /// Light pool-night theme (`tokens.css` `:root` / light).
+  static ThemeData light() => _build(FathomColors.light, Brightness.light);
+
+  /// Dark pool-night theme (`tokens.css` `html[data-theme="dark"]`).
+  static ThemeData dark() => _build(FathomColors.dark, Brightness.dark);
+
+  static ThemeData _build(FathomColors colors, Brightness brightness) {
+    final textTheme = FathomTextStyles.textTheme(colors);
+    final colorScheme = colors.toColorScheme(brightness);
+
     return ThemeData(
       useMaterial3: true,
-
-      /// 🔹 Colors
-      colorScheme: const ColorScheme.light(
-        primary: Colors.black,
-        secondary: Colors.grey,
-        surface: Colors.white,
-      ),
-
-      /// 🔹 Scaffold
-      scaffoldBackgroundColor: Colors.white,
-
-      /// 🔹 Typography
-      textTheme: const TextTheme(
-        bodyLarge: TextStyle(fontSize: 16),
-        bodyMedium: TextStyle(fontSize: 14),
-        titleLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-      ),
-
-      /// 🔹 AppBar
-      appBarTheme: const AppBarTheme(
+      brightness: brightness,
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: colors.bg,
+      canvasColor: colors.bg,
+      textTheme: textTheme,
+      primaryTextTheme: textTheme,
+      dividerColor: colors.line,
+      extensions: <ThemeExtension<dynamic>>[colors],
+      appBarTheme: AppBarTheme(
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        scrolledUnderElevation: 0,
+        backgroundColor: colors.bg,
+        foregroundColor: colors.ink,
+        surfaceTintColor: Colors.transparent,
+        systemOverlayStyle: brightness == Brightness.dark
+            ? SystemUiOverlayStyle.light
+            : SystemUiOverlayStyle.dark,
+        titleTextStyle: textTheme.titleMedium,
       ),
-    );
-  }
-
-  /// Dark theme (optional but ready)
-  static ThemeData dark() {
-    return ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.dark,
-
-      colorScheme: const ColorScheme.dark(
-        primary: Colors.white,
-        secondary: Colors.grey,
-        surface: Colors.black,
+      cardTheme: CardThemeData(
+        color: colors.bgElev,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: colors.line),
+        ),
       ),
-
-      scaffoldBackgroundColor: Colors.black,
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: colors.tabBg,
+        indicatorColor: colors.pool,
+        surfaceTintColor: Colors.transparent,
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return textTheme.labelSmall?.copyWith(
+            color: selected ? colors.accent : colors.inkDim,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          );
+        }),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return IconThemeData(
+            color: selected ? colors.accent : colors.inkDim,
+          );
+        }),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: colors.accent,
+        foregroundColor: colors.accentInk,
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: colors.accent,
+        linearTrackColor: colors.gaugeTrack,
+      ),
     );
   }
 }
