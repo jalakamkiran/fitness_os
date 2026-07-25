@@ -126,8 +126,8 @@ class HomeRepositoryImpl implements HomeRepository {
     String? takeawayTitle;
     String? takeawayBody;
     int? sessionNumber;
-    if (hasSwimTakeaway) {
-      final swim = latestSwim!;
+    if (hasSwimTakeaway && latestSwim != null) {
+      final swim = latestSwim;
       sessionNumber = swim.number;
       final km = swim.distanceM == null
           ? null

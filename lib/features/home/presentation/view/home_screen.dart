@@ -393,12 +393,12 @@ class _SyncCard extends StatelessWidget {
             label: 'Pair watch',
             onPressed: (ctx) => DevicePairingRoute.go(ctx),
           ),
-        HomePrecedence.pairedNeverSynced => _Cta(
+        HomePrecedence.pairedNeverSynced => const _Cta(
             key: 'home-cta-sync',
             label: 'Sync now',
             onPressed: _requestSync,
           ),
-        HomePrecedence.syncFailed => _Cta(
+        HomePrecedence.syncFailed => const _Cta(
             key: 'home-cta-retry',
             label: 'Retry sync',
             onPressed: _requestSync,
