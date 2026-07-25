@@ -157,20 +157,6 @@ class _SwimPanel extends StatelessWidget {
     final theme = Theme.of(context);
     final swim = workouts.where((w) => isSwimWorkout(w.type)).toList();
 
-    if (swim.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'No swim sessions yet.\n'
-            'Complete a pool swim on the watch, then Sync.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(color: colors.inkDim),
-          ),
-        ),
-      );
-    }
-
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
@@ -196,13 +182,25 @@ class _SwimPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        for (var i = 0; i < swim.length; i++) ...[
-          if (i > 0) const SizedBox(height: 10),
-          SwimSessionRow(
-            workout: swim[i],
-            onTap: () => WorkoutDetailRoute.go(context, swim[i]),
-          ),
-        ],
+        if (swim.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 8),
+            child: Text(
+              'No swim sessions yet.\n'
+              'Complete a pool swim on the watch, then Sync.',
+              textAlign: TextAlign.center,
+              style:
+                  theme.textTheme.bodyMedium?.copyWith(color: colors.inkDim),
+            ),
+          )
+        else
+          for (var i = 0; i < swim.length; i++) ...[
+            if (i > 0) const SizedBox(height: 10),
+            SwimSessionRow(
+              workout: swim[i],
+              onTap: () => WorkoutDetailRoute.go(context, swim[i]),
+            ),
+          ],
       ],
     );
   }

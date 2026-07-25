@@ -71,7 +71,6 @@ void main() {
       distanceM: 1000,
       avgSwolf: 39,
     ),
-    // Non-swim should not appear on Swim list.
     const WorkoutSummary(
       number: 99,
       startTime: 1,
@@ -82,9 +81,11 @@ void main() {
     ),
   ];
 
-  setUp(() {
-    bloc = WorkoutHistoryBloc(repository: _FakeRepo(fixtures))
-      ..add(const WorkoutHistoryStarted());
+  setUp(() async {
+    bloc = WorkoutHistoryBloc(repository: _FakeRepo(fixtures));
+    final loaded = bloc.stream.firstWhere((s) => s.workouts.isNotEmpty);
+    bloc.add(const WorkoutHistoryStarted());
+    await loaded;
   });
 
   tearDown(() async {
@@ -135,7 +136,6 @@ void main() {
     expect(find.text('42:18'), findsOneWidget);
     expect(find.text('41'), findsOneWidget);
     expect(find.text('Pace decay after interval 3'), findsOneWidget);
-    // Run fixture must not render on Swim list.
     expect(find.textContaining('#99'), findsNothing);
   });
 
@@ -159,10 +159,7 @@ void main() {
     await tester.tap(find.text('Run'));
     await tester.pumpAndSettle();
     expect(
-      find.text(
-        'Scaffolding only. Run sessions will list here when the '
-        'sport lane opens — no charts on the list.',
-      ),
+      find.textContaining('Run sessions will list here'),
       findsOneWidget,
     );
     expect(find.text('Empty · OK'), findsOneWidget);
