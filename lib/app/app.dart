@@ -1,17 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:blueprint_ui/src/theme/bp_theme.dart';
-import 'routing/app_router.dart';
-
+import 'package:fitness_os/app/auto_sync_lifecycle.dart';
+import 'package:fitness_os/app/routing/app_router.dart';
+import 'package:fitness_os/core/di/injector.dart';
+import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/core/huawei/one_shot_auto_sync.dart';
 
 class FitnessOsApp extends StatelessWidget {
   const FitnessOsApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      theme: BpTheme.light(),
-      initialRoute: '/',
-      routes: AppRouter.routes,
+    return AutoSyncLifecycle(
+      autoSync: sl<OneShotAutoSync>(),
+      link: sl<HuaweiLink>(),
+      child: MaterialApp(
+        theme: BpTheme.light(),
+        initialRoute: '/',
+        routes: AppRouter.routes,
+      ),
     );
   }
 }
