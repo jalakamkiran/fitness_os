@@ -42,6 +42,8 @@ void main() {
       expect(theme.colorScheme.onSurface, FathomColors.light.ink);
       expect(theme.extension<FathomColors>(), FathomColors.light);
       expect(theme.useMaterial3, isTrue);
+      // Locked `--shadow` base color is `ink` in light mode.
+      expect(theme.colorScheme.shadow, FathomColors.light.ink.withValues(alpha: 0.08));
     });
 
     test('dark() wires Fathom color scheme and scaffold', () {
@@ -55,6 +57,10 @@ void main() {
       expect(theme.colorScheme.surface, FathomColors.dark.bgElev);
       expect(theme.colorScheme.onSurface, FathomColors.dark.ink);
       expect(theme.extension<FathomColors>(), FathomColors.dark);
+      // Locked `--shadow` base color is black in dark mode, not `ink`
+      // (which is near-white in dark mode) — regression guard for the
+      // dark-mode shadow-tint bug.
+      expect(theme.colorScheme.shadow, const Color(0xFF000000).withValues(alpha: 0.45));
     });
 
     testWidgets('FathomColors.of resolves theme extension', (tester) async {

@@ -143,7 +143,12 @@ class FathomColors extends ThemeExtension<FathomColors> {
       outline: line,
       outlineVariant: line,
       surfaceContainerHighest: pool,
-      shadow: ink.withValues(alpha: brightness == Brightness.dark ? 0.45 : 0.08),
+      // `--shadow` is locked to a black base in dark mode and an ink base in
+      // light mode (`docs/design/tokens.css`) — it does not simply track
+      // `ink`, which flips to a near-white value in dark mode.
+      shadow: brightness == Brightness.dark
+          ? const Color(0xFF000000).withValues(alpha: 0.45)
+          : ink.withValues(alpha: 0.08),
     );
   }
 

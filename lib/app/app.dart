@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:blueprint_ui/src/theme/bp_theme.dart';
+import 'package:blueprint_ui/blueprint_ui.dart';
 import 'routing/app_router.dart';
 
 
