@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fathom light --bg (#EEF2F6) from docs/design/tokens.css -->
+    <color name="fathom_launch_bg">#FFEEF2F6</color>
+</resources>
