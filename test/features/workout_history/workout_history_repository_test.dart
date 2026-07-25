@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -100,6 +102,60 @@ void main() {
       expect(out, isA<Left>());
       expect(await repo.loadLocal(), hasLength(1));
       expect(prefs.getString(GateAPrefs.workoutsJson), isNotNull);
+    });
+
+    test('ok sync persists canonical swim side-file for pool workout', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_swim_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 11,
+              startTime: 1_700_000_000,
+              endTime: 1_700_003_683,
+              durationSec: 3683,
+              type: 6,
+              distanceM: 500,
+              strokes: 350,
+              avgSwolf: 165,
+              poolLength: 2500,
+              laps: 20,
+              hrMin: 90,
+              hrMax: 140,
+              segments: [
+                WorkoutSegment(
+                  index: 0,
+                  distanceM: 25,
+                  durationSec: 11,
+                  strokes: 124,
+                  avgSwolf: 135,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        swimRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      final swim = await repo.loadCanonicalSwim(11);
+      expect(swim, isNotNull);
+      expect(swim!.poolLengthM, 25);
+      expect(swim.p0.totalStrokes, 350);
+      expect(swim.p0.lengthCoveragePartial, isTrue);
+      expect(repo.canonicalSwimFromSummary((out as Right).value.first), isNotNull);
     });
   });
 }
