@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fathom — Swim session analytics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="home-prototype/styles.css" />
+  <link rel="stylesheet" href="home-prototype/charts.css" />
+  <link rel="stylesheet" href="swim-analytics.css" />
+</head>
+<body class="charts-page analytics-page">
+  <button class="theme fixed-theme" id="themeToggle" type="button">Dark</button>
+  <div class="stage charts-stage analytics-stage">
+    <div class="phone" id="phone">
+      <header class="app-header">
+        <a class="icon-round" href="index.html" aria-label="Back">←</a>
+        <div class="brand">
+          <span class="brand-mark">F</span>
+          <div>
+            <p class="brand-title">Swim · #11</p>
+            <p class="brand-sub mono" id="sessionMeta">—</p>
+          </div>
+        </div>
+        <button class="theme-toggle" id="themeTogglePhone" type="button">Dark</button>
+      </header>
+
+      <main class="scroll" id="main">
+        <!-- filled by JS -->
+      </main>
+    </div>
+
+    <aside class="rail">
+      <p class="eyebrow">Owner review · swim analytics</p>
+      <h1>Full session display</h1>
+      <p class="lede">Evidence → charts → table → diagnosis → recommendations → on-demand reasoner. Home stays chart-free.</p>
+      <ol class="rail-list">
+        <li>Identity + P0 signals</li>
+        <li>Pace / SWOLF / strokes / overlay</li>
+        <li>Interval data table</li>
+        <li>Diagnoses</li>
+        <li>Recs + <strong>Run reasoner</strong> (tap)</li>
+      </ol>
+      <p class="rail-note mono">HR hidden · reasoner never auto-runs</p>
+      <a class="btn primary" href="home-prototype/charts.html">Research charts →</a>
+      <a class="btn ghost" href="home-prototype/advanced.html">Advanced gallery →</a>
+      <a class="btn ghost" href="index.html">← Design hub</a>
+    </aside>
+  </div>
+  <script src="swim-analytics.js"></script>
+</body>
+</html>
