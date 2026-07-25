@@ -10,6 +10,7 @@ class VitalsState extends Equatable {
     this.phase = VitalsPhase.blocked,
     this.sleepSessions = const [],
     this.dailyHr = const [],
+    this.latestHrSeries = const [],
     this.message,
     this.partial = false,
     this.enableSkipped = false,
@@ -23,6 +24,7 @@ class VitalsState extends Equatable {
   final VitalsPhase phase;
   final List<SleepSessionSummary> sleepSessions;
   final List<DailyHrDaySummary> dailyHr;
+  final List<DailyHrSample> latestHrSeries;
   final String? message;
   final bool partial;
   final bool enableSkipped;
@@ -50,6 +52,7 @@ class VitalsState extends Equatable {
     VitalsPhase? phase,
     List<SleepSessionSummary>? sleepSessions,
     List<DailyHrDaySummary>? dailyHr,
+    List<DailyHrSample>? latestHrSeries,
     String? message,
     bool clearMessage = false,
     bool? partial,
@@ -66,6 +69,7 @@ class VitalsState extends Equatable {
       phase: phase ?? this.phase,
       sleepSessions: sleepSessions ?? this.sleepSessions,
       dailyHr: dailyHr ?? this.dailyHr,
+      latestHrSeries: latestHrSeries ?? this.latestHrSeries,
       message: clearMessage ? null : (message ?? this.message),
       partial: partial ?? this.partial,
       enableSkipped: enableSkipped ?? this.enableSkipped,
@@ -84,6 +88,7 @@ class VitalsState extends Equatable {
         phase,
         sleepSessions,
         dailyHr,
+        latestHrSeries,
         message,
         partial,
         enableSkipped,

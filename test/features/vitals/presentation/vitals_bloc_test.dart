@@ -37,6 +37,10 @@ class _FakeRepo implements VitalsRepository {
   Future<List<DailyHrDaySummary>> loadDailyHr() async => hr;
 
   @override
+  Future<List<DailyHrSample>> loadDailyHrSeries(String dayKey) async =>
+      const [];
+
+  @override
   Future<AutoTrackingEnableResult?> loadLastEnable() async => lastEnable;
 
   @override

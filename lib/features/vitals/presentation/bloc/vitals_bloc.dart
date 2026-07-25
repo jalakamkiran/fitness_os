@@ -67,10 +67,14 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
     final sessionReady = _repository.sessionReady;
     var sleep = const <SleepSessionSummary>[];
     var hr = const <DailyHrDaySummary>[];
+    var hrSeries = const <DailyHrSample>[];
     String? loadError;
     try {
       sleep = await _repository.loadSleepSessions();
       hr = await _repository.loadDailyHr();
+      if (hr.isNotEmpty) {
+        hrSeries = await _repository.loadDailyHrSeries(hr.first.dayKey);
+      }
     } catch (_) {
       loadError = 'Local vitals unreadable';
     }
@@ -81,6 +85,7 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
         sessionReady: sessionReady,
         sleepSessions: sleep,
         dailyHr: hr,
+        latestHrSeries: hrSeries,
         phase: passed ? VitalsPhase.idle : VitalsPhase.blocked,
         message: loadError,
         clearMessage: loadError == null,
@@ -128,11 +133,17 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
           ),
         );
       case Right(:final value):
+        var hrSeries = const <DailyHrSample>[];
+        if (value.dailyHr.isNotEmpty) {
+          hrSeries =
+              await _repository.loadDailyHrSeries(value.dailyHr.first.dayKey);
+        }
         emit(
           state.copyWith(
             phase: value.partial ? VitalsPhase.stuck : VitalsPhase.idle,
             sleepSessions: value.sleepSessions,
             dailyHr: value.dailyHr,
+            latestHrSeries: hrSeries,
             message: value.message ??
                 (value.sleepSessions.isEmpty && value.dailyHr.isEmpty
                     ? 'No sleep or whole-day heart rate in range'

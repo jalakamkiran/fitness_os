@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -324,6 +326,52 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final repo = VitalsRepositoryImpl(link: _StubLink(), prefs: prefs);
       expect(await repo.loadLastEnable(), isNull);
+    });
+
+    test('daily HR series roundtrip via side-file', () async {
+      final tempRoot = Directory.systemTemp.createTempSync('fos_hr_series_');
+      addTearDown(() {
+        if (tempRoot.existsSync()) {
+          tempRoot.deleteSync(recursive: true);
+        }
+      });
+
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      const t0 = 1_704_067_200; // 2024-01-01 00:00:00 UTC
+      const t1 = t0 + 60;
+      const t2 = t0 + 120;
+      final link = _StubLink(
+        result: const ActivitySyncResult(
+          status: ActivitySyncStatus.ok,
+          dailyHrSamples: [
+            DailyHrSample(timestampUnix: t0, bpm: 65),
+            DailyHrSample(timestampUnix: t1, bpm: 72),
+            DailyHrSample(timestampUnix: t2, bpm: 68),
+          ],
+          completedContainers: {'daily_hr'},
+        ),
+      );
+      final repo = VitalsRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        sideFileRootOverride: () => tempRoot,
+      );
+
+      await repo.syncFromWatch();
+      final hrDays = await repo.loadDailyHr();
+      expect(hrDays, hasLength(1));
+      final dayKey = hrDays.first.dayKey;
+      final series = await repo.loadDailyHrSeries(dayKey);
+      expect(series, hasLength(3));
+      expect(series.map((s) => s.bpm).toList(), [65, 72, 68]);
+      expect(hrDays.first.sampleCount, 3);
+
+      await repo.clearLocal();
+      expect(await repo.loadDailyHrSeries(dayKey), isEmpty);
+      expect(await repo.loadDailyHr(), isEmpty);
     });
   });
 }

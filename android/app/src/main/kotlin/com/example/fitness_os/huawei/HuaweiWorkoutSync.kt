@@ -4,10 +4,10 @@ import android.util.Log
 import java.nio.ByteBuffer
 
 /**
- * Clean-room Gate B workout sync — Count → Totals only.
+ * Clean-room Gate B workout sync — Count → Totals → hint-gated enrichment.
  *
  * Behavioral shapes from public LPv2 / GB oracle (service 0x17). No AGPL paste.
- * Data / Pace / Swim / GPS are intentionally deferred.
+ * Fetch order: Swim segments (0x0e) → WorkoutData (0x0a) → Pace (0x0c) when time allows.
  */
 class HuaweiWorkoutSync(
     private val exchangeEncrypted: (
@@ -22,6 +22,9 @@ class HuaweiWorkoutSync(
         const val SVC = 0x17
         const val CMD_COUNT = 0x07
         const val CMD_TOTALS = 0x08
+        const val CMD_DATA = 0x0a
+        const val CMD_PACE = 0x0c
+        const val CMD_SWIM = 0x0e
         private const val TIMEOUT_MS = 20_000L
         /** Same empty-history floor GB uses when no cursor exists. */
         const val FALLBACK_START_UNIX = 1_654_819_200L
@@ -50,6 +53,78 @@ class HuaweiWorkoutSync(
         val segmentsCount: Int,
     )
 
+    data class EnrichmentTagRef(
+        val id: Int,
+        val len: Int,
+    ) {
+        fun toMap(): Map<String, Int> = mapOf("id" to id, "len" to len)
+    }
+
+    /** Parsed swim lap from nested 0x83 inside 0x17:0x0e — unknown TLVs as id+len only. */
+    data class SwimSegment(
+        val index: Int,
+        val distanceM: Long? = null,
+        val durationSec: Long? = null,
+        val swimType: Int? = null,
+        val style: Int? = null,
+        val strokes: Int? = null,
+        val avgSwolf: Int? = null,
+        val paceSecPer100m: Int? = null,
+        /** Wire 0x05 half (0|1); prefer 0 when merging duplicate indices. Not exported. */
+        val half: Int? = null,
+        val tags: List<EnrichmentTagRef> = emptyList(),
+    ) {
+        fun toMap(): Map<String, Any?> {
+            val out = linkedMapOf<String, Any?>("index" to index)
+            if (distanceM != null) out["distanceM"] = distanceM
+            if (durationSec != null) out["durationSec"] = durationSec
+            if (swimType != null) out["swimType"] = swimType
+            if (style != null) out["style"] = style
+            if (strokes != null) out["strokes"] = strokes
+            if (avgSwolf != null) out["avgSwolf"] = avgSwolf
+            if (paceSecPer100m != null) out["paceSecPer100m"] = paceSecPer100m
+            if (tags.isNotEmpty()) out["tags"] = tags.map { it.toMap() }
+            return out
+        }
+    }
+
+    /** WorkoutData page summary (0x17:0x0a) — no sample payload in channel map. */
+    data class WorkoutDataPageSummary(
+        val index: Int,
+        val timestamp: Long? = null,
+        val intervalSec: Int? = null,
+        val sampleCount: Int? = null,
+        val dataLength: Int? = null,
+        val bitmap: Int? = null,
+        val tags: List<EnrichmentTagRef> = emptyList(),
+    ) {
+        fun toMap(): Map<String, Any?> {
+            val out = linkedMapOf<String, Any?>("index" to index)
+            if (timestamp != null) out["timestamp"] = timestamp
+            if (intervalSec != null) out["intervalSec"] = intervalSec
+            if (sampleCount != null) out["sampleCount"] = sampleCount
+            if (dataLength != null) out["dataLength"] = dataLength
+            if (bitmap != null) out["bitmap"] = bitmap
+            if (tags.isNotEmpty()) out["tags"] = tags.map { it.toMap() }
+            return out
+        }
+    }
+
+    data class PaceBlockSummary(
+        val index: Int,
+        val distanceM: Long? = null,
+        val paceSec: Int? = null,
+        val tags: List<EnrichmentTagRef> = emptyList(),
+    ) {
+        fun toMap(): Map<String, Any?> {
+            val out = linkedMapOf<String, Any?>("index" to index)
+            if (distanceM != null) out["distanceM"] = distanceM
+            if (paceSec != null) out["paceSec"] = paceSec
+            if (tags.isNotEmpty()) out["tags"] = tags.map { it.toMap() }
+            return out
+        }
+    }
+
     data class WorkoutTotals(
         val number: Int,
         val startTime: Long,
@@ -59,16 +134,53 @@ class HuaweiWorkoutSync(
         val calories: Long?,
         val distanceM: Long?,
         val steps: Long?,
+        val dataCount: Int = 0,
+        val paceCount: Int = 0,
+        val segmentsCount: Int = 0,
+        val hrMin: Int? = null,
+        val hrMax: Int? = null,
+        val hrPeak: Int? = null,
+        val swimType: Int? = null,
+        val strokes: Int? = null,
+        val strokeRate: Int? = null,
+        val avgSwolf: Int? = null,
+        val poolLength: Int? = null,
+        val laps: Int? = null,
+        val enrichmentTags: List<EnrichmentTagRef> = emptyList(),
     ) {
-        fun toMap(): Map<String, Any?> = mapOf(
-            "number" to number,
-            "startTime" to startTime,
-            "endTime" to endTime,
-            "durationSec" to durationSec,
-            "type" to type,
-            "calories" to calories,
-            "distanceM" to distanceM,
-            "steps" to steps,
+        fun toMap(): Map<String, Any?> {
+            val out = linkedMapOf<String, Any?>(
+                "number" to number,
+                "startTime" to startTime,
+                "endTime" to endTime,
+                "durationSec" to durationSec,
+                "type" to type,
+                "calories" to calories,
+                "distanceM" to distanceM,
+                "steps" to steps,
+                "dataCount" to dataCount,
+                "paceCount" to paceCount,
+                "segmentsCount" to segmentsCount,
+            )
+            if (hrMin != null) out["hrMin"] = hrMin
+            if (hrMax != null) out["hrMax"] = hrMax
+            if (hrPeak != null) out["hrPeak"] = hrPeak
+            if (swimType != null) out["swimType"] = swimType
+            if (strokes != null) out["strokes"] = strokes
+            if (strokeRate != null) out["strokeRate"] = strokeRate
+            if (avgSwolf != null) out["avgSwolf"] = avgSwolf
+            if (poolLength != null) out["poolLength"] = poolLength
+            if (laps != null) out["laps"] = laps
+            if (enrichmentTags.isNotEmpty()) {
+                out["enrichmentTags"] = enrichmentTags.map { it.toMap() }
+            }
+            return out
+        }
+
+        fun withCountHints(ref: WorkoutNumber): WorkoutTotals = copy(
+            dataCount = ref.dataCount,
+            paceCount = ref.paceCount,
+            segmentsCount = ref.segmentsCount,
         )
     }
 
@@ -105,6 +217,7 @@ class HuaweiWorkoutSync(
         }
 
         val workouts = ArrayList<Map<String, Any?>>(numbers.size)
+        var enrichmentPartial = false
         for (ref in numbers) {
             val totalsFrame = exchangeEncrypted(
                 buildTotalsRequest(ref.workoutNumber),
@@ -120,7 +233,7 @@ class HuaweiWorkoutSync(
                     "workouts" to workouts,
                 )
             }
-            val totals = parseTotals(totalsFrame)
+            val totals = parseTotals(totalsFrame)?.withCountHints(ref)
             if (totals == null) {
                 Log.w(TAG, "workout-sync totals parse failed number=${ref.workoutNumber}")
                 continue
@@ -128,16 +241,209 @@ class HuaweiWorkoutSync(
             Log.i(
                 TAG,
                 "workout-sync totals number=${totals.number} type=${totals.type} " +
-                    "start=${totals.startTime} duration=${totals.durationSec}s",
+                    "start=${totals.startTime} duration=${totals.durationSec}s " +
+                    "data=${totals.dataCount} pace=${totals.paceCount} seg=${totals.segmentsCount}",
             )
-            workouts.add(totals.toMap())
+            val workoutMap = LinkedHashMap(totals.toMap())
+            if (totals.segmentsCount > 0 || totals.dataCount > 0 || totals.paceCount > 0) {
+                if (enrichWorkout(workoutMap, totals)) {
+                    enrichmentPartial = true
+                }
+            } else {
+                workoutMap["enrichmentStatus"] = "none"
+            }
+            workouts.add(workoutMap)
         }
 
         return mapOf(
-            "status" to "ok",
+            "status" to if (enrichmentPartial) "partial_batch" else "ok",
             "workouts" to workouts,
         )
     }
+
+    /**
+     * Fetch segments → data pages → pace (last). Returns true if any enrichment timed out.
+     * Never throws; Totals fields in [out] are preserved.
+     */
+    private fun enrichWorkout(out: MutableMap<String, Any?>, totals: WorkoutTotals): Boolean {
+        var partial = false
+        var enrichmentTimedOut = false
+
+        if (totals.segmentsCount > 0) {
+            // GT5-A07: each 0x0e page is 0x81 → workout# + repeated nested 0x83 laps
+            // (sleep-style), not one flat segment per page index. Pages may repeat;
+            // merge by lap index, preferring half=0 when both halves are present.
+            val byIndex = LinkedHashMap<Int, SwimSegment>()
+            for (index in 0 until totals.segmentsCount) {
+                val frame = exchangeEncrypted(
+                    buildSwimSegmentRequest(totals.number, index),
+                    SVC,
+                    CMD_SWIM,
+                    TIMEOUT_MS,
+                )
+                if (frame == null) {
+                    Log.w(
+                        TAG,
+                        "workout-sync swim timeout number=${totals.number} index=$index",
+                    )
+                    partial = true
+                    enrichmentTimedOut = true
+                    break
+                }
+                for (seg in parseSwimSegments(frame)) {
+                    val existing = byIndex[seg.index]
+                    if (existing == null || preferSwimSegment(seg, existing)) {
+                        byIndex[seg.index] = seg
+                    }
+                }
+            }
+            if (byIndex.isNotEmpty()) {
+                out["segments"] = byIndex.values.sortedBy { it.index }.map { it.toMap() }
+            }
+            Log.i(
+                TAG,
+                "workout-sync swim number=${totals.number} " +
+                    "fetched=${byIndex.size} pages=${totals.segmentsCount}",
+            )
+        }
+
+        if (totals.dataCount > 0) {
+            val pages = ArrayList<Map<String, Any?>>()
+            var sampleTotal = 0
+            for (index in 0 until totals.dataCount) {
+                val frame = exchangeEncrypted(
+                    buildWorkoutDataRequest(totals.number, index),
+                    SVC,
+                    CMD_DATA,
+                    TIMEOUT_MS,
+                )
+                if (frame == null) {
+                    Log.w(
+                        TAG,
+                        "workout-sync data timeout number=${totals.number} index=$index",
+                    )
+                    partial = true
+                    enrichmentTimedOut = true
+                    break
+                }
+                parseWorkoutDataPage(frame, index)?.let { page ->
+                    pages.add(page.toMap())
+                    sampleTotal += page.sampleCount ?: 0
+                }
+            }
+            if (pages.isNotEmpty()) {
+                out["dataPages"] = pages
+                if (sampleTotal > 0) out["sampleCount"] = sampleTotal
+            }
+            Log.i(
+                TAG,
+                "workout-sync data number=${totals.number} " +
+                    "pages=${pages.size}/${totals.dataCount} samples=$sampleTotal",
+            )
+        }
+
+        if (totals.paceCount > 0 && !enrichmentTimedOut) {
+            val paceBlocks = ArrayList<Map<String, Any?>>()
+            for (index in 0 until totals.paceCount) {
+                val frame = exchangeEncrypted(
+                    buildPaceRequest(totals.number, index),
+                    SVC,
+                    CMD_PACE,
+                    TIMEOUT_MS,
+                )
+                if (frame == null) {
+                    Log.w(
+                        TAG,
+                        "workout-sync pace timeout number=${totals.number} index=$index",
+                    )
+                    partial = true
+                    break
+                }
+                parsePaceBlock(frame, index)?.let { paceBlocks.add(it.toMap()) }
+            }
+            if (paceBlocks.isNotEmpty()) {
+                out["paceBlocks"] = paceBlocks
+            }
+            Log.i(
+                TAG,
+                "workout-sync pace number=${totals.number} " +
+                    "blocks=${paceBlocks.size}/${totals.paceCount}",
+            )
+        } else if (totals.paceCount > 0 && enrichmentTimedOut) {
+            Log.d(
+                TAG,
+                "workout-sync pace skipped number=${totals.number} " +
+                    "after enrichment timeout",
+            )
+        }
+
+        out["enrichmentStatus"] = when {
+            partial -> "partial"
+            totals.segmentsCount > 0 || totals.dataCount > 0 || totals.paceCount > 0 -> "ok"
+            else -> "none"
+        }
+        return partial
+    }
+
+    fun fetchWorkoutData(workoutNumber: Int, dataIndex: Int): Map<String, Any?> {
+        if (dataIndex < 0) return emptyMap()
+        val frame = exchangeEncrypted(
+            buildWorkoutDataRequest(workoutNumber, dataIndex),
+            SVC,
+            CMD_DATA,
+            TIMEOUT_MS,
+        ) ?: return emptyMap()
+        return parseWorkoutDataPage(frame, dataIndex)?.toMap() ?: emptyMap()
+    }
+
+    /** Pace command 0x17:0x0c (not Totals TLV tag 0x0c). */
+    fun fetchPaceBlock(workoutNumber: Int, paceIndex: Int): Map<String, Any?> {
+        if (paceIndex < 0) return emptyMap()
+        val frame = exchangeEncrypted(
+            buildPaceRequest(workoutNumber, paceIndex),
+            SVC,
+            CMD_PACE,
+            TIMEOUT_MS,
+        ) ?: return emptyMap()
+        return parsePaceBlock(frame, paceIndex)?.toMap() ?: emptyMap()
+    }
+
+    /** Swim segments command 0x17:0x0e — returns all nested laps from one page. */
+    fun fetchSwimSegment(workoutNumber: Int, segmentIndex: Int): Map<String, Any?> {
+        if (segmentIndex < 0) return emptyMap()
+        val frame = exchangeEncrypted(
+            buildSwimSegmentRequest(workoutNumber, segmentIndex),
+            SVC,
+            CMD_SWIM,
+            TIMEOUT_MS,
+        ) ?: return emptyMap()
+        val segments = parseSwimSegments(frame)
+        if (segments.isEmpty()) return emptyMap()
+        return mapOf("segments" to segments.map { it.toMap() })
+    }
+
+    private fun buildIndexedRequest(workoutNumber: Int, index: Int): HuaweiFraming.Frame {
+        val nested = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(workoutNumber)),
+                HuaweiFraming.Tlv(0x03, HuaweiPacketCrypto.shortBe(index)),
+            ),
+        )
+        return HuaweiFraming.Frame(
+            SVC,
+            0,
+            listOf(HuaweiFraming.Tlv(0x81, nested)),
+        )
+    }
+
+    private fun buildWorkoutDataRequest(workoutNumber: Int, dataIndex: Int): HuaweiFraming.Frame =
+        buildIndexedRequest(workoutNumber, dataIndex).copy(commandId = CMD_DATA)
+
+    private fun buildPaceRequest(workoutNumber: Int, paceIndex: Int): HuaweiFraming.Frame =
+        buildIndexedRequest(workoutNumber, paceIndex).copy(commandId = CMD_PACE)
+
+    private fun buildSwimSegmentRequest(workoutNumber: Int, segmentIndex: Int): HuaweiFraming.Frame =
+        buildIndexedRequest(workoutNumber, segmentIndex).copy(commandId = CMD_SWIM)
 
     private fun buildCountRequest(startUnix: Long, endUnix: Long): HuaweiFraming.Frame {
         val nested = HuaweiFraming.encodeTlvs(
@@ -212,6 +518,16 @@ class HuaweiWorkoutSync(
         var calories: Long? = null
         var distanceM: Long? = null
         var steps: Long? = null
+        var hrMin: Int? = null
+        var hrMax: Int? = null
+        var hrPeak: Int? = null
+        var swimType: Int? = null
+        var strokes: Int? = null
+        var strokeRate: Int? = null
+        var avgSwolf: Int? = null
+        var poolLength: Int? = null
+        var laps: Int? = null
+        val unknownTags = ArrayList<EnrichmentTagRef>()
         for (tlv in tlvs) {
             when (tlv.tag) {
                 0x02 -> number = u16(tlv.value)
@@ -223,6 +539,26 @@ class HuaweiWorkoutSync(
                 0x09 -> if (durationSec == 0L) durationSec = u32(tlv.value)
                 0x12 -> durationSec = u32(tlv.value)
                 0x14 -> type = u8(tlv.value)
+                0x0c -> parseHrPeakTlv(tlv)?.let { (min, max, peak) ->
+                    hrMin = min
+                    hrMax = max
+                    hrPeak = peak
+                } ?: run {
+                    Log.d(TAG, "workout-sync tag 0x0c len=${tlv.value.size} unparsed")
+                    unknownTags.add(EnrichmentTagRef(0x0c, tlv.value.size))
+                }
+                0x15 -> parseScalarU8(tlv)?.let { swimType = it }
+                    ?: recordUnknown(unknownTags, tlv)
+                0x16 -> parseScalarU32OrU16(tlv)?.let { strokes = it }
+                    ?: recordUnknown(unknownTags, tlv)
+                0x17 -> parseScalarU16OrU8(tlv)?.let { strokeRate = it }
+                    ?: recordUnknown(unknownTags, tlv)
+                0x18 -> parseScalarU16(tlv)?.let { poolLength = it }
+                    ?: recordUnknown(unknownTags, tlv)
+                0x19 -> parseScalarU16OrU8(tlv)?.let { laps = it }
+                    ?: recordUnknown(unknownTags, tlv)
+                0x1a -> parseScalarU16(tlv)?.let { avgSwolf = it }
+                    ?: recordUnknown(unknownTags, tlv)
             }
         }
         if (number == 0 || startTime == 0L) return null
@@ -238,6 +574,216 @@ class HuaweiWorkoutSync(
             calories = calories,
             distanceM = distanceM,
             steps = steps,
+            hrMin = hrMin,
+            hrMax = hrMax,
+            hrPeak = hrPeak,
+            swimType = swimType,
+            strokes = strokes,
+            strokeRate = strokeRate,
+            avgSwolf = avgSwolf,
+            poolLength = poolLength,
+            laps = laps,
+            enrichmentTags = unknownTags,
+        )
+    }
+
+    private fun recordUnknown(out: MutableList<EnrichmentTagRef>, tlv: HuaweiFraming.Tlv) {
+        Log.d(TAG, "workout-sync tag 0x${tlv.tag.toString(16)} len=${tlv.value.size} unparsed")
+        out.add(EnrichmentTagRef(tlv.tag, tlv.value.size))
+    }
+
+    /** Totals TLV 0x0c — oracle suggests 2-byte min/max peaks; accept u8 pair or u16. */
+    private fun parseHrPeakTlv(tlv: HuaweiFraming.Tlv): Triple<Int?, Int?, Int?>? {
+        return when (tlv.value.size) {
+            1 -> Triple(null, null, u8(tlv.value))
+            2 -> Triple(u8(tlv.value, 0), u8(tlv.value, 1), null)
+            4 -> Triple(u16(tlv.value, 0), u16(tlv.value, 2), null)
+            else -> null
+        }
+    }
+
+    private fun parseScalarU8(tlv: HuaweiFraming.Tlv): Int? =
+        if (tlv.value.size == 1) u8(tlv.value) else null
+
+    private fun parseScalarU16(tlv: HuaweiFraming.Tlv): Int? =
+        if (tlv.value.size == 2) u16(tlv.value) else null
+
+    private fun parseScalarU16OrU8(tlv: HuaweiFraming.Tlv): Int? = when (tlv.value.size) {
+        1 -> u8(tlv.value)
+        2 -> u16(tlv.value)
+        else -> null
+    }
+
+    private fun parseScalarU32OrU16(tlv: HuaweiFraming.Tlv): Int? = when (tlv.value.size) {
+        2 -> u16(tlv.value)
+        4 -> u32(tlv.value).toInt()
+        else -> null
+    }
+
+    /**
+     * Parse all nested swim laps from a 0x17:0x0e page.
+     *
+     * Observed GT5-A07 (`#11` pool probe): `0x81` → `0x02` workout number,
+     * repeated `0x83` lap TLVs (same shape as sleep stages), trailing `0x08`.
+     * Inner `0x83` map (SWOLF-checked on capture): `0x09` 1-based index,
+     * `0x04` distance m, `0x0a` stroke style, `0x0b` duration s, `0x0c` SWOLF,
+     * `0x0d` strokes, `0x05` half (0|1 — prefer 0), `0x06` unused.
+     */
+    fun parseSwimSegments(frame: HuaweiFraming.Frame): List<SwimSegment> {
+        val container = frame.tlvs.firstOrNull { it.tag == 0x81 }?.value ?: return emptyList()
+        return parseSwimSegmentPageTlvs(HuaweiFraming.decodeTlvs(container))
+    }
+
+    /** First lap only — kept for callers that expect a single segment. */
+    fun parseSwimSegment(frame: HuaweiFraming.Frame, segmentIndex: Int): SwimSegment? {
+        val all = parseSwimSegments(frame)
+        return all.firstOrNull { it.index == segmentIndex } ?: all.firstOrNull()
+    }
+
+    internal fun parseSwimSegmentPageTlvs(tlvs: List<HuaweiFraming.Tlv>): List<SwimSegment> {
+        val out = ArrayList<SwimSegment>()
+        for (tlv in tlvs) {
+            when (tlv.tag) {
+                0x83 -> parseNestedSwimLap(tlv.value)?.let { out.add(it) }
+                0x02, 0x03, 0x08 -> Unit // workout # / page index / end
+                else -> Log.d(
+                    TAG,
+                    "workout-sync swim page tag 0x${tlv.tag.toString(16)} " +
+                        "len=${tlv.value.size} unparsed",
+                )
+            }
+        }
+        return out
+    }
+
+    private fun parseNestedSwimLap(value: ByteArray): SwimSegment? {
+        val inner = HuaweiFraming.decodeTlvs(value)
+        var wireIndex: Int? = null
+        var half: Int? = null
+        var distanceM: Long? = null
+        var durationSec: Long? = null
+        var style: Int? = null
+        var strokes: Int? = null
+        var avgSwolf: Int? = null
+        val unknownTags = ArrayList<EnrichmentTagRef>()
+        for (tlv in inner) {
+            when (tlv.tag) {
+                0x04 -> parseScalarFlexible(tlv)?.let { distanceM = it.toLong() }
+                    ?: recordUnknown(unknownTags, tlv)
+                0x05 -> half = parseScalarU8(tlv) ?: parseScalarU16OrU8(tlv)
+                0x06 -> Unit // observed; not needed for lap table (SWOLF uses 0x0b)
+                0x09 -> wireIndex = parseScalarFlexible(tlv)
+                0x0a -> parseScalarU8(tlv)?.let { style = it }
+                    ?: recordUnknown(unknownTags, tlv)
+                0x0b -> parseScalarFlexible(tlv)?.let { durationSec = it.toLong() }
+                    ?: recordUnknown(unknownTags, tlv)
+                0x0c -> parseScalarFlexible(tlv)?.let { avgSwolf = it }
+                    ?: recordUnknown(unknownTags, tlv)
+                0x0d -> parseScalarFlexible(tlv)?.let { strokes = it }
+                    ?: recordUnknown(unknownTags, tlv)
+                else -> recordUnknown(unknownTags, tlv)
+            }
+        }
+        val index = when {
+            wireIndex == null -> return null
+            wireIndex >= 1 -> wireIndex - 1 // UI shows index+1
+            else -> wireIndex
+        }
+        val pace = if (distanceM != null && distanceM > 0 && durationSec != null) {
+            ((durationSec * 100) / distanceM).toInt()
+        } else {
+            null
+        }
+        return SwimSegment(
+            index = index,
+            distanceM = distanceM,
+            durationSec = durationSec,
+            style = style,
+            strokes = strokes,
+            avgSwolf = avgSwolf,
+            paceSecPer100m = pace,
+            half = half,
+            tags = unknownTags,
+        )
+    }
+
+    /** Prefer half=0 over half=1 when merging duplicate lap indices. */
+    private fun preferSwimSegment(candidate: SwimSegment, existing: SwimSegment): Boolean {
+        val cand = candidate.half ?: 0
+        val exist = existing.half ?: 0
+        return cand < exist
+    }
+
+    private fun parseScalarFlexible(tlv: HuaweiFraming.Tlv): Int? = when (tlv.value.size) {
+        1 -> u8(tlv.value)
+        2 -> u16(tlv.value)
+        4 -> u32(tlv.value).toInt()
+        else -> null
+    }
+
+    fun parseWorkoutDataPage(frame: HuaweiFraming.Frame, dataIndex: Int): WorkoutDataPageSummary? {
+        val container = frame.tlvs.firstOrNull { it.tag == 0x81 }?.value ?: return null
+        return parseWorkoutDataPageTlvs(HuaweiFraming.decodeTlvs(container), dataIndex)
+    }
+
+    internal fun parseWorkoutDataPageTlvs(
+        tlvs: List<HuaweiFraming.Tlv>,
+        dataIndex: Int,
+    ): WorkoutDataPageSummary {
+        var index = dataIndex
+        var timestamp: Long? = null
+        var intervalSec: Int? = null
+        var sampleCount: Int? = null
+        var dataLength: Int? = null
+        var bitmap: Int? = null
+        val unknownTags = ArrayList<EnrichmentTagRef>()
+        for (tlv in tlvs) {
+            when (tlv.tag) {
+                0x02 -> { /* workoutNumber — ignore for summary */ }
+                0x03 -> index = u16(tlv.value)
+                0x04 -> timestamp = u32(tlv.value)
+                0x05 -> intervalSec = parseScalarU32OrU16(tlv)
+                0x06 -> sampleCount = parseScalarU32OrU16(tlv)
+                0x07 -> dataLength = parseScalarU32OrU16(tlv)
+                0x08 -> bitmap = parseScalarU32OrU16(tlv)
+                else -> recordUnknown(unknownTags, tlv)
+            }
+        }
+        return WorkoutDataPageSummary(
+            index = index,
+            timestamp = timestamp,
+            intervalSec = intervalSec,
+            sampleCount = sampleCount,
+            dataLength = dataLength,
+            bitmap = bitmap,
+            tags = unknownTags,
+        )
+    }
+
+    fun parsePaceBlock(frame: HuaweiFraming.Frame, paceIndex: Int): PaceBlockSummary? {
+        val container = frame.tlvs.firstOrNull { it.tag == 0x81 }?.value ?: return null
+        return parsePaceBlockTlvs(HuaweiFraming.decodeTlvs(container), paceIndex)
+    }
+
+    internal fun parsePaceBlockTlvs(tlvs: List<HuaweiFraming.Tlv>, paceIndex: Int): PaceBlockSummary {
+        var index = paceIndex
+        var distanceM: Long? = null
+        var paceSec: Int? = null
+        val unknownTags = ArrayList<EnrichmentTagRef>()
+        for (tlv in tlvs) {
+            when (tlv.tag) {
+                0x02 -> { /* workoutNumber */ }
+                0x03 -> index = u16(tlv.value)
+                0x07 -> distanceM = u32(tlv.value)
+                0x0b -> paceSec = parseScalarU32OrU16(tlv)
+                else -> recordUnknown(unknownTags, tlv)
+            }
+        }
+        return PaceBlockSummary(
+            index = index,
+            distanceM = distanceM,
+            paceSec = paceSec,
+            tags = unknownTags,
         )
     }
 }

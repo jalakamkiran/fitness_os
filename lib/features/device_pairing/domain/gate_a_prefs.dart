@@ -14,6 +14,12 @@ abstract final class GateAPrefs {
   static const sleepSessionsJson = 'sleep_sessions_json';
   /// JSON list of daily HR day summaries (min/avg/max/count).
   static const dailyHrJson = 'daily_hr_json';
+  /// Side-file subdir under application support for per-day HR minute series.
+  static const dailyHrSeriesDir = 'vitals/hr_series';
+  /// Side-file subdir for canonical swim sessions (one JSON per workout #).
+  static const canonicalSwimDir = 'workouts/canonical_swim';
+  /// Gemini API key for W4 coach (device-local; never commit).
+  static const geminiApiKey = 'gemini_api_key';
   /// Last explicit Enable auto-tracking result (outcomes-only allowlist).
   static const lastAutoTrackingEnableJson = 'last_auto_tracking_enable_json';
 

@@ -39,13 +39,13 @@ Supersedes workout-only inventory intent from `docs/plans/2026-07-18-002-feat-gt
 
 FOS UI map and GB enum are **non-authoritative**. Freeze from on-device Totals `0x14` after N≥2 consistent observations (or 1 + watch activity-list UI cross-check). Record firmware beside IDs; re-freeze on firmware change.
 
-| Mode | Seed | GB enum | FOS UI provisional | On-device freeze |
-|------|------|--------:|-------------------:|-----------------|
+| Mode | Seed | GB enum | FOS UI | On-device freeze |
+|------|------|--------:|-------:|-----------------|
 | Outdoor Run | Must | 1 | 2 | **pending** (`unobserved`) |
-| Indoor Run | Opportunistic | 5 | 7 | deferred / `unobserved` |
+| Indoor Run | Opportunistic | 5 | 5 | deferred / `unobserved` |
 | Strength | Must | — | — | **140** (N=1 Gate B; UI cross-check pending for N≥2 rule) |
-| Pool swim | Must | 6 | 5 | **pending** (`unobserved`) |
-| Open water | Opportunistic | 8 | 6 | deferred / `unobserved` |
+| Pool swim | Must | 6 | 6 | **6** (N=1 owner 25m pool 2026-07-23; type=`0x14` + poolLength cm + laps) |
+| Open water | Opportunistic | 8 | 8 | deferred / `unobserved` (was wrongly shown for type 6 before freeze) |
 
 Firmware string for freeze table: **not recorded in Gate A interrupt matrix** — fill on next probe (`docs/experiments/gate-a-interrupt-matrix.md`).
 

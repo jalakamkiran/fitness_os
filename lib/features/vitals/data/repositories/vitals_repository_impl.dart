@@ -6,6 +6,7 @@ import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class VitalsRepositoryImpl implements VitalsRepository {
@@ -84,6 +85,29 @@ class VitalsRepositoryImpl implements VitalsRepository {
     } catch (_) {
       _hrLoadFailed = true;
       throw const FormatException('Corrupt daily_hr_json');
+    }
+  }
+
+  @override
+  Future<List<DailyHrSample>> loadDailyHrSeries(String dayKey) async {
+    if (dayKey.isEmpty) return const [];
+    final root = await _sideFileRoot();
+    if (root == null) return const [];
+    final file = File(_seriesFilePath(root, dayKey));
+    if (!await file.exists()) return const [];
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map) return const [];
+      final raw = decoded['samples'];
+      if (raw is! List) return const [];
+      return raw
+          .whereType<Map>()
+          .map((e) => DailyHrSample.fromMap(Map<String, dynamic>.from(e)))
+          .where((s) => s.bpm > 0 && s.timestampUnix > 0)
+          .toList()
+        ..sort((a, b) => a.timestampUnix.compareTo(b.timestampUnix));
+    } catch (_) {
+      return const [];
     }
   }
 
@@ -332,10 +356,12 @@ class VitalsRepositoryImpl implements VitalsRepository {
   Future<void> _mergeDailyHr(List<DailyHrSample> samples) async {
     if (!_gateStillPassed()) return;
     final byDay = <String, List<int>>{};
+    final byDaySamples = <String, List<DailyHrSample>>{};
     for (final s in samples) {
       if (s.bpm <= 0 || s.timestampUnix <= 0) continue;
       final day = _localDayKey(s.timestampUnix);
       byDay.putIfAbsent(day, () => []).add(s.bpm);
+      byDaySamples.putIfAbsent(day, () => []).add(s);
     }
     if (byDay.isEmpty) return;
 
@@ -363,6 +389,49 @@ class VitalsRepositoryImpl implements VitalsRepository {
       GateAPrefs.dailyHrJson,
       jsonEncode(merged.map((d) => d.toJson()).toList()),
     );
+    await _persistDailyHrSeries(byDaySamples);
+  }
+
+  Future<void> _persistDailyHrSeries(
+    Map<String, List<DailyHrSample>> incomingByDay,
+  ) async {
+    if (!_gateStillPassed()) return;
+    final root = await _sideFileRoot();
+    if (root == null) return;
+    final seriesDir = Directory('${root.path}/${GateAPrefs.dailyHrSeriesDir}');
+    if (!await seriesDir.exists()) {
+      await seriesDir.create(recursive: true);
+    }
+    for (final entry in incomingByDay.entries) {
+      if (!_gateStillPassed()) return;
+      final existing = await loadDailyHrSeries(entry.key);
+      final byTs = <int, DailyHrSample>{
+        for (final s in existing) s.timestampUnix: s,
+        for (final s in entry.value) s.timestampUnix: s,
+      };
+      final merged = byTs.values.toList()
+        ..sort((a, b) => a.timestampUnix.compareTo(b.timestampUnix));
+      final file = File(_seriesFilePath(root, entry.key));
+      await file.writeAsString(
+        jsonEncode({
+          'dayKey': entry.key,
+          'samples': merged.map((s) => s.toJson()).toList(),
+        }),
+      );
+    }
+  }
+
+  String _seriesFilePath(Directory root, String dayKey) =>
+      '${root.path}/${GateAPrefs.dailyHrSeriesDir}/$dayKey.json';
+
+  Future<Directory?> _sideFileRoot() async {
+    final override = _sideFileRootOverride?.call();
+    if (override != null) return override;
+    try {
+      return await getApplicationSupportDirectory();
+    } catch (_) {
+      return null;
+    }
   }
 
   String _localDayKey(int unixSec) {
@@ -400,11 +469,12 @@ class VitalsRepositoryImpl implements VitalsRepository {
   }
 
   Future<void> _wipeSideFiles() async {
-    final root = _sideFileRootOverride?.call();
+    final root = await _sideFileRoot();
     if (root == null) return;
+    final seriesDir = Directory('${root.path}/${GateAPrefs.dailyHrSeriesDir}');
     try {
-      if (await root.exists()) {
-        await root.delete(recursive: true);
+      if (await seriesDir.exists()) {
+        await seriesDir.delete(recursive: true);
       }
     } catch (_) {
       // Best-effort wipe.

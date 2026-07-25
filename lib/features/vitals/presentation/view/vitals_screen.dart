@@ -5,6 +5,7 @@ import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_bloc.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_event.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_state.dart';
+import 'package:fitness_os/features/vitals/presentation/widgets/hr_sparkline.dart';
 
 class VitalsScreen extends StatelessWidget {
   const VitalsScreen({super.key});
@@ -135,8 +136,9 @@ class _VitalsView extends StatelessWidget {
                         horizontal: 16,
                         vertical: 8,
                       ),
-                      child: _HrSummary(
+                      child: _HrDayPanel(
                         day: state.latestHrDay,
+                        series: state.latestHrSeries,
                         lastEnable: state.lastEnable,
                       ),
                     ),
@@ -230,50 +232,96 @@ class _SleepRow extends StatelessWidget {
   }
 }
 
-class _HrSummary extends StatelessWidget {
-  const _HrSummary({this.day, this.lastEnable});
+class _HrDayPanel extends StatelessWidget {
+  const _HrDayPanel({
+    this.day,
+    this.series = const [],
+    this.lastEnable,
+  });
 
   final DailyHrDaySummary? day;
+  final List<DailyHrSample> series;
   final AutoTrackingEnableResult? lastEnable;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     if (day == null) {
-      final hrOutcome = lastEnable?.outcomeFor('auto_hr');
-      if (hrOutcome == 'armed') {
-        return const Text(
-          'No whole-day heart rate for a recent day.\n'
-          'Wear the watch for several hours, then Sync — '
-          'fresh auto-HR may not backfill older minutes.',
-        );
-      }
-      if (hrOutcome == 'skipped' ||
-          hrOutcome == 'failed' ||
-          hrOutcome == 'timed_out') {
-        return Text(
-          'No whole-day heart rate for a recent day.\n'
-          'Auto-HR last Enable was $hrOutcome — tap Enable auto-tracking, '
-          'then wear and Sync.',
-        );
-      }
-      if (lastEnable == null) {
-        return const Text(
-          'No whole-day heart rate for a recent day.\n'
-          'Tap Enable auto-tracking, wear several hours, then Sync.',
-        );
-      }
-      return const Text(
-        'No whole-day heart rate for a recent day.\n'
-        'Wear the watch for several hours with auto-HR on, then Sync.',
-      );
+      return _HrEmptyCopy(lastEnable: lastEnable);
     }
-    return Text(
-      '${day!.dayKey}: min ${day!.minBpm} · avg ${day!.avgBpm} · '
-      'max ${day!.maxBpm} bpm (${day!.sampleCount} samples)',
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              day!.dayKey,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'min ${day!.minBpm} · avg ${day!.avgBpm} · max ${day!.maxBpm} bpm '
+              '(${day!.sampleCount} samples)',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            HrSparkline(samples: series),
+          ],
+        ),
+      ),
     );
   }
 }
 
+class _HrEmptyCopy extends StatelessWidget {
+  const _HrEmptyCopy({this.lastEnable});
+
+  final AutoTrackingEnableResult? lastEnable;
+
+  @override
+  Widget build(BuildContext context) {
+    final hrOutcome = lastEnable?.outcomeFor('auto_hr');
+    if (hrOutcome == 'armed') {
+      return const Text(
+        'No whole-day heart rate for a recent day.\n'
+        'Wear the watch for several hours, then Sync — '
+        'fresh auto-HR may not backfill older minutes.',
+      );
+    }
+    if (hrOutcome == 'skipped' ||
+        hrOutcome == 'failed' ||
+        hrOutcome == 'timed_out') {
+      return Text(
+        'No whole-day heart rate for a recent day.\n'
+        'Auto-HR last Enable was $hrOutcome — tap Enable auto-tracking, '
+        'then wear and Sync.',
+      );
+    }
+    if (lastEnable == null) {
+      return const Text(
+        'No whole-day heart rate for a recent day.\n'
+        'Tap Enable auto-tracking, wear several hours, then Sync.',
+      );
+    }
+    return const Text(
+      'No whole-day heart rate for a recent day.\n'
+      'Wear the watch for several hours with auto-HR on, then Sync.',
+    );
+  }
+}
 String _formatRange(int beginUnix, int endUnix) {
   // Wire timestamps are UTC unix seconds; show device local (IST on your phone).
   final begin =

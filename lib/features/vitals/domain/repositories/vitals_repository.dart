@@ -15,6 +15,9 @@ abstract class VitalsRepository {
 
   Future<List<DailyHrDaySummary>> loadDailyHr();
 
+  /// Per-minute HR samples for one local calendar day (`yyyy-MM-dd`), if persisted.
+  Future<List<DailyHrSample>> loadDailyHrSeries(String dayKey);
+
   /// Last explicit Enable SoT (null if never run or corrupt).
   Future<AutoTrackingEnableResult?> loadLastEnable();
 
