@@ -24,3 +24,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    # Splash-only Discobolus mark (letter T in wordmark). App icon stays F.
+    - assets/brand/discobolus.png
