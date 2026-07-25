@@ -10,6 +10,7 @@ class FitnessOsApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       theme: BpTheme.light(),
+      darkTheme: BpTheme.dark(),
       initialRoute: '/',
       routes: AppRouter.routes,
     );

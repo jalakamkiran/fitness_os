@@ -1,5 +1,3 @@
-library blueprint_ui;
-
 // Tokens
 export 'src/tokens/colors.dart';
 export 'src/tokens/spacing.dart';

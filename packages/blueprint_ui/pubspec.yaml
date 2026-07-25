@@ -1,6 +1,6 @@
 name: blueprint_ui
-description: Blueprint Design System for FitnessOs app
-version: 0.1.0
+description: Fathom / Blueprint design system for the Fitness OS companion app.
+version: 0.2.0
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -9,3 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
