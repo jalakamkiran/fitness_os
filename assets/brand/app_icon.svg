@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Fathom">
+  <!-- Full-bleed master; OS applies round/squircle mask. Letter F from logo.html. -->
+  <rect width="1024" height="1024" fill="#19B7B0"/>
+  <g transform="translate(176,176) scale(18.6667)" fill="#043532">
+    <path d="M8 5h20v5.2H14.2v6.4H26v5.2H14.2V31H8V5z"/>
+  </g>
+</svg>

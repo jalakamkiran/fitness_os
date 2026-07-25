@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fathom — Home</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="stage">
+    <div class="phone" id="phone">
+      <header class="app-header">
+        <button class="icon-round" type="button" aria-label="Menu">☰</button>
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">F</span>
+          <div>
+            <p class="brand-title">Fathom</p>
+            <p class="brand-sub mono">GT5 · synced 2m ago</p>
+          </div>
+        </div>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">Dark</button>
+      </header>
+
+      <main class="scroll">
+        <div class="period-row">
+          <div class="seg" role="tablist" aria-label="Period">
+            <button class="seg-btn active" type="button">Today</button>
+            <button class="seg-btn" type="button" disabled title="Home stays Today-only">Week</button>
+            <button class="seg-btn" type="button" disabled title="Home stays Today-only">Month</button>
+          </div>
+          <span class="sync-pill"><i></i> Synced</span>
+        </div>
+
+        <!-- Connection / sync health -->
+        <section class="card sync-card" aria-label="Connection health">
+          <div class="sync-row">
+            <div>
+              <p class="kicker">Watch</p>
+              <h1 class="sync-title">GT5-A07 connected</h1>
+              <p class="hero-caption">Auto-sync on open · last pass 2m ago</p>
+            </div>
+            <span class="status-dot ok" title="Healthy"></span>
+          </div>
+        </section>
+
+        <!-- Today's totals -->
+        <section class="kpi-grid" aria-label="Today totals">
+          <article class="card kpi">
+            <p class="kpi-label">Calories</p>
+            <p class="kpi-value">1,842</p>
+            <p class="kpi-delta up">+12% vs avg</p>
+            <svg class="spark" viewBox="0 0 100 28" aria-hidden="true">
+              <path d="M0 22 C12 20, 18 14, 28 16 S48 24, 58 12 S78 6, 100 10" />
+            </svg>
+          </article>
+          <article class="card kpi">
+            <p class="kpi-label">Steps</p>
+            <p class="kpi-value">7,420</p>
+            <p class="kpi-delta">on track</p>
+            <svg class="spark" viewBox="0 0 100 28" aria-hidden="true">
+              <path d="M0 18 C20 16, 30 20, 40 14 S70 8, 100 12" />
+            </svg>
+          </article>
+          <article class="card kpi wide">
+            <div class="kpi-wide-row">
+              <div>
+                <p class="kpi-label">Workout time</p>
+                <p class="kpi-value sm">42<span class="unit">m</span> · 1 session</p>
+              </div>
+              <span class="chip-static">Today</span>
+            </div>
+          </article>
+        </section>
+
+        <!-- Vitals snapshot (not history) -->
+        <section class="card" aria-label="Vitals snapshot">
+          <div class="kpi-wide-row">
+            <div>
+              <p class="kicker">Vitals · now</p>
+              <p class="kpi-value sm">58<span class="unit"> rest</span> · 72<span class="unit"> last</span> · 97<span class="unit">% SpO₂</span></p>
+            </div>
+            <a class="chip-link" href="#vitals">Vitals →</a>
+          </div>
+        </section>
+
+        <!-- One swim takeaway — no chart, no reasoner settings -->
+        <section class="card insight" aria-label="Swim takeaway">
+          <div class="insight-head">
+            <div>
+              <p class="kicker">Swim · #11</p>
+              <h2>Efficient early, fatigue later</h2>
+            </div>
+            <span class="badge amber">med</span>
+          </div>
+          <p class="insight-body">Shorten sets before adding volume. Pace decay after interval 3.</p>
+          <div class="insight-actions single">
+            <a class="btn primary" href="#session">Open session</a>
+          </div>
+        </section>
+      </main>
+
+      <nav class="tabbar" aria-label="Primary">
+        <a class="tab active" href="#home"><span>⌂</span>Home</a>
+        <a class="tab" href="#vitals"><span>◉</span>Vitals</a>
+        <a class="tab" href="#workouts"><span>≡</span>Workouts</a>
+      </nav>
+    </div>
+
+    <aside class="rail">
+      <p class="rail-back"><a href="../index.html">← Design review hub</a></p>
+      <h3>Fathom · Home</h3>
+      <ol>
+        <li><strong>Now-state</strong> — sync health, vitals snapshot, one takeaway, today’s totals.</li>
+        <li><strong>Never</strong> — graphs, vitals history, diagnosis lists, reasoner settings.</li>
+        <li><strong>Tabs</strong> — Home | Vitals | Workouts (frozen ownership).</li>
+      </ol>
+      <p class="rail-note">Pool spatial board and pace chart moved off Home (charts research stays under Swim charts). KPI sparks remain subtle chrome only.</p>
+      <div class="rail-actions">
+        <button type="button" id="themeToggleRail">Toggle theme</button>
+        <a class="btn primary" href="../home-states.html" style="display:inline-block;margin-top:10px;text-align:center">Home states →</a>
+        <a class="btn ghost" href="charts.html" style="display:inline-block;margin-top:8px;text-align:center">Swim charts →</a>
+      </div>
+    </aside>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

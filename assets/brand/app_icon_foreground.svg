@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Adaptive-icon foreground: F centered in the 66% safe zone. -->
+  <g transform="translate(256,256) scale(14.2222)" fill="#043532">
+    <path d="M8 5h20v5.2H14.2v6.4H26v5.2H14.2V31H8V5z"/>
+  </g>
+</svg>

@@ -34,7 +34,7 @@
         android:maxSdkVersion="30" />
 
     <application
-        android:label="fitness_os"
+        android:label="Fathom"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false">

@@ -1,0 +1,190 @@
+/* Vitals tab — physiological trends surface */
+.vitals-hero .hero-value {
+  margin: 6px 0 0;
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
+}
+.vitals-hero .hero-value .unit {
+  font-size: 20px;
+  color: var(--ink-dim);
+  font-weight: 600;
+  margin-left: 4px;
+}
+.vitals-hero .trend-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.vitals-hero .trend-delta {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+.vitals-hero .trend-delta.down { color: var(--up); }
+.vitals-hero .trend-delta.up-warn { color: var(--amber); }
+
+.vitals-chart {
+  margin-top: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent),
+    var(--bg);
+  padding: 12px 12px 8px;
+}
+.vitals-chart svg {
+  width: 100%;
+  height: 120px;
+  display: block;
+}
+.vitals-chart .area { fill: url(#hrFill); opacity: 0.9; }
+.vitals-chart .line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.vitals-chart .axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.metric-card .metric-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+.metric-card .metric-value {
+  margin: 8px 0 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.metric-card .metric-value .unit {
+  font-size: 0.55em;
+  color: var(--ink-dim);
+  font-weight: 600;
+  margin-left: 2px;
+}
+.metric-card .metric-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-weight: 600;
+}
+.metric-card .mini-spark {
+  width: 100%;
+  height: 32px;
+  margin-top: 10px;
+}
+.metric-card .mini-spark path {
+  fill: none;
+  stroke: var(--spark);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.band-card .band-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.band-card h2 {
+  margin: 4px 0 0;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+.band-card .band-body {
+  margin: 8px 0 0;
+  color: var(--ink-dim);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.band-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  margin-top: 12px;
+}
+.band-cell {
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.band-cell.on { background: var(--accent); }
+.band-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+.rail .eyebrow {
+  margin: 0 0 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.rail h1 {
+  margin: 0 0 10px;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+.rail .lede {
+  margin: 0 0 14px;
+  color: var(--ink-dim);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.rail-list { margin: 0; padding-left: 18px; }
+.rail-list li { margin-bottom: 6px; }
+.rail-actions .btn {
+  display: block;
+  margin-top: 8px;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+.rail-actions .btn.ghost {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+}
+.own-matrix {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-dim);
+  line-height: 1.45;
+}
+.own-matrix strong { color: var(--ink); }
+.own-matrix code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--ink);
+}

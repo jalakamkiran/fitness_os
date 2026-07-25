@@ -1,0 +1,88 @@
+.wide { grid-template-columns: 400px minmax(260px, 380px); }
+.phone.tall { height: auto; min-height: 900px; }
+.link-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.link-row a {
+  color: var(--accent);
+  font-weight: 800;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.scatter { width: 100%; height: 200px; display: block; }
+.scatter .grid line {
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+.scatter .grid line.soft {
+  stroke-dasharray: 4 4;
+  opacity: 0.7;
+}
+.scatter .band {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 45%, transparent);
+  stroke-width: 1.5;
+}
+.scatter .pt { stroke: var(--bg-elev); stroke-width: 2; }
+.scatter .pt.good { fill: var(--accent); }
+.scatter .pt.warn { fill: var(--amber); }
+.scatter .pt.hot { fill: var(--hot); }
+.scatter .axis {
+  fill: var(--ink-faint);
+  font-size: 10px;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.corridor {
+  fill: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.warnp { fill: var(--amber) !important; }
+.line.gold { stroke: var(--amber) !important; }
+.legend .g { background: var(--amber); }
+
+.radar { width: 100%; height: 240px; display: block; margin: 0 auto; }
+.r-grid {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.2;
+}
+.r-fill {
+  fill: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.r-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.radar .axis {
+  fill: var(--ink-dim);
+  font-size: 10px;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.phase-bars { display: grid; gap: 8px; margin-top: 8px; }
+.phase-bars div {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  font-family: "IBM Plex Mono", monospace;
+  color: var(--ink-dim);
+}
+.phase-bars i {
+  display: block;
+  height: 12px;
+  width: var(--w);
+  border-radius: 99px;
+  background: var(--accent);
+}
+
+.chart-card.focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}

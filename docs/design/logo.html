@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fathom — Logo &amp; splash</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tokens.css" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font-sans);
+      color: var(--ink);
+      background:
+        radial-gradient(900px 480px at 12% -10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 55%),
+        radial-gradient(640px 360px at 90% 4%, color-mix(in srgb, var(--amber) 9%, transparent), transparent 48%),
+        var(--bg);
+    }
+    .theme {
+      position: fixed; top: 16px; right: 16px; z-index: 10;
+      border: 1px solid var(--line); background: var(--bg-elev); color: var(--ink);
+      border-radius: 999px; padding: 8px 14px; font: 600 13px var(--font-sans); cursor: pointer;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 48px 24px 96px; }
+    .back {
+      display: inline-flex; font-size: 13px; font-weight: 700; color: var(--ink-dim);
+      text-decoration: none; margin-bottom: 20px;
+    }
+    .back:hover { color: var(--ink); }
+    .eyebrow {
+      font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px;
+    }
+    h1 { font-size: clamp(2rem, 4vw, 2.75rem); letter-spacing: -0.03em; margin: 0 0 12px; }
+    .lede { font-size: 1.1rem; color: var(--ink-dim); max-width: 58ch; line-height: 1.5; margin: 0 0 36px; }
+    section { margin-bottom: 48px; }
+    h2 {
+      font-size: 1.35rem; letter-spacing: -0.02em; margin: 0 0 8px;
+      padding-bottom: 10px; border-bottom: 1px solid var(--line);
+    }
+    .section-lead { color: var(--ink-dim); line-height: 1.5; margin: 0 0 18px; max-width: 64ch; }
+    .panel {
+      background: var(--bg-elev); border: 1px solid var(--line); border-radius: 18px;
+      padding: 28px; box-shadow: var(--shadow);
+    }
+    .hero-mark {
+      display: flex; flex-wrap: wrap; gap: 28px; align-items: center; justify-content: space-between;
+    }
+    .wordmark-hero { color: var(--ink); }
+    .wm-row {
+      display: inline-flex;
+      align-items: stretch;
+      justify-content: center;
+      gap: 0;
+      color: var(--ink);
+      line-height: 0;
+      height: 1em;
+    }
+    .wm-row .fa-svg,
+    .wm-row .hom-svg {
+      height: 100%;
+      width: auto;
+      display: block;
+      flex: 0 0 auto;
+    }
+    /* Same outer box as letter SVGs; pad matches glyph inset so oval sits on letter baseline */
+    .wm-row .disc-slot {
+      display: inline-flex;
+      align-items: flex-end;
+      justify-content: center;
+      height: 100%;
+      width: 0.78em;
+      /* Locked breathing room: a · Discobolus · h */
+      margin: 0 0.12em;
+      padding: 0.08em 0 0.14em;
+      box-sizing: border-box;
+      flex: 0 0 auto;
+    }
+    .wm-row .disc-slot .disc-img {
+      height: 100%;
+      width: auto;
+      max-width: 120%;
+      display: block;
+      object-fit: contain;
+      object-position: center bottom;
+    }
+    html[data-theme="dark"] .disc-img { filter: invert(1); }
+    .wordmark-hero .wm-row { font-size: clamp(40px, 8vw, 64px); }
+    .note {
+      font-size: 0.9rem; color: var(--ink-dim); line-height: 1.45; max-width: 30ch; margin: 0;
+    }
+    .note strong { color: var(--ink); display: block; margin-bottom: 6px; }
+    .icon-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; }
+    .icon-card { text-align: center; }
+    .icon-tile {
+      width: 88px; height: 88px; border-radius: 22px;
+      background: var(--bg); border: 1px solid var(--line);
+      display: grid; place-items: center; color: var(--ink);
+      margin-bottom: 8px;
+    }
+    .icon-tile.mint { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+    .icon-tile.ink { background: var(--ink); color: var(--bg-elev); border-color: transparent; }
+    .icon-tile svg { width: 42px; height: 42px; }
+    .icon-card figcaption {
+      font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint);
+    }
+    .ladder {
+      display: flex; flex-wrap: wrap; align-items: flex-end; gap: 20px 28px;
+    }
+    .ladder-item { text-align: center; }
+    .ladder-item .slot {
+      display: flex; align-items: center; justify-content: center;
+      min-width: 48px; padding: 10px 8px;
+      background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+      color: var(--ink); margin-bottom: 8px;
+    }
+    .ladder-item figcaption {
+      font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint);
+    }
+    .clear-space { display: grid; gap: 20px; }
+    @media (min-width: 720px) { .clear-space { grid-template-columns: 1.1fr 1fr; align-items: center; } }
+    .clear-diagram {
+      position: relative; padding: calc(0.35em * 4.2);
+      border: 1px dashed color-mix(in srgb, var(--accent) 55%, var(--line));
+      border-radius: 16px; background: var(--bg);
+      display: grid; place-items: center; color: var(--ink);
+    }
+    .clear-diagram .wm-row { font-size: 48px; }
+    .frame-stage .disc-img { width: 68%; height: auto; }
+    .frame-stage .wm-row { font-size: 22px; }
+    .ladder-item .wm-row { color: var(--ink); }
+    .clear-label {
+      position: absolute; font-family: var(--font-mono); font-size: 10px;
+      color: var(--accent); letter-spacing: 0.04em;
+    }
+    .clear-label.top { top: 6px; left: 50%; transform: translateX(-50%); }
+    .clear-label.left { left: 4px; top: 50%; transform: translateY(-50%) rotate(-90deg); }
+
+    /* —— Playable splash —— */
+    .splash-banner {
+      display: inline-block; margin-bottom: 14px;
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--amber);
+      border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line));
+      padding: 6px 10px; border-radius: 999px;
+    }
+    .splash-player {
+      display: grid; gap: 20px;
+    }
+    @media (min-width: 800px) {
+      .splash-player { grid-template-columns: 320px 1fr; align-items: start; }
+    }
+    .phone-splash {
+      width: min(320px, 100%);
+      aspect-ratio: 390 / 844;
+      border-radius: 34px;
+      border: 1px solid var(--phone-border);
+      background:
+        radial-gradient(120% 80% at 50% 20%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 55%),
+        var(--bg);
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+      margin: 0 auto;
+    }
+    .splash-stage {
+      position: absolute; inset: 0;
+      display: grid; place-items: center;
+      color: var(--ink);
+    }
+    .splash-word {
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      gap: 0;
+      height: 36px;
+      transform-origin: center center;
+    }
+    .splash-word .letters-fa,
+    .splash-word .letters-hom {
+      display: flex;
+      align-items: stretch;
+      height: 100%;
+      opacity: 0;
+      transform: translateY(8px);
+      color: var(--ink);
+    }
+    .splash-word .letters-fa svg,
+    .splash-word .letters-hom svg {
+      height: 100%;
+      width: auto;
+      display: block;
+    }
+    .splash-word .athlete-slot {
+      width: 28px;
+      height: 100%;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      flex: 0 0 auto;
+      margin: 0 4px; /* match locked a · mark · h spacing */
+      padding: calc(36px * 0.08) 0 calc(36px * 0.14);
+      box-sizing: border-box;
+    }
+    .splash-word .athlete-slot .disc-img {
+      width: auto;
+      height: 100%;
+      max-width: 110%;
+      object-fit: contain;
+      object-position: center bottom;
+      display: block;
+      transform-origin: center bottom;
+    }
+
+    /* Animation states on .phone-splash */
+    .phone-splash[data-phase="idle"] .athlete-slot .disc-img {
+      transform: scale(2.6);
+    }
+    .phone-splash[data-phase="idle"] .letters-fa,
+    .phone-splash[data-phase="idle"] .letters-hom { opacity: 0; }
+
+    .phone-splash.playing[data-phase="figure"] .athlete-slot .disc-img {
+      animation: athleteEnter 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    .phone-splash.playing[data-phase="settle"] .athlete-slot .disc-img {
+      animation: athleteSettle 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    .phone-splash.playing[data-phase="letters"] .athlete-slot .disc-img {
+      transform: scale(1);
+    }
+    .phone-splash.playing[data-phase="letters"] .letters-fa {
+      animation: lettersIn 700ms cubic-bezier(0.22, 1, 0.36, 1) 80ms forwards;
+    }
+    .phone-splash.playing[data-phase="letters"] .letters-hom {
+      animation: lettersIn 700ms cubic-bezier(0.22, 1, 0.36, 1) 180ms forwards;
+    }
+    .phone-splash.playing[data-phase="hold"] .athlete-slot .disc-img {
+      transform: scale(1);
+    }
+    .phone-splash.playing[data-phase="hold"] .letters-fa,
+    .phone-splash.playing[data-phase="hold"] .letters-hom {
+      opacity: 1; transform: none;
+    }
+
+    @keyframes athleteEnter {
+      from { opacity: 0; transform: scale(2.9); }
+      to { opacity: 1; transform: scale(2.6); }
+    }
+    @keyframes athleteSettle {
+      from { transform: scale(2.6); }
+      to { transform: scale(1); }
+    }
+    @keyframes lettersIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .splash-controls {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px;
+    }
+    .btn {
+      appearance: none; border: none; cursor: pointer;
+      font: 700 14px var(--font-sans);
+      padding: 12px 18px; border-radius: 999px;
+      background: var(--ink); color: var(--bg-elev);
+    }
+    .btn:hover { filter: brightness(1.05); }
+    .btn.ghost {
+      background: transparent; color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    .phase-label {
+      font-family: var(--font-mono); font-size: 12px; color: var(--ink-faint);
+    }
+    .beat-list {
+      margin: 0; padding-left: 1.15rem; color: var(--ink-dim); line-height: 1.55;
+    }
+    .beat-list li[data-active="true"] { color: var(--ink); font-weight: 600; }
+
+    .storyboard {
+      display: grid; gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      margin-top: 18px;
+    }
+    .frame {
+      background: var(--bg); border: 1px solid var(--line); border-radius: 14px;
+      padding: 12px;
+    }
+    .frame-stage {
+      aspect-ratio: 1; border-radius: 10px; background: var(--bg-elev);
+      border: 1px solid var(--line); display: grid; place-items: center;
+      color: var(--ink); margin-bottom: 8px; overflow: hidden;
+    }
+    .frame h3 { margin: 0 0 4px; font-size: 0.85rem; }
+    .frame p { margin: 0; font-size: 0.78rem; color: var(--ink-dim); line-height: 1.4; }
+
+    .foot {
+      margin-top: 8px; padding-top: 20px; border-top: 1px solid var(--line);
+      display: flex; flex-wrap: wrap; gap: 12px 20px;
+      font-size: 0.9rem; color: var(--ink-dim);
+    }
+    .foot a { color: var(--ink); font-weight: 700; text-decoration: none; }
+    .foot a:hover { color: var(--accent); }
+    .wm-row svg path,
+    .letters-fa svg path,
+    .letters-hom svg path,
+    .lettermark path { fill: currentColor; }
+  </style>
+</head>
+<body>
+  <button class="theme" id="themeToggle" type="button">Dark</button>
+
+  <!-- Geometric wordmark letters (previous style); T slot = discobolus.png -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="letters-fa" viewBox="0 0 52 36">
+      <!-- F -->
+      <path d="M4 4h20v4.4H9.2v7.6H20.4v4.4H9.2V32H4V4z"/>
+      <!-- a — same geometric style; bowl + stem share F baseline (y=32), stem capped at x-height for alignment -->
+      <path d="M40.2 13.8c-5.5 0-9.5 3.7-9.5 9.1 0 5.5 4 9.1 9.6 9.1 3 0 5.4-1 7.1-2.8v2.5h4.2V13.8h-4.2v2.2c-1.5-1.4-3.5-2.2-7.2-2.2zm.5 14.3c-3.2 0-5.4-2.2-5.4-5.2s2.2-5.2 5.4-5.2 5.4 2.2 5.4 5.2-2.2 5.2-5.4 5.2z"/>
+    </symbol>
+    <symbol id="letters-hom" viewBox="0 0 92 36">
+      <path d="M4 4h4.4v11c1.5-1.5 3.6-2.5 6.5-2.5 5.3 0 8.9 3.6 8.9 9.3V32h-4.4v-9.3c0-3.4-1.9-5.5-5-5.5-3.3 0-5.6 2.3-5.6 5.7V32H4V4z"/>
+      <path d="M38.4 13.6c-5.5 0-9.6 4-9.6 9.2s4.1 9.2 9.6 9.2 9.6-4 9.6-9.2-4.1-9.2-9.6-9.2zm0 14.4c-3.1 0-5.3-2.3-5.3-5.2s2.2-5.2 5.3-5.2 5.3 2.3 5.3 5.2-2.2 5.2-5.3 5.2z"/>
+      <path d="M54.2 14.2h4.3v2.3c1.4-1.6 3.4-2.8 6.3-2.8 2.5 0 4.5 1 5.8 2.6 1.5-1.6 3.7-2.6 6.6-2.6 5 0 8.2 3.3 8.2 8.7V32h-4.3v-9c0-3.1-1.6-5-4.3-5-2.8 0-4.6 2-4.6 5.2V32h-4.3v-9c0-3.1-1.6-5-4.3-5-2.8 0-4.7 2.1-4.7 5.4V32h-4.3V14.2z"/>
+    </symbol>
+    <symbol id="letter-f" viewBox="0 0 36 36">
+      <path d="M8 5h20v5.2H14.2v6.4H26v5.2H14.2V31H8V5z"/>
+    </symbol>
+  </svg>
+
+  <div class="wrap">
+    <a class="back" href="index.html">← Design review hub</a>
+    <p class="eyebrow">02 · Logo &amp; splash</p>
+    <h1>Fathom mark</h1>
+    <p class="lede">
+      <strong>Locked.</strong> The <strong>Discobolus</strong> (Myron’s discus thrower) <em>is</em> the letter T —
+      arm + disc form the crossbar, body the stem — sized to the Fa/hom line with light spacing beside the mark.
+      Everyday icon is a plain <strong>F</strong>. Splash plays the figure settling into the word.
+    </p>
+
+    <section>
+      <h2>Playable splash</h2>
+      <span class="splash-banner">Splash only — figure never becomes the app icon</span>
+      <p class="section-lead">
+        Cold start: athlete appears → scales down to word height as the T →
+        <em>Fa</em> + <em>hom</em> assemble around him → hold on Fathom.
+      </p>
+      <div class="panel splash-player">
+        <div>
+          <div class="phone-splash" id="splashPhone" data-phase="idle" aria-label="Fathom splash animation stage">
+            <div class="splash-stage">
+              <div class="splash-word wm" id="splashWord">
+                <div class="letters-fa" aria-hidden="true">
+                  <svg viewBox="0 0 52 36"><use href="#letters-fa"/></svg>
+                </div>
+                <div class="athlete-slot" aria-hidden="true">
+                  <img class="disc-img" src="assets/discobolus.png" alt="" width="130" height="162" />
+                </div>
+                <div class="letters-hom" aria-hidden="true">
+                  <svg viewBox="0 0 92 36"><use href="#letters-hom"/></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="splash-controls">
+            <button class="btn" type="button" id="playSplash">Play splash</button>
+            <button class="btn ghost" type="button" id="replaySplash">Replay</button>
+            <span class="phase-label" id="phaseLabel">Idle — press Play</span>
+          </div>
+          <ol class="beat-list" id="beatList">
+            <li data-beat="figure">Discobolus enters (hero scale)</li>
+            <li data-beat="settle">Settles to letter height — becomes the T</li>
+            <li data-beat="letters">Fa + hom assemble</li>
+            <li data-beat="hold">Hold on Fathom wordmark</li>
+          </ol>
+          <div class="storyboard" aria-label="Storyboard stills">
+            <article class="frame">
+              <div class="frame-stage"><img class="disc-img" src="assets/discobolus.png" alt="" /></div>
+              <h3>1 · Figure</h3>
+              <p>Discobolus alone.</p>
+            </article>
+            <article class="frame">
+              <div class="frame-stage"><img class="disc-img" src="assets/discobolus.png" alt="" style="width:42%" /></div>
+              <h3>2 · As T</h3>
+              <p>Word-height athlete.</p>
+            </article>
+            <article class="frame">
+              <div class="frame-stage">
+                <span class="wm-row" style="font-size:20px" aria-hidden="true">
+                  <svg class="fa-svg" viewBox="0 0 52 36" aria-hidden="true"><use href="#letters-fa"/></svg>
+            <span class="disc-slot"><img class="disc-img" src="assets/discobolus.png" alt="" /></span>
+            <svg class="hom-svg" viewBox="0 0 92 36" aria-hidden="true"><use href="#letters-hom"/></svg>
+                </span>
+              </div>
+              <h3>3 · Word</h3>
+              <p>Fathom locked.</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Primary wordmark</h2>
+      <p class="section-lead">
+        <em>Fa</em> + Discobolus-as-T + <em>hom</em>. Single-colour vector.
+        At small sizes the athlete still reads as a T (crossbar + stem).
+      </p>
+      <div class="panel hero-mark">
+        <div class="wordmark-hero" role="img" aria-label="Fathom">
+          <span class="wm-row">
+            <svg class="fa-svg" viewBox="0 0 52 36" aria-hidden="true"><use href="#letters-fa"/></svg>
+            <span class="disc-slot"><img class="disc-img" src="assets/discobolus.png" alt="" /></span>
+            <svg class="hom-svg" viewBox="0 0 92 36" aria-hidden="true"><use href="#letters-hom"/></svg>
+          </span>
+        </div>
+        <p class="note">
+          <strong>Locked</strong>
+          Discobolus is the T on the Fa/hom line (spaced a·mark·h). App icon stays F. Do not reopen without owner ask.
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>App icon — letter F</h2>
+      <p class="section-lead">
+        Everyday icon is a bold <strong>F</strong> (not the athlete). Keeps splash figure special
+        and chrome legible at 29–60px. Optional later: a sports combo mark — not required for this cut.
+      </p>
+      <div class="panel">
+        <div class="icon-row">
+          <figure class="icon-card">
+            <div class="icon-tile lettermark">
+              <svg viewBox="0 0 36 36" aria-hidden="true"><use href="#letter-f"/></svg>
+            </div>
+            <figcaption>F on surface</figcaption>
+          </figure>
+          <figure class="icon-card">
+            <div class="icon-tile mint lettermark">
+              <svg viewBox="0 0 36 36" aria-hidden="true"><use href="#letter-f"/></svg>
+            </div>
+            <figcaption>F on mint</figcaption>
+          </figure>
+          <figure class="icon-card">
+            <div class="icon-tile ink lettermark">
+              <svg viewBox="0 0 36 36" aria-hidden="true"><use href="#letter-f"/></svg>
+            </div>
+            <figcaption>F inverse</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Size ladder</h2>
+      <p class="section-lead">Wordmark with athlete-T from 16px up. Icon F stays crisp at favicon sizes.</p>
+      <div class="panel">
+        <div class="ladder">
+          <figure class="ladder-item">
+            <div class="slot" style="height: 36px">
+              <span class="wm-row" style="font-size:16px" aria-hidden="true">
+                <svg class="fa-svg" viewBox="0 0 52 36" aria-hidden="true"><use href="#letters-fa"/></svg>
+            <span class="disc-slot"><img class="disc-img" src="assets/discobolus.png" alt="" /></span>
+            <svg class="hom-svg" viewBox="0 0 92 36" aria-hidden="true"><use href="#letters-hom"/></svg>
+              </span>
+            </div>
+            <figcaption>16px</figcaption>
+          </figure>
+          <figure class="ladder-item">
+            <div class="slot" style="height: 40px">
+              <span class="wm-row" style="font-size:20px" aria-hidden="true">
+                <svg class="fa-svg" viewBox="0 0 52 36" aria-hidden="true"><use href="#letters-fa"/></svg>
+            <span class="disc-slot"><img class="disc-img" src="assets/discobolus.png" alt="" /></span>
+            <svg class="hom-svg" viewBox="0 0 92 36" aria-hidden="true"><use href="#letters-hom"/></svg>
+              </span>
+            </div>
+            <figcaption>20px</figcaption>
+          </figure>
+          <figure class="ladder-item">
+            <div class="slot" style="height: 44px">
+              <span class="wm-row" style="font-size:24px" aria-hidden="true">
+                <svg class="fa-svg" viewBox="0 0 52 36" aria-hidden="true"><use href="#letters-fa"/></svg>
+            <span class="disc-slot"><img class="disc-img" src="assets/discobolus.png" alt="" /></span>
+            <svg class="hom-svg" viewBox="0 0 92 36" aria-hidden="true"><use href="#letters-hom"/></svg>
+              </span>
+            </div>
+            <figcaption>24px</figcaption>
+          </figure>
+          <figure class="ladder-item">
+            <div class="slot" style="height: 56px">
+              <span class="wm-row" style="font-size:32px" aria-hidden="true">
+                <svg class="fa-svg" viewBox="0 0 52 36" aria-hidden="true"><use href="#letters-fa"/></svg>
+            <span class="disc-slot"><img class="disc-img" src="assets/discobolus.png" alt="" /></span>
+            <svg class="hom-svg" viewBox="0 0 92 36" aria-hidden="true"><use href="#letters-hom"/></svg>
+              </span>
+            </div>
+            <figcaption>32px</figcaption>
+          </figure>
+          <figure class="ladder-item">
+            <div class="slot" style="height: 88px">
+              <span class="wm-row" style="font-size:56px" aria-hidden="true">
+                <svg class="fa-svg" viewBox="0 0 52 36" aria-hidden="true"><use href="#letters-fa"/></svg>
+            <span class="disc-slot"><img class="disc-img" src="assets/discobolus.png" alt="" /></span>
+            <svg class="hom-svg" viewBox="0 0 92 36" aria-hidden="true"><use href="#letters-hom"/></svg>
+              </span>
+            </div>
+            <figcaption>56px</figcaption>
+          </figure>
+          <figure class="ladder-item">
+            <div class="slot" style="height: 72px">
+              <svg class="lettermark" width="28" height="28" viewBox="0 0 36 36" aria-label="F 28" style="fill:currentColor"><use href="#letter-f"/></svg>
+            </div>
+            <figcaption>F · 28px</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Clear-space</h2>
+      <p class="section-lead">Minimum clear-space = <code style="font-family:var(--font-mono)">0.35em</code> of capital height. Athlete-T stays inside the word — do not pull the figure out as a separate badge in UI.</p>
+      <div class="panel clear-space">
+        <div class="clear-diagram">
+          <span class="clear-label top">0.35em</span>
+          <span class="clear-label left">0.35em</span>
+          <span class="wm-row" role="img" aria-label="Clear space around Fathom">
+            <svg class="fa-svg" viewBox="0 0 52 36" aria-hidden="true"><use href="#letters-fa"/></svg>
+            <span class="disc-slot"><img class="disc-img" src="assets/discobolus.png" alt="" /></span>
+            <svg class="hom-svg" viewBox="0 0 92 36" aria-hidden="true"><use href="#letters-hom"/></svg>
+          </span>
+        </div>
+        <div>
+          <p class="note" style="max-width: none">
+            <strong>Do not</strong>
+            Use Discobolus as the app icon. Do not add a second T next to the figure. Do not gradient or shadow the mark.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <div class="foot">
+      <a href="index.html">← Review hub</a>
+      <a href="design-system.html">← Design system</a>
+      <a href="home-prototype/">Home prototype →</a>
+    </div>
+  </div>
+
+  <script>
+    const root = document.documentElement;
+    const themeBtn = document.getElementById("themeToggle");
+    themeBtn.addEventListener("click", () => {
+      const next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      themeBtn.textContent = next === "dark" ? "Light" : "Dark";
+    });
+
+    const phone = document.getElementById("splashPhone");
+    const phaseLabel = document.getElementById("phaseLabel");
+    const beats = [...document.querySelectorAll("#beatList li")];
+    let timer = null;
+    let running = false;
+
+    const phases = [
+      { id: "figure", label: "1 · Discobolus enters", ms: 950 },
+      { id: "settle", label: "2 · Settles as the T", ms: 950 },
+      { id: "letters", label: "3 · Letters assemble", ms: 900 },
+      { id: "hold", label: "4 · Hold on Fathom", ms: 1600 },
+    ];
+
+    function setBeat(id) {
+      beats.forEach((li) => {
+        li.dataset.active = li.dataset.beat === id ? "true" : "false";
+      });
+    }
+
+    function resetSplash() {
+      running = false;
+      if (timer) { clearTimeout(timer); timer = null; }
+      phone.classList.remove("playing");
+      phone.dataset.phase = "idle";
+      phaseLabel.textContent = "Idle — press Play";
+      setBeat(null);
+      // force reflow so animations can restart
+      void phone.offsetWidth;
+    }
+
+    function playSplash() {
+      resetSplash();
+      running = true;
+      phone.classList.add("playing");
+      let i = 0;
+
+      const step = () => {
+        if (!running) return;
+        const p = phases[i];
+        phone.dataset.phase = p.id;
+        phaseLabel.textContent = p.label;
+        setBeat(p.id);
+        i += 1;
+        if (i < phases.length) {
+          timer = setTimeout(step, p.ms);
+        } else {
+          timer = setTimeout(() => {
+            phaseLabel.textContent = "Done — Replay to watch again";
+            running = false;
+          }, p.ms);
+        }
+      };
+      step();
+    }
+
+    document.getElementById("playSplash").addEventListener("click", playSplash);
+    document.getElementById("replaySplash").addEventListener("click", playSplash);
+  </script>
+</body>
+</html>

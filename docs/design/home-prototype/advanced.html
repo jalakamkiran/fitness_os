@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fitness OS — Advanced swim charts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="charts.css" />
+  <link rel="stylesheet" href="advanced.css" />
+</head>
+<body class="charts-page">
+  <div class="stage charts-stage wide">
+    <div class="phone tall" id="phone">
+      <header class="app-header">
+        <a class="icon-round" href="charts.html" aria-label="Back">←</a>
+        <div class="brand">
+          <span class="brand-mark">FOS</span>
+          <div>
+            <p class="brand-title">Advanced charts</p>
+            <p class="brand-sub mono">TritonWear · FORM · CSS</p>
+          </div>
+        </div>
+        <button class="theme-toggle" id="themeToggle" type="button">Light</button>
+      </header>
+
+      <main class="scroll">
+        <section class="card research-banner">
+          <p class="kicker">Beyond basics</p>
+          <h1>Coach-grade swim visuals</h1>
+          <p>Scatter coupling, pace bands, stroke index, multi-session overlay, and session radar — the charts serious swim platforms use after splits/SWOLF.</p>
+          <div class="link-row">
+            <a href="charts.html">Basic stack →</a>
+            <button class="btn primary" type="button" id="replayTour">Replay tips</button>
+          </div>
+        </section>
+
+        <!-- A1 Scatter -->
+        <section class="card chart-card" data-tip-id="scatter">
+          <div class="chart-head">
+            <div>
+              <p class="kicker">A1 · Coupling</p>
+              <h2>DPS × stroke rate <button class="info" type="button" data-open-tip="scatter">ⓘ</button></h2>
+            </div>
+            <span class="badge amber">sweet spot</span>
+          </div>
+          <svg class="scatter" viewBox="0 0 320 200" role="img" aria-label="Distance per stroke versus stroke rate">
+            <g class="grid">
+              <line x1="40" y1="20" x2="40" y2="170" />
+              <line x1="40" y1="170" x2="300" y2="170" />
+              <line class="soft" x1="40" y1="95" x2="300" y2="95" />
+              <line class="soft" x1="170" y1="20" x2="170" y2="170" />
+            </g>
+            <!-- sweet-spot band -->
+            <ellipse class="band" cx="200" cy="78" rx="58" ry="34" />
+            <!-- early intervals: efficient -->
+            <circle class="pt good" cx="188" cy="72" r="7" data-label="I1" />
+            <circle class="pt good" cx="196" cy="76" r="7" />
+            <circle class="pt good" cx="204" cy="70" r="7" />
+            <!-- late: rate up, DPS collapse -->
+            <circle class="pt warn" cx="236" cy="108" r="7" />
+            <circle class="pt hot" cx="252" cy="128" r="8" />
+            <circle class="pt hot" cx="262" cy="138" r="8" />
+            <text class="axis" x="150" y="192">Stroke rate →</text>
+            <text class="axis" transform="translate(14 140) rotate(-90)">DPS →</text>
+          </svg>
+          <p class="chart-foot mono">FORM “sweet spot”: hold DPS while rate rises · late points = churn</p>
+        </section>
+
+        <!-- A2 Pace band -->
+        <section class="card chart-card" data-tip-id="band">
+          <div class="chart-head">
+            <div>
+              <p class="kicker">A2 · Target corridor</p>
+              <h2>Pace vs CSS band <button class="info" type="button" data-open-tip="band">ⓘ</button></h2>
+            </div>
+          </div>
+          <svg class="area-chart tall" viewBox="0 0 320 120" role="img">
+            <rect class="corridor" x="0" y="42" width="320" height="28" />
+            <text class="axis" x="8" y="40">CSS ±3%</text>
+            <path class="line" d="M0 55 L53 52 L106 48 L159 58 L212 70 L265 78 L320 86" />
+            <circle cx="106" cy="48" r="4" class="point" />
+            <circle cx="212" cy="70" r="4" class="point warnp" />
+          </svg>
+          <p class="chart-foot mono">Inside band = on-plan · outside late = execution drift</p>
+        </section>
+
+        <!-- A3 Stroke index -->
+        <section class="card chart-card" data-tip-id="si">
+          <div class="chart-head">
+            <div>
+              <p class="kicker">A3 · Composite</p>
+              <h2>Stroke index <button class="info" type="button" data-open-tip="si">ⓘ</button></h2>
+            </div>
+          </div>
+          <svg class="area-chart tall" viewBox="0 0 320 110" role="img">
+            <defs>
+              <linearGradient id="siFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.35" />
+                <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
+              </linearGradient>
+            </defs>
+            <path fill="url(#siFill)" d="M0 30 L53 32 L106 36 L159 48 L212 62 L265 78 L320 88 L320 110 L0 110 Z" />
+            <path class="line" d="M0 30 L53 32 L106 36 L159 48 L212 62 L265 78 L320 88" />
+          </svg>
+          <p class="chart-foot mono">SI ≈ speed × DPS · falling SI under load = skill leak</p>
+        </section>
+
+        <!-- A4 Multi-session overlay -->
+        <section class="card chart-card" data-tip-id="overlay2">
+          <div class="chart-head">
+            <div>
+              <p class="kicker">A4 · Test-set compare</p>
+              <h2>Session overlay <button class="info" type="button" data-open-tip="overlay2">ⓘ</button></h2>
+            </div>
+          </div>
+          <svg class="area-chart tall" viewBox="0 0 320 110" role="img">
+            <path class="line muted-line" d="M0 40 L64 42 L128 48 L192 62 L256 78 L320 90" />
+            <path class="line" d="M0 48 L64 46 L128 44 L192 50 L256 58 L320 64" />
+            <path class="line gold" d="M0 55 L64 52 L128 50 L192 52 L256 54 L320 56" />
+          </svg>
+          <div class="legend mono">
+            <span><i class="b"></i> #9</span>
+            <span><i class="a"></i> #11</span>
+            <span><i class="g"></i> target</span>
+          </div>
+        </section>
+
+        <!-- A5 Radar -->
+        <section class="card chart-card" data-tip-id="radar">
+          <div class="chart-head">
+            <div>
+              <p class="kicker">A5 · Session profile</p>
+              <h2>Session radar <button class="info" type="button" data-open-tip="radar">ⓘ</button></h2>
+            </div>
+          </div>
+          <svg class="radar" viewBox="0 0 280 240" role="img">
+            <g transform="translate(140 120)">
+              <polygon class="r-grid" points="0,-80 76,-25 47,65 -47,65 -76,-25" />
+              <polygon class="r-grid" points="0,-48 46,-15 28,39 -28,39 -46,-15" />
+              <polygon class="r-fill" points="0,-70 60,-18 30,40 -20,50 -55,-10" />
+              <polygon class="r-line" points="0,-70 60,-18 30,40 -20,50 -55,-10" />
+              <text class="axis" y="-88" text-anchor="middle">Pace hold</text>
+              <text class="axis" x="88" y="-20">Efficiency</text>
+              <text class="axis" x="55" y="82">Volume</text>
+              <text class="axis" x="-55" y="82">Consistency</text>
+              <text class="axis" x="-92" y="-20">Recovery</text>
+            </g>
+          </svg>
+          <p class="chart-foot mono">TritonWear-style profile · one glance session shape</p>
+        </section>
+
+        <!-- A6 Phase split aspirational -->
+        <section class="card chart-card dimmed" data-tip-id="phases">
+          <div class="chart-head">
+            <div>
+              <p class="kicker">A6 · Future / IMU</p>
+              <h2>UW · turn · overwater <button class="info" type="button" data-open-tip="phases">ⓘ</button></h2>
+            </div>
+            <span class="badge">needs richer sensors</span>
+          </div>
+          <div class="phase-bars">
+            <div><span>UW</span><i style="--w:18%"></i></div>
+            <div><span>Turn</span><i style="--w:12%"></i></div>
+            <div><span>Swim</span><i style="--w:70%"></i></div>
+          </div>
+          <p class="chart-foot">Parked until GT5 exposes reliable phase metrics — don’t fake with LPv2 intervals.</p>
+        </section>
+      </main>
+    </div>
+
+    <aside class="rail">
+      <h3>Advanced tip copy</h3>
+      <ul class="tip-list" id="tipList"></ul>
+      <p class="rail-note">Refs: TritonWear DPS×rate / stroke index · FORM sweet spot · CSS bands · TrainingPeaks overlays · spider profiles.</p>
+    </aside>
+  </div>
+
+  <div class="tour" id="tour" hidden>
+    <div class="tour-card" role="dialog" aria-modal="true">
+      <p class="kicker" id="tourStep">Tip 1</p>
+      <h3 id="tourTitle"></h3>
+      <p id="tourBody"></p>
+      <p class="tour-good" id="tourGood"></p>
+      <div class="tour-actions">
+        <button type="button" id="tourSkip">Skip</button>
+        <button type="button" class="btn primary" id="tourNext">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="advanced.js"></script>
+</body>
+</html>

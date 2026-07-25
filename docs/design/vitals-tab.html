@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fathom — Vitals</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="home-prototype/styles.css" />
+  <link rel="stylesheet" href="vitals-tab.css" />
+</head>
+<body>
+  <div class="stage">
+    <div class="phone" id="phone">
+      <header class="app-header">
+        <button class="icon-round" type="button" aria-label="Menu">☰</button>
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">F</span>
+          <div>
+            <p class="brand-title">Fathom</p>
+            <p class="brand-sub mono">Vitals · GT5</p>
+          </div>
+        </div>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">Dark</button>
+      </header>
+
+      <main class="scroll">
+        <div class="period-row">
+          <div class="seg" role="tablist" aria-label="Period" id="periodSeg">
+            <button class="seg-btn" type="button" data-period="day">Day</button>
+            <button class="seg-btn active" type="button" data-period="week">Week</button>
+            <button class="seg-btn" type="button" data-period="month">Month</button>
+          </div>
+          <span class="sync-pill"><i></i> Synced</span>
+        </div>
+
+        <section class="card vitals-hero" aria-label="Resting heart rate">
+          <p class="kicker">Resting HR · <span id="periodLabel">7 days</span></p>
+          <p class="hero-value">58<span class="unit">bpm</span></p>
+          <div class="trend-row">
+            <p class="trend-delta down">↓ 3 bpm vs prior week</p>
+            <span class="chip-static">calm band</span>
+          </div>
+          <div class="vitals-chart" aria-hidden="true">
+            <svg viewBox="0 0 320 120" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="hrFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.35" />
+                  <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
+                </linearGradient>
+              </defs>
+              <path id="hrArea" class="area" d="" />
+              <path id="hrLine" class="line" d="" />
+            </svg>
+            <div class="axis" id="chartAxis"></div>
+          </div>
+        </section>
+
+        <section class="metric-grid" aria-label="Current vitals">
+          <article class="card metric-card">
+            <p class="metric-label">Last HR</p>
+            <p class="metric-value">72<span class="unit">bpm</span></p>
+            <p class="metric-sub">2m ago · walking</p>
+            <svg class="mini-spark" viewBox="0 0 100 28" aria-hidden="true">
+              <path d="M0 18 C12 16, 22 22, 34 14 S58 8, 70 12 S88 20, 100 10" />
+            </svg>
+          </article>
+          <article class="card metric-card">
+            <p class="metric-label">SpO₂</p>
+            <p class="metric-value">97<span class="unit">%</span></p>
+            <p class="metric-sub">overnight avg 96%</p>
+            <svg class="mini-spark" viewBox="0 0 100 28" aria-hidden="true">
+              <path d="M0 14 C18 12, 30 16, 44 13 S70 10, 100 12" />
+            </svg>
+          </article>
+          <article class="card metric-card">
+            <p class="metric-label">HRV · RMSSD</p>
+            <p class="metric-value">48<span class="unit">ms</span></p>
+            <p class="metric-sub">↑ vs 7-day median</p>
+            <svg class="mini-spark" viewBox="0 0 100 28" aria-hidden="true">
+              <path d="M0 20 C16 18, 28 12, 40 14 S64 22, 78 10 S92 8, 100 11" />
+            </svg>
+          </article>
+          <article class="card metric-card">
+            <p class="metric-label">Sleep</p>
+            <p class="metric-value">7.2<span class="unit">h</span></p>
+            <p class="metric-sub">deep 1.4h · last night</p>
+            <svg class="mini-spark" viewBox="0 0 100 28" aria-hidden="true">
+              <path d="M0 16 C20 14, 36 20, 52 12 S78 8, 100 14" />
+            </svg>
+          </article>
+        </section>
+
+        <section class="card band-card" aria-label="Heart-rate zones this week">
+          <div class="band-head">
+            <div>
+              <p class="kicker">Load · week</p>
+              <h2>Zone time</h2>
+            </div>
+            <span class="mono muted" style="font-size:11px;color:var(--ink-faint)">hrs</span>
+          </div>
+          <p class="band-body">Most time in recovery / aerobic. No session charts here — those live on Workouts → swim detail.</p>
+          <div class="band-strip" aria-hidden="true">
+            <div class="band-cell on"></div>
+            <div class="band-cell on"></div>
+            <div class="band-cell on"></div>
+            <div class="band-cell"></div>
+            <div class="band-cell"></div>
+          </div>
+          <div class="band-legend">
+            <span>Z1</span><span>Z2</span><span>Z3</span><span>Z4</span><span>Z5</span>
+          </div>
+        </section>
+      </main>
+
+      <nav class="tabbar" aria-label="Primary">
+        <a class="tab" href="home-prototype/"><span>⌂</span>Home</a>
+        <a class="tab active" href="vitals-tab.html" aria-current="page"><span>◉</span>Vitals</a>
+        <a class="tab" href="workouts-tab.html"><span>≡</span>Workouts</a>
+      </nav>
+    </div>
+
+    <aside class="rail">
+      <p class="rail-back"><a href="index.html">← Design review hub</a></p>
+      <p class="eyebrow">Owner review · Vitals</p>
+      <h1>Physiological trends</h1>
+      <p class="lede">Vitals owns history depth for HR, SpO₂, HRV, and sleep. Home only shows a now-state snapshot.</p>
+      <ol class="rail-list">
+        <li><strong>Owns</strong> — Day / Week / Month trends, resting HR chart, zone load.</li>
+        <li><strong>Never</strong> — workout lists, swim charts, diagnoses, reasoner.</li>
+        <li><strong>Handoff</strong> — Home “Vitals →” lands here; session analysis stays on Workouts.</li>
+      </ol>
+      <p class="rail-note">Charts are appropriate on Vitals. Keep density calm — one primary series (resting HR), supporting metrics as cards, no diagnosis theater.</p>
+      <div class="own-matrix">
+        <strong>IA lock</strong><br />
+        Home = now · Vitals = physiology · Workouts = sessions<br />
+        Detail charts: <code>swim-analytics.html</code>
+      </div>
+      <div class="rail-actions">
+        <button type="button" id="themeToggleRail">Toggle theme</button>
+        <a class="btn primary" href="workouts-tab.html">Workouts tab →</a>
+        <a class="btn ghost" href="home-prototype/">Home prototype →</a>
+      </div>
+    </aside>
+  </div>
+  <script src="vitals-tab.js"></script>
+</body>
+</html>

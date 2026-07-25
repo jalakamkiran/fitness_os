@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fathom — Design system</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tokens.css" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font-sans);
+      color: var(--ink);
+      background:
+        radial-gradient(900px 480px at 8% -8%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 55%),
+        radial-gradient(700px 380px at 96% 0%, color-mix(in srgb, var(--amber) 10%, transparent), transparent 50%),
+        var(--bg);
+    }
+    .theme {
+      position: fixed; top: 16px; right: 16px; z-index: 10;
+      border: 1px solid var(--line); background: var(--bg-elev); color: var(--ink);
+      border-radius: 999px; padding: 8px 14px; font: 600 13px var(--font-sans); cursor: pointer;
+    }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 48px 24px 96px; }
+    .back {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 700; color: var(--ink-dim); text-decoration: none; margin-bottom: 20px;
+    }
+    .back:hover { color: var(--ink); }
+    .eyebrow {
+      font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px;
+    }
+    h1 { font-size: clamp(2rem, 4vw, 2.75rem); letter-spacing: -0.03em; margin: 0 0 12px; }
+    .lede { font-size: 1.1rem; color: var(--ink-dim); max-width: 58ch; line-height: 1.5; margin: 0 0 40px; }
+    section { margin-bottom: 48px; }
+    h2 {
+      font-size: 1.35rem; letter-spacing: -0.02em; margin: 0 0 8px;
+      padding-bottom: 10px; border-bottom: 1px solid var(--line);
+    }
+    .section-lead { color: var(--ink-dim); line-height: 1.5; margin: 0 0 18px; max-width: 62ch; }
+    .panel {
+      background: var(--bg-elev); border: 1px solid var(--line); border-radius: 18px;
+      padding: 22px 24px; box-shadow: var(--shadow);
+    }
+    .positioning { display: grid; gap: 16px; }
+    @media (min-width: 720px) { .positioning { grid-template-columns: 1.2fr 1fr; } }
+    .positioning h3 { margin: 0 0 8px; font-size: 1rem; }
+    .positioning p { margin: 0; color: var(--ink-dim); line-height: 1.5; font-size: 0.95rem; }
+    .tag {
+      display: inline-block; font-family: var(--font-mono); font-size: 11px;
+      letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent);
+      margin-bottom: 10px;
+    }
+    .swatch-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px;
+    }
+    .swatch {
+      border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--bg);
+    }
+    .swatch-chip { height: 72px; }
+    .swatch-meta { padding: 10px 12px; }
+    .swatch-meta strong { display: block; font-size: 13px; margin-bottom: 2px; }
+    .swatch-meta code {
+      font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint);
+    }
+    .type-stack { display: grid; gap: 20px; }
+    .type-row { display: grid; gap: 6px; }
+    @media (min-width: 640px) {
+      .type-row { grid-template-columns: 140px 1fr; align-items: baseline; }
+    }
+    .type-meta {
+      font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); letter-spacing: 0.04em;
+    }
+    .display { font-size: clamp(2.4rem, 5vw, 3.4rem); font-weight: 800; letter-spacing: -0.04em; line-height: 1; margin: 0; }
+    .title { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+    .body { font-size: 1rem; color: var(--ink-dim); line-height: 1.55; margin: 0; max-width: 48ch; }
+    .mono-sample {
+      font-family: var(--font-mono); font-size: 0.9rem; color: var(--ink);
+      margin: 0; letter-spacing: 0.02em;
+    }
+    table.contract {
+      width: 100%; border-collapse: collapse; font-size: 0.92rem;
+    }
+    table.contract th, table.contract td {
+      text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top;
+    }
+    table.contract th {
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--ink-faint); font-weight: 500;
+    }
+    table.contract td:first-child { font-weight: 700; white-space: nowrap; width: 110px; }
+    table.contract td:nth-child(2) { color: var(--ink); }
+    .never {
+      display: grid; gap: 10px; margin: 0; padding: 0; list-style: none;
+    }
+    .never li {
+      display: flex; gap: 12px; align-items: flex-start;
+      padding: 12px 14px; border-radius: 12px;
+      background: color-mix(in srgb, var(--hot) 8%, var(--bg-elev));
+      border: 1px solid color-mix(in srgb, var(--hot) 28%, var(--line));
+    }
+    .never .x {
+      font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+      color: var(--hot); flex-shrink: 0; margin-top: 1px;
+    }
+    .never strong { display: block; margin-bottom: 2px; }
+    .never span { color: var(--ink-dim); font-size: 0.9rem; line-height: 1.4; }
+    .constraints { display: grid; gap: 12px; }
+    @media (min-width: 720px) { .constraints { grid-template-columns: 1fr 1fr; } }
+    .constraint {
+      padding: 16px 18px; border-radius: 14px; border: 1px solid var(--line);
+      background: var(--bg);
+    }
+    .constraint h3 { margin: 0 0 6px; font-size: 0.95rem; }
+    .constraint p { margin: 0; color: var(--ink-dim); font-size: 0.9rem; line-height: 1.45; }
+    .constraint code { font-family: var(--font-mono); font-size: 0.85em; color: var(--ink); }
+    .foot {
+      margin-top: 8px; padding-top: 20px; border-top: 1px solid var(--line);
+      display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center;
+      font-size: 0.9rem; color: var(--ink-dim);
+    }
+    .foot a { color: var(--ink); font-weight: 700; text-decoration: none; }
+    .foot a:hover { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <button class="theme" id="themeToggle" type="button">Dark</button>
+  <div class="wrap">
+    <a class="back" href="index.html">← Design review hub</a>
+    <p class="eyebrow">01 · Design system</p>
+    <h1>Fathom visual language</h1>
+    <p class="lede">Pool-night instrument palette, Manrope + IBM Plex Mono, and the navigation contract that keeps Home calm. Tokens live in <code style="font-family:var(--font-mono);font-size:0.9em">tokens.css</code>.</p>
+
+    <section>
+      <h2>Brand positioning</h2>
+      <p class="section-lead">Fathom is an instrument and analyst — a calm companion for session truth, not a loud coach dashboard.</p>
+      <div class="positioning">
+        <div class="panel">
+          <p class="tag">Is</p>
+          <h3>Depth, measure, understanding</h3>
+          <p>Answers “what’s true now” with sync health, a vitals snapshot, one swim takeaway, and today’s totals. Premium, local-first, sport-agnostic — swim-first today, Run/Strength later without renaming the product.</p>
+        </div>
+        <div class="panel">
+          <p class="tag">Is not</p>
+          <h3>Coach theater or AI glow</h3>
+          <p>No purple gradients, crypto chrome, cartoon mascots, or always-on sync drama. Discobolus <em>is</em> the letter T in the wordmark (word height); splash plays him settling into Fathom. Everyday app icon is a plain <strong>F</strong>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Colour</h2>
+      <p class="section-lead">Toggle theme (top-right) to review light and dark. Accent mint and amber carry signal; hot and up are reserved for failure and positive deltas.</p>
+      <div class="swatch-grid">
+        <div class="swatch">
+          <div class="swatch-chip" style="background: var(--bg)"></div>
+          <div class="swatch-meta"><strong>bg</strong><code>--bg</code></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-chip" style="background: var(--bg-elev); border-bottom: 1px solid var(--line)"></div>
+          <div class="swatch-meta"><strong>bg-elev</strong><code>--bg-elev</code></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-chip" style="background: var(--ink)"></div>
+          <div class="swatch-meta"><strong>ink</strong><code>--ink</code></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-chip" style="background: var(--ink-dim)"></div>
+          <div class="swatch-meta"><strong>ink-dim</strong><code>--ink-dim</code></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-chip" style="background: var(--accent)"></div>
+          <div class="swatch-meta"><strong>accent mint</strong><code>--accent</code></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-chip" style="background: var(--amber)"></div>
+          <div class="swatch-meta"><strong>amber</strong><code>--amber</code></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-chip" style="background: var(--hot)"></div>
+          <div class="swatch-meta"><strong>hot</strong><code>--hot</code></div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-chip" style="background: var(--up)"></div>
+          <div class="swatch-meta"><strong>up</strong><code>--up</code></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Typography</h2>
+      <p class="section-lead">Manrope for UI and display. IBM Plex Mono for sync stamps, metric units, and instrument metadata.</p>
+      <div class="panel type-stack">
+        <div class="type-row">
+          <p class="type-meta">Display · 800</p>
+          <p class="display">Fathom</p>
+        </div>
+        <div class="type-row">
+          <p class="type-meta">Title · 700</p>
+          <p class="title">Efficient early, fatigue later</p>
+        </div>
+        <div class="type-row">
+          <p class="type-meta">Body · 400</p>
+          <p class="body">Shorten sets before adding volume. Pace decay after interval 3 — one takeaway, not a diagnosis list.</p>
+        </div>
+        <div class="type-row">
+          <p class="type-meta">Mono · 500</p>
+          <p class="mono-sample">GT5 · synced 2m ago · SWOLF 41 · 1:48 /25m</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Navigation contract</h2>
+      <p class="section-lead">Frozen tab ownership. Home never borrows analytics depth from Vitals or Workouts.</p>
+      <div class="panel" style="padding: 0; overflow: auto">
+        <table class="contract">
+          <thead>
+            <tr>
+              <th>Tab</th>
+              <th>Owns</th>
+              <th>Does not own</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Home</td>
+              <td>Current status + today summary: sync/connection health, vitals snapshot, one swim takeaway, today’s totals</td>
+              <td>Graphs, history, diagnosis lists, reasoner settings</td>
+            </tr>
+            <tr>
+              <td>Vitals</td>
+              <td>Physiological trends and history depth</td>
+              <td>Session analysis, workout lists</td>
+            </tr>
+            <tr>
+              <td>Workouts</td>
+              <td>Session history + analysis (sport tabs; Swim first)</td>
+              <td>Live connection theater, vitals trend charts</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Home never-list</h2>
+      <p class="section-lead">If it needs scroll-depth or interpretation theater, it belongs elsewhere.</p>
+      <ul class="never">
+        <li>
+          <span class="x">✕</span>
+          <div><strong>No graphs</strong><span>No area charts, full sparklines-as-analytics, pool spatial boards, or activity calendars on Home. Subtle KPI sparks OK.</span></div>
+        </li>
+        <li>
+          <span class="x">✕</span>
+          <div><strong>No vitals history</strong><span>Snapshot only (rest / last / SpO₂). Trends live on Vitals.</span></div>
+        </li>
+        <li>
+          <span class="x">✕</span>
+          <div><strong>No diagnosis lists</strong><span>One swim takeaway. Full Evidence → Diagnosis → Recommendation stays on session detail.</span></div>
+        </li>
+        <li>
+          <span class="x">✕</span>
+          <div><strong>No reasoner settings</strong><span>Reasoner runs from Swim detail via explicit primary action — never configured from Home.</span></div>
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Logo production constraints</h2>
+      <p class="section-lead">Design Head must-fixes. Full artwork review lives on the <a href="logo.html" style="color:var(--ink);font-weight:700">logo page</a>.</p>
+      <div class="constraints">
+        <div class="constraint">
+          <h3>Wordmark at 16–24px</h3>
+          <p>Primary wordmark must remain identifiable at <code>16–24px</code> height with no legibility loss. Minimum reproduction: <code>--wordmark-min: 20px</code> (UI chrome); absolute floor <code>--mark-min: 16px</code>.</p>
+        </div>
+        <div class="constraint">
+          <h3>Single-colour vector only</h3>
+          <p>SVG/PDF artwork only. No gradients, shadows, or fine interior detail. Colour applied as a flat fill from the token palette (ink or accent).</p>
+        </div>
+        <div class="constraint">
+          <h3>Clear-space</h3>
+          <p>Minimum clear-space around wordmark and mark: <code>--clear-space: 0.35em</code> (measured from capital height). No competing UI or figure in that band.</p>
+        </div>
+        <div class="constraint">
+          <h3>Discobolus = the T; icon = F — LOCKED</h3>
+          <p>Owner asset replaces the letter T on the Fa/hom line (light spacing a·mark·h). Splash animates figure → letter slot → Fa/hom assemble. App icon is bold <strong>F</strong> only — never the athlete. Canonical: <a href="logo.html" style="color:inherit;font-weight:700">logo.html</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="foot">
+      <a href="index.html">← Review hub</a>
+      <a href="logo.html">Logo &amp; splash →</a>
+      <a href="home-prototype/">Home prototype →</a>
+      <a href="home-states.html">Home states →</a>
+    </div>
+  </div>
+  <script>
+    const root = document.documentElement;
+    const btn = document.getElementById("themeToggle");
+    btn.addEventListener("click", () => {
+      const next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      btn.textContent = next === "dark" ? "Light" : "Dark";
+    });
+  </script>
+</body>
+</html>

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:fitness_os/features/workout_history/domain/offline_swim_reasoner.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_recommendations.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 
 /// On-device Qwen3 0.6B reasoner (LiteRT-LM).
@@ -10,6 +11,11 @@ class Qwen3SwimReasoner {
   static const modelFilename = 'qwen3_0_6b_mixed_int4.litertlm';
   static const modelUrl =
       'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/qwen3_0_6b_mixed_int4.litertlm';
+
+  /// LiteRT `maxTokens` is the full context window (prompt + reply), not
+  /// reply length. 1024 left ~100 tokens after our coach payload and the
+  /// native CancelProcess truncated mid-JSON. 2048 matches model metadata.
+  static const int contextTokens = 2048;
 
   double? downloadProgress;
   String? lastError;
@@ -66,35 +72,36 @@ class Qwen3SwimReasoner {
       );
     }
 
-    final payload = buildCoachPromptPayload(
+    final payload = buildOnDeviceReasonerPrompt(
       report: report,
       recommendations: recommendations,
       workoutNumber: workoutNumber,
     );
-    // Reasoning-focused instructions (not voice coach).
-    payload['instructions'] =
-        'You are a swim performance reasoner. Rank the given recommendations '
-        'by what will most improve the athlete next session. '
-        'Never invent metrics, diagnoses, or recommendation ids. '
-        'Return JSON only: '
-        '{"summary": string, "orderedRecIds": string[], '
-        '"rationaleByRecId": {id: string}, "notes": string}. '
-        'orderedRecIds MUST be a subset of allowedRecIds.';
 
     InferenceModel? model;
     try {
+      // Prefer CPU: LiteRT GPU/WebGPU (libLiteRtGpuAccelerator) SIGSEGVs on
+      // Pixel 8a (Mali-G715) during litert_lm_engine_create. Native SEGV
+      // bypasses Dart catch and the library's GPU→CPU fallback never runs.
       model = await FlutterGemma.getActiveModel(
-        maxTokens: 1024,
-        preferredBackend: PreferredBackend.gpu,
+        maxTokens: contextTokens,
+        preferredBackend: PreferredBackend.cpu,
       );
+      // isThinking:false appends /no_think for Qwen3. Cool sampling for JSON.
       final chat = await model.createChat(
+        temperature: 0.2,
+        topK: 1,
+        topP: 0.9,
         systemInstruction:
-            'Reason about swimming training priorities. Output valid JSON only.',
-        isThinking: true,
+            'Swim reasoner. Reply with one JSON object only. No <think> blocks.',
+        isThinking: false,
       );
-      await chat.addQueryChunk(
-        Message.text(text: jsonEncode(payload), isUser: true),
+      final userText = jsonEncode(payload);
+      debugPrint(
+        'Qwen3SwimReasoner: promptChars=${userText.length} '
+        '~tokens=${(userText.length / 4).ceil()} context=$contextTokens',
       );
+      await chat.addQueryChunk(Message.text(text: userText, isUser: true));
       final response = await chat.generateChatResponse();
       final text = switch (response) {
         TextResponse(:final token) => token,
@@ -108,7 +115,19 @@ class Qwen3SwimReasoner {
           error: 'Empty Qwen3 response.',
         );
       }
-      final jsonText = _extractJsonObject(text);
+      final jsonText = extractJsonObject(text);
+      if (jsonText == null) {
+        debugPrint(
+          'Qwen3SwimReasoner: no JSON in response '
+          '(${text.length} chars): ${_preview(text)}',
+        );
+        return SwimReasonerResult(
+          ok: false,
+          source: 'qwen3',
+          error: 'Qwen3 returned no JSON object '
+              '(got ${_preview(text)}).',
+        );
+      }
       final decoded = jsonDecode(jsonText);
       if (decoded is! Map) {
         return const SwimReasonerResult(
@@ -159,10 +178,29 @@ class Qwen3SwimReasoner {
     }
   }
 
-  String _extractJsonObject(String text) {
-    final start = text.indexOf('{');
-    final end = text.lastIndexOf('}');
-    if (start >= 0 && end > start) return text.substring(start, end + 1);
-    return text;
+  static String _preview(String text, [int max = 160]) {
+    final oneLine = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (oneLine.length <= max) return oneLine;
+    return '${oneLine.substring(0, max - 1)}…';
+  }
+
+  /// Strips complete and truncated Qwen3/DeepSeek think blocks.
+  @visibleForTesting
+  static String stripThinking(String text) {
+    var cleaned =
+        text.replaceAll(RegExp(r'<think>[\s\S]*?</think>', multiLine: true), '');
+    // Truncated mid-think (common when cancelled / maxTokens hit).
+    cleaned = cleaned.replaceAll(RegExp(r'<think>[\s\S]*$', multiLine: true), '');
+    return cleaned.trim();
+  }
+
+  /// Returns the outermost JSON object, or null if none.
+  @visibleForTesting
+  static String? extractJsonObject(String text) {
+    final cleaned = stripThinking(text);
+    final start = cleaned.indexOf('{');
+    final end = cleaned.lastIndexOf('}');
+    if (start >= 0 && end > start) return cleaned.substring(start, end + 1);
+    return null;
   }
 }

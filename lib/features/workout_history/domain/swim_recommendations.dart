@@ -163,6 +163,44 @@ Map<String, dynamic> buildCoachPromptPayload({
   };
 }
 
+/// Compact payload for on-device Qwen3 — keeps prompt well under the LiteRT
+/// context window (`maxTokens` is prompt + generation, not reply-only).
+Map<String, dynamic> buildOnDeviceReasonerPrompt({
+  required SwimDiagnosisReport report,
+  required List<SwimRecommendation> recommendations,
+  required int workoutNumber,
+}) {
+  String clip(String s, [int max = 120]) =>
+      s.length <= max ? s : '${s.substring(0, max - 1)}…';
+
+  return {
+    'workout': workoutNumber,
+    'task':
+        'Rank allow-listed recs for next swim. JSON only — no prose, no markdown. '
+        'Schema: {"summary":string,"orderedRecIds":string[],'
+        '"rationaleByRecId":{id:string},"notes":string}. '
+        'orderedRecIds MUST be a subset of allowedRecIds.',
+    'diagnoses': [
+      for (final d in [...report.sessionDiagnoses, ...report.trendDiagnoses])
+        {
+          'id': d.id,
+          'title': d.title,
+          'confidence': d.confidence.name,
+          'summary': clip(d.summary),
+        },
+    ],
+    'recs': [
+      for (final r in recommendations)
+        {
+          'id': r.id,
+          'title': r.title,
+          'from': r.sourceDiagnosisIds,
+        },
+    ],
+    'allowedRecIds': [for (final r in recommendations) r.id],
+  };
+}
+
 /// Keep only rec IDs that exist in [allowed].
 List<String> filterCoachOrderedIds(
   List<dynamic>? raw,

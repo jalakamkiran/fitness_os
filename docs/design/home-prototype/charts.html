@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fathom — Swim charts + tooltip intro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="charts.css" />
+</head>
+<body class="charts-page">
+  <div class="stage charts-stage">
+    <div class="phone" id="phone">
+      <header class="app-header">
+        <a class="icon-round" href="index.html" aria-label="Back">←</a>
+        <div class="brand">
+          <span class="brand-mark">F</span>
+          <div>
+            <p class="brand-title">Session charts</p>
+            <p class="brand-sub mono">#11 · research refs</p>
+          </div>
+        </div>
+        <button class="theme-toggle" id="themeToggle" type="button">Dark</button>
+      </header>
+
+      <main class="scroll">
+        <section class="card research-banner">
+          <p class="kicker">Research → product</p>
+          <h1>Graphs that earn a place</h1>
+          <p>From MySwimPro, FORM, Garmin: splits, SWOLF, strokes, optional HR. Tooltip intros teach the metric without a help article.</p>
+          <button class="btn primary" type="button" id="replayTour">Replay tooltip tour</button>
+          <a class="btn ghost" href="advanced.html" style="margin-top:8px;display:block">Advanced charts →</a>
+        </section>
+
+        <!-- 1 Pace splits -->
+        <section class="card chart-card" data-tip-id="pace">
+          <div class="chart-head">
+            <div>
+              <p class="kicker">1 · Primary</p>
+              <h2>Pace by interval <button class="info" type="button" data-open-tip="pace" aria-label="About pace">ⓘ</button></h2>
+            </div>
+            <span class="badge amber">fade</span>
+          </div>
+          <svg class="bar-chart" viewBox="0 0 320 120" role="img" aria-label="Pace rising across intervals">
+            <g class="bars">
+              <rect x="18" y="62" width="36" height="42" rx="8" />
+              <rect x="66" y="58" width="36" height="46" rx="8" />
+              <rect x="114" y="50" width="36" height="54" rx="8" />
+              <rect x="162" y="36" width="36" height="68" rx="8" class="warn" />
+              <rect x="210" y="28" width="36" height="76" rx="8" class="warn" />
+              <rect x="258" y="18" width="36" height="86" rx="8" class="hot" />
+            </g>
+            <text class="axis" x="36" y="116">I1</text>
+            <text class="axis" x="84" y="116">I2</text>
+            <text class="axis" y="116" x="132">I3</text>
+            <text class="axis" x="180" y="116">I4</text>
+            <text class="axis" x="228" y="116">I5</text>
+            <text class="axis" x="276" y="116">I6</text>
+          </svg>
+          <p class="chart-foot mono">s/100m · higher bar = slower</p>
+        </section>
+
+        <!-- 2 SWOLF -->
+        <section class="card chart-card" data-tip-id="swolf">
+          <div class="chart-head">
+            <div>
+              <p class="kicker">2 · Efficiency</p>
+              <h2>SWOLF by interval <button class="info" type="button" data-open-tip="swolf" aria-label="About SWOLF">ⓘ</button></h2>
+            </div>
+            <span class="badge">↑ late</span>
+          </div>
+          <svg class="area-chart tall" viewBox="0 0 320 110" role="img">
+            <defs>
+              <linearGradient id="swolfFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.4" />
+                <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
+              </linearGradient>
+            </defs>
+            <path class="area" fill="url(#swolfFill)" d="M0 70 L53 68 L106 62 L159 48 L212 36 L265 24 L320 18 L320 110 L0 110 Z" />
+            <path class="line" d="M0 70 L53 68 L106 62 L159 48 L212 36 L265 24 L320 18" />
+          </svg>
+          <p class="chart-foot mono">lower is better · time + stroke count</p>
+        </section>
+
+        <!-- 3 Strokes -->
+        <section class="card chart-card" data-tip-id="strokes">
+          <div class="chart-head">
+            <div>
+              <p class="kicker">3 · Technique</p>
+              <h2>Strokes / interval <button class="info" type="button" data-open-tip="strokes" aria-label="About strokes">ⓘ</button></h2>
+            </div>
+          </div>
+          <svg class="bar-chart" viewBox="0 0 320 120" role="img">
+            <g class="bars soft">
+              <rect x="18" y="48" width="36" height="56" rx="8" />
+              <rect x="66" y="46" width="36" height="58" rx="8" />
+              <rect x="114" y="44" width="36" height="60" rx="8" />
+              <rect x="162" y="36" width="36" height="68" rx="8" />
+              <rect x="210" y="30" width="36" height="74" rx="8" />
+              <rect x="258" y="24" width="36" height="80" rx="8" />
+            </g>
+          </svg>
+          <p class="chart-foot mono">count · fewer at same pace = better DPS</p>
+        </section>
+
+        <!-- 4 Overlay -->
+        <section class="card chart-card" data-tip-id="overlay">
+          <div class="chart-head">
+            <div>
+              <p class="kicker">4 · Analyst dual</p>
+              <h2>Pace + SWOLF overlay <button class="info" type="button" data-open-tip="overlay" aria-label="About overlay">ⓘ</button></h2>
+            </div>
+          </div>
+          <svg class="area-chart tall" viewBox="0 0 320 110" role="img">
+            <path class="line muted-line" d="M0 70 L53 68 L106 62 L159 48 L212 36 L265 24 L320 18" />
+            <path class="line" d="M0 55 L53 52 L106 48 L159 40 L212 34 L265 28 L320 22" />
+            <circle cx="159" cy="40" r="4" class="point" />
+          </svg>
+          <div class="legend mono">
+            <span><i class="a"></i> pace</span>
+            <span><i class="b"></i> SWOLF</span>
+          </div>
+        </section>
+
+        <!-- 5 HR demoted -->
+        <section class="card chart-card dimmed" data-tip-id="hr">
+          <div class="chart-head">
+            <div>
+              <p class="kicker">5 · Conditional</p>
+              <h2>Heart rate <button class="info" type="button" data-open-tip="hr" aria-label="About HR">ⓘ</button></h2>
+            </div>
+            <span class="badge">hidden if no samples</span>
+          </div>
+          <p class="chart-foot">Fathom rule: show only when GT5 sample stream exists — never invent a pretty empty chart.</p>
+        </section>
+      </main>
+    </div>
+
+    <aside class="rail">
+      <h3>Tooltip copy (locked candidates)</h3>
+      <ul class="tip-list" id="tipList"></ul>
+      <p class="rail-note"><a href="index.html">← Home prototype</a> · digest in <code>docs/design/swim-graphs-research.md</code></p>
+    </aside>
+  </div>
+
+  <!-- Tour overlay -->
+  <div class="tour" id="tour" hidden>
+    <div class="tour-card" role="dialog" aria-modal="true">
+      <p class="kicker" id="tourStep">Tip 1 / 4</p>
+      <h3 id="tourTitle">Pace by interval</h3>
+      <p id="tourBody"></p>
+      <p class="tour-good" id="tourGood"></p>
+      <div class="tour-actions">
+        <button type="button" id="tourSkip">Skip tour</button>
+        <button type="button" class="btn primary" id="tourNext">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="charts.js"></script>
+</body>
+</html>

@@ -140,7 +140,9 @@ class FathomColors extends ThemeExtension<FathomColors> {
       surface: bgElev,
       onSurface: ink,
       onSurfaceVariant: inkDim,
-      outline: line,
+      // Meta / tertiary text uses ColorScheme.outline in Material UIs.
+      // Keep hairlines on outlineVariant (`--line` is ~8% alpha — invisible as text).
+      outline: inkFaint,
       outlineVariant: line,
       surfaceContainerHighest: pool,
       // `--shadow` is locked to a black base in dark mode and an ink base in

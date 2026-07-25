@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fathom — Design review hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tokens.css" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font-sans);
+      color: var(--ink);
+      background:
+        radial-gradient(900px 480px at 10% -10%, rgba(25, 183, 176, 0.14), transparent 55%),
+        radial-gradient(700px 400px at 90% 0%, rgba(217, 119, 6, 0.08), transparent 50%),
+        var(--bg);
+    }
+    .wrap { max-width: 920px; margin: 0 auto; padding: 48px 24px 80px; }
+    .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 12px; }
+    h1 { font-size: clamp(2rem, 4vw, 2.75rem); letter-spacing: -0.03em; margin: 0 0 12px; }
+    .lede { font-size: 1.1rem; color: var(--ink-dim); max-width: 54ch; line-height: 1.5; margin: 0 0 36px; }
+    .grid { display: grid; gap: 14px; }
+    @media (min-width: 720px) { .grid { grid-template-columns: 1fr 1fr; } }
+    a.card {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      background: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 20px 22px;
+      box-shadow: var(--shadow);
+      transition: transform 160ms ease, border-color 160ms ease;
+    }
+    a.card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+    a.card.primary { grid-column: 1 / -1; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, var(--bg-elev)), var(--bg-elev)); }
+    .kicker { font-family: var(--font-mono); font-size: 11px; color: var(--accent); margin: 0 0 8px; }
+    a.card h2 { margin: 0 0 8px; font-size: 1.25rem; letter-spacing: -0.02em; }
+    a.card p { margin: 0; color: var(--ink-dim); line-height: 1.45; font-size: 0.95rem; }
+    .meta { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 0.9rem; color: var(--ink-dim); }
+    .meta code { font-family: var(--font-mono); font-size: 0.85em; color: var(--ink); }
+    .locks { margin: 0 0 28px; padding: 16px 18px; border-radius: 14px; background: var(--bg-elev); border: 1px solid var(--line); }
+    .locks h3 { margin: 0 0 10px; font-size: 0.95rem; }
+    .locks ul { margin: 0; padding-left: 1.1rem; color: var(--ink-dim); line-height: 1.55; }
+    .theme { position: fixed; top: 16px; right: 16px; border: 1px solid var(--line); background: var(--bg-elev); color: var(--ink); border-radius: 999px; padding: 8px 14px; font: 600 13px var(--font-sans); cursor: pointer; }
+  </style>
+</head>
+<body>
+  <button class="theme" id="themeToggle" type="button">Dark</button>
+  <div class="wrap">
+    <p class="eyebrow">Owner signed off · 2026-07-25</p>
+    <h1>Fathom design package — locked</h1>
+    <p class="lede">Brand, Home IA, and swim session analytics are locked. Flutter productization may proceed against these surfaces. Do not reopen without an explicit unlock.</p>
+
+    <div class="locks">
+      <h3>Locked</h3>
+      <ul>
+        <li>Name: <strong>Fathom</strong> · Discobolus = T in wordmark; splash playable; app icon <strong>F</strong></li>
+        <li>Tabs: Home | Vitals | Workouts · Home = now-state only (no graphs)</li>
+        <li>Swim analytics: <code>swim-analytics.html</code> — charts + invent-guard + on-demand reasoner</li>
+        <li>Product Head: APPROVED WITH CHANGES (applied) · Owner: satisfied</li>
+      </ul>
+    </div>
+
+    <div class="grid">
+      <a class="card primary" href="swim-analytics.html">
+        <p class="kicker">00 · locked</p>
+        <h2>Swim session analytics</h2>
+        <p>Canonical session surface: identity, P0, charts, table, diagnoses, recs, Run reasoner.</p>
+      </a>
+      <a class="card" href="vitals-tab.html">
+        <p class="kicker">01 · product · review</p>
+        <h2>Vitals tab</h2>
+        <p>Physiological trends (HR, SpO₂, HRV, sleep). Day/Week/Month — not on Home.</p>
+      </a>
+      <a class="card" href="workouts-tab.html">
+        <p class="kicker">02 · product · review</p>
+        <h2>Workouts tab</h2>
+        <p>Session history with sport tabs; Swim list → locked swim detail. No chart dump.</p>
+      </a>
+      <a class="card" href="design-system.html">
+        <p class="kicker">03 · system</p>
+        <h2>Design system</h2>
+        <p>Tokens, type, colour, clear-space rules, navigation contract, Home state precedence.</p>
+      </a>
+      <a class="card" href="logo.html">
+        <p class="kicker">04 · brand</p>
+        <h2>Logo &amp; splash</h2>
+        <p>Wordmark, T geometry, size ladder, splash storyboard (Discobolus → T → Fathom).</p>
+      </a>
+      <a class="card" href="home-prototype/">
+        <p class="kicker">05 · product</p>
+        <h2>Home prototype</h2>
+        <p>Calm now-state Home with Fathom chrome and 3-tab shell.</p>
+      </a>
+      <a class="card" href="home-states.html">
+        <p class="kicker">06 · states</p>
+        <h2>Home state gallery</h2>
+        <p>Six precedence states: unpaired → no swim data yet.</p>
+      </a>
+      <a class="card" href="home-prototype/charts.html">
+        <p class="kicker">07 · research</p>
+        <h2>Chart tip stack</h2>
+        <p>Vortex-leaning mixed charts with tooltip intros (research surface).</p>
+      </a>
+      <a class="card" href="DESIGN_REVIEW.md">
+        <p class="kicker">08 · checklist</p>
+        <h2>Review notes</h2>
+        <p>Agent review against Design Head must-fixes (markdown).</p>
+      </a>
+      <a class="card" href="VITALS_WORKOUTS_PRODUCT_REVIEW.md">
+        <p class="kicker">09 · product review</p>
+        <h2>Vitals + Workouts Product Head</h2>
+        <p>Product Head verdict for Vitals/Workouts tab surfaces (APPROVED).</p>
+      </a>
+    </div>
+
+    <div class="meta">
+      Specs: <code>docs/brainstorms/2026-07-25-fathom-companion-brand-ia-requirements.md</code>
+      · Plan: <code>docs/plans/2026-07-25-001-feat-fathom-brand-ia-productization-plan.md</code>
+      · Design lock: owner 2026-07-25 — Flutter may implement.
+    </div>
+  </div>
+  <script>
+    const root = document.documentElement;
+    const btn = document.getElementById("themeToggle");
+    btn.addEventListener("click", () => {
+      const next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      btn.textContent = next === "dark" ? "Light" : "Dark";
+    });
+  </script>
+</body>
+</html>

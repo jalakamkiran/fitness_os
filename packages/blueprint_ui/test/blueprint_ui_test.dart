@@ -40,6 +40,8 @@ void main() {
       expect(theme.colorScheme.error, FathomColors.light.hot);
       expect(theme.colorScheme.surface, FathomColors.light.bgElev);
       expect(theme.colorScheme.onSurface, FathomColors.light.ink);
+      expect(theme.colorScheme.outline, FathomColors.light.inkFaint);
+      expect(theme.colorScheme.outlineVariant, FathomColors.light.line);
       expect(theme.extension<FathomColors>(), FathomColors.light);
       expect(theme.useMaterial3, isTrue);
       // Locked `--shadow` base color is `ink` in light mode.
@@ -56,6 +58,8 @@ void main() {
       expect(theme.colorScheme.error, FathomColors.dark.hot);
       expect(theme.colorScheme.surface, FathomColors.dark.bgElev);
       expect(theme.colorScheme.onSurface, FathomColors.dark.ink);
+      expect(theme.colorScheme.outline, FathomColors.dark.inkFaint);
+      expect(theme.colorScheme.outlineVariant, FathomColors.dark.line);
       expect(theme.extension<FathomColors>(), FathomColors.dark);
       // Locked `--shadow` base color is black in dark mode, not `ink`
       // (which is near-white in dark mode) — regression guard for the

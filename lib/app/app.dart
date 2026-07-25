@@ -26,6 +26,7 @@ class FitnessOsApp extends StatelessWidget {
       autoSync: sl<OneShotAutoSync>(),
       link: sl<HuaweiLink>(),
       child: MaterialApp(
+        title: 'Fathom',
         theme: BpTheme.light(),
         darkTheme: BpTheme.dark(),
         initialRoute: '/',
