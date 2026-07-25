@@ -16,4 +16,10 @@ abstract final class GateAPrefs {
   static const dailyHrJson = 'daily_hr_json';
   /// Last explicit Enable auto-tracking result (outcomes-only allowlist).
   static const lastAutoTrackingEnableJson = 'last_auto_tracking_enable_json';
+
+  /// Home one-shot sync outcome: `ok` | `failed` (absent = never synced from Home).
+  static const homeLastSyncStatus = 'home_last_sync_status';
+
+  /// Unix ms of last Home-observed successful sync pass.
+  static const homeLastSyncAtMs = 'home_last_sync_at_ms';
 }
