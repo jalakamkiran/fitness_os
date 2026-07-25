@@ -1,15 +1,31 @@
+import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fitness_os/core/di/injector.dart';
+import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_bloc.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_event.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_state.dart';
+import 'package:fitness_os/features/workout_history/presentation/view/workout_detail_route.dart';
+import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/sport_tabs.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/swim_session_row.dart';
 
 class WorkoutHistoryScreen extends StatelessWidget {
-  const WorkoutHistoryScreen({super.key});
+  const WorkoutHistoryScreen({super.key, this.bloc});
+
+  /// Optional override for widget tests.
+  final WorkoutHistoryBloc? bloc;
 
   @override
   Widget build(BuildContext context) {
+    final override = bloc;
+    if (override != null) {
+      return BlocProvider.value(
+        value: override,
+        child: const _WorkoutHistoryView(),
+      );
+    }
     return BlocProvider(
       create: (_) =>
           sl<WorkoutHistoryBloc>()..add(const WorkoutHistoryStarted()),
@@ -18,86 +34,109 @@ class WorkoutHistoryScreen extends StatelessWidget {
   }
 }
 
-class _WorkoutHistoryView extends StatelessWidget {
+class _WorkoutHistoryView extends StatefulWidget {
   const _WorkoutHistoryView();
 
   @override
+  State<_WorkoutHistoryView> createState() => _WorkoutHistoryViewState();
+}
+
+class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
+  WorkoutSportTab _sport = WorkoutSportTab.swim;
+
+  @override
   Widget build(BuildContext context) {
+    final colors = FathomColors.of(context);
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Workouts')),
-      body: BlocBuilder<WorkoutHistoryBloc, WorkoutHistoryState>(
-        builder: (context, state) {
-          final syncing = state.phase == WorkoutHistoryPhase.syncing;
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      state.gateAPassed
-                          ? 'Gate A unlocked — Sync pulls full workout history '
-                              '(from mid-2022 through now), not just new ones.'
-                          : 'Gate A incomplete — finish the interrupt checklist on Pairing first.',
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: !state.gateAPassed || syncing
-                          ? null
-                          : () => context
-                              .read<WorkoutHistoryBloc>()
-                              .add(const WorkoutHistorySyncRequested()),
-                      icon: syncing
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.sync),
-                      label: Text(
-                        syncing ? 'Syncing history…' : 'Sync all history',
-                      ),
-                    ),
-                    if (state.message != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        state.message!,
-                        style: TextStyle(
-                          color: state.phase == WorkoutHistoryPhase.stuck
-                              ? Theme.of(context).colorScheme.error
-                              : Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+      backgroundColor: colors.bg,
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Fathom',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: colors.ink,
               ),
-              const Divider(height: 1),
-              Expanded(
-                child: state.workouts.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No workouts stored yet.\n'
-                          'Complete a workout on the watch, then Sync.',
-                          textAlign: TextAlign.center,
+            ),
+            Text(
+              'Workouts · history',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.inkFaint,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          BlocBuilder<WorkoutHistoryBloc, WorkoutHistoryState>(
+            builder: (context, state) {
+              final syncing = state.phase == WorkoutHistoryPhase.syncing;
+              return IconButton(
+                tooltip: 'Sync all history',
+                onPressed: !state.gateAPassed || syncing
+                    ? null
+                    : () => context
+                        .read<WorkoutHistoryBloc>()
+                        .add(const WorkoutHistorySyncRequested()),
+                icon: syncing
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: colors.accent,
                         ),
                       )
-                    : ListView.separated(
-                        itemCount: state.workouts.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final w = state.workouts[index];
-                          return ListTile(
-                            title: Text(_typeLabel(w.type)),
-                            subtitle: Text(
-                              '${_formatWhen(w.startTime)} · ${_formatDuration(w.durationSec)}'
-                              '${w.distanceM != null ? ' · ${w.distanceM} m' : ''}',
-                            ),
-                            trailing: Text('#${w.number}'),
-                          );
-                        },
-                      ),
+                    : const Icon(Icons.sync),
+              );
+            },
+          ),
+        ],
+      ),
+      body: BlocBuilder<WorkoutHistoryBloc, WorkoutHistoryState>(
+        builder: (context, state) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: SportTabs(
+                  selected: _sport,
+                  onSelected: (tab) => setState(() => _sport = tab),
+                ),
+              ),
+              if (state.message != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                  child: Text(
+                    state.message!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: state.phase == WorkoutHistoryPhase.stuck
+                          ? colors.hot
+                          : colors.inkDim,
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: switch (_sport) {
+                  WorkoutSportTab.swim => _SwimPanel(workouts: state.workouts),
+                  WorkoutSportTab.run => const _EmptySportPanel(
+                      title: 'Run',
+                      body:
+                          'Scaffolding only. Run sessions will list here when '
+                          'the sport lane opens — no charts on the list.',
+                    ),
+                  WorkoutSportTab.strength => const _EmptySportPanel(
+                      title: 'Strength',
+                      body:
+                          'Scaffolding only. Strength history stays off Swim '
+                          'and never borrows vitals trends.',
+                    ),
+                },
               ),
             ],
           );
@@ -107,38 +146,112 @@ class _WorkoutHistoryView extends StatelessWidget {
   }
 }
 
-String _typeLabel(int type) {
-  // Small clean-room map of common Huawei activity type ids (public / observed).
-  const names = <int, String>{
-    1: 'Walk',
-    2: 'Run',
-    3: 'Cycle',
-    4: 'Climb',
-    5: 'Pool swim',
-    6: 'Open water',
-    7: 'Indoor run',
-    8: 'Indoor cycle',
-    9: 'Elliptical',
-    10: 'Rower',
-    140: 'Strength', // observed GT5-A07 strength session
-  };
-  return names[type] ?? 'Workout type $type';
+class _SwimPanel extends StatelessWidget {
+  const _SwimPanel({required this.workouts});
+
+  final List<WorkoutSummary> workouts;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = FathomColors.of(context);
+    final theme = Theme.of(context);
+    final swim = workouts.where((w) => isSwimWorkout(w.type)).toList();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Sessions',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: colors.ink,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                ),
+              ),
+            ),
+            Text(
+              '${swim.length} · pool',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.inkFaint,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (swim.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 8),
+            child: Text(
+              'No swim sessions yet.\n'
+              'Complete a pool swim on the watch, then Sync.',
+              textAlign: TextAlign.center,
+              style:
+                  theme.textTheme.bodyMedium?.copyWith(color: colors.inkDim),
+            ),
+          )
+        else
+          for (var i = 0; i < swim.length; i++) ...[
+            if (i > 0) const SizedBox(height: 10),
+            SwimSessionRow(
+              workout: swim[i],
+              onTap: () => WorkoutDetailRoute.go(context, swim[i]),
+            ),
+          ],
+      ],
+    );
+  }
 }
 
-String _formatWhen(int unixSec) {
-  if (unixSec <= 0) return 'unknown time';
-  final dt = DateTime.fromMillisecondsSinceEpoch(unixSec * 1000).toLocal();
-  String two(int n) => n.toString().padLeft(2, '0');
-  return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
-      '${two(dt.hour)}:${two(dt.minute)}';
-}
+class _EmptySportPanel extends StatelessWidget {
+  const _EmptySportPanel({required this.title, required this.body});
 
-String _formatDuration(int sec) {
-  if (sec <= 0) return '—';
-  final h = sec ~/ 3600;
-  final m = (sec % 3600) ~/ 60;
-  final s = sec % 60;
-  if (h > 0) return '${h}h ${m}m';
-  if (m > 0) return '${m}m ${s}s';
-  return '${s}s';
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = FathomColors.of(context);
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 28, 18, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: colors.ink,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            body,
+            style: theme.textTheme.bodyMedium?.copyWith(color: colors.inkDim),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: colors.bgElev,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: colors.line),
+            ),
+            child: Text(
+              'Empty · OK',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.inkFaint,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

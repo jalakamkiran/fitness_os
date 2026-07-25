@@ -858,6 +858,8 @@ class WorkoutSummary {
     this.calories,
     this.distanceM,
     this.steps,
+    this.avgSwolf,
+    this.sessionFlag,
   });
 
   final int number;
@@ -868,6 +870,12 @@ class WorkoutSummary {
   final int? calories;
   final int? distanceM;
   final int? steps;
+
+  /// Optional swim signal for list rows (filled when enrichment is present).
+  final int? avgSwolf;
+
+  /// Optional one-line teaser for the list (e.g. pace decay). Never a chart.
+  final String? sessionFlag;
 
   factory WorkoutSummary.fromMap(Map<String, dynamic> map) {
     int? asInt(Object? v) => v == null ? null : (v as num).toInt();
@@ -880,6 +888,8 @@ class WorkoutSummary {
       calories: asInt(map['calories']),
       distanceM: asInt(map['distanceM']),
       steps: asInt(map['steps']),
+      avgSwolf: asInt(map['avgSwolf']),
+      sessionFlag: map['sessionFlag'] as String?,
     );
   }
 
@@ -892,6 +902,8 @@ class WorkoutSummary {
         if (calories != null) 'calories': calories,
         if (distanceM != null) 'distanceM': distanceM,
         if (steps != null) 'steps': steps,
+        if (avgSwolf != null) 'avgSwolf': avgSwolf,
+        if (sessionFlag != null) 'sessionFlag': sessionFlag,
       };
 }
 

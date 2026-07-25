@@ -56,4 +56,19 @@ void main() {
     expect(find.text('GT5 pairing'), findsNothing);
     expect(find.text('Scan GT5'), findsNothing);
   });
+
+  testWidgets('shell has single NavigationBar (no double bottom chrome)',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AppShell(
+          homeBody: Scaffold(body: Text('HOME_BODY')),
+          vitalsBody: Scaffold(body: Text('VITALS_BODY')),
+          workoutsBody: Scaffold(body: Text('WORKOUTS_BODY')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationBar), findsOneWidget);
+  });
 }
