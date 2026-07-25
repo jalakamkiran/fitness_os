@@ -1,11 +1,15 @@
 import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get_it/get_it.dart';
 
+import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/error/failures.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
+import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
+import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_bloc.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_event.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_detail_route.dart';
@@ -27,6 +31,28 @@ class _FakeRepo implements WorkoutHistoryRepository {
   @override
   Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch() async =>
       Right(workouts);
+
+  @override
+  Future<CanonicalSwimSession?> loadCanonicalSwim(int workoutNumber) async =>
+      null;
+
+  @override
+  CanonicalSwimSession? canonicalSwimFromSummary(WorkoutSummary workout) =>
+      null;
+
+  @override
+  Future<List<CanonicalSwimSession>> loadAllCanonicalSwims() async =>
+      const [];
+
+  @override
+  Future<SwimDiagnosisReport> loadSwimDiagnosisReport({
+    int? focusWorkoutNumber,
+  }) async =>
+      const SwimDiagnosisReport(
+        sessionDiagnoses: [],
+        trendDiagnoses: [],
+        trends: SwimTrends(points: [], sessionCount: 0),
+      );
 }
 
 WorkoutSummary _swim({
@@ -82,7 +108,10 @@ void main() {
   ];
 
   setUp(() async {
-    bloc = WorkoutHistoryBloc(repository: _FakeRepo(fixtures));
+    await GetIt.I.reset();
+    final repo = _FakeRepo(fixtures);
+    sl.registerLazySingleton<WorkoutHistoryRepository>(() => repo);
+    bloc = WorkoutHistoryBloc(repository: repo);
     final loaded = bloc.stream.firstWhere((s) => s.workouts.isNotEmpty);
     bloc.add(const WorkoutHistoryStarted());
     await loaded;
@@ -90,6 +119,7 @@ void main() {
 
   tearDown(() async {
     await bloc.close();
+    await GetIt.I.reset();
   });
 
   Future<void> pumpScreen(WidgetTester tester) async {
@@ -145,12 +175,9 @@ void main() {
     await tester.tap(find.text('Pool swim · #11'));
     await tester.pumpAndSettle();
 
-    expect(
-      find.textContaining('Session charts and diagnoses'),
-      findsOneWidget,
-    );
-    expect(find.text('1,250 m'), findsOneWidget);
-    expect(find.text('Pool swim · #11'), findsWidgets);
+    expect(find.textContaining('Pool swim #11'), findsOneWidget);
+    expect(find.text('Session'), findsOneWidget);
+    expect(find.textContaining('1250'), findsWidgets);
   });
 
   testWidgets('Run and Strength show empty scaffolding', (tester) async {
