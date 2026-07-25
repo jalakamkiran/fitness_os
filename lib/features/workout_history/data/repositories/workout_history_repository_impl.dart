@@ -1,21 +1,30 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:fitness_os/core/error/failures.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
+import 'package:fitness_os/features/workout_history/data/canonical_swim_store.dart';
+import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
+import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   WorkoutHistoryRepositoryImpl({
     required HuaweiLink link,
     required SharedPreferences prefs,
+    CanonicalSwimStore? swimStore,
+    Directory? Function()? swimRootOverride,
   })  : _link = link,
-        _prefs = prefs;
+        _prefs = prefs,
+        _swimStore = swimStore ??
+            CanonicalSwimStore(rootOverride: swimRootOverride);
 
   final HuaweiLink _link;
   final SharedPreferences _prefs;
+  final CanonicalSwimStore _swimStore;
 
   /// Same empty-history floor as GB / native HuaweiWorkoutSync.
   static const fallbackStartUnix = 1654819200;
@@ -38,6 +47,41 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     } catch (_) {
       return const [];
     }
+  }
+
+  @override
+  Future<CanonicalSwimSession?> loadCanonicalSwim(int workoutNumber) =>
+      _swimStore.load(workoutNumber);
+
+  @override
+  CanonicalSwimSession? canonicalSwimFromSummary(WorkoutSummary workout) =>
+      CanonicalSwimSession.fromWorkoutSummary(workout);
+
+  @override
+  Future<List<CanonicalSwimSession>> loadAllCanonicalSwims() async {
+    final fromFiles = await _swimStore.loadAll();
+    final byNumber = <int, CanonicalSwimSession>{
+      for (final s in fromFiles) s.workoutNumber: s,
+    };
+    // Rebuild from local summaries when side-file missing (pre-W1 syncs).
+    for (final w in await loadLocal()) {
+      if (byNumber.containsKey(w.number)) continue;
+      final built = CanonicalSwimSession.fromWorkoutSummary(w);
+      if (built != null) byNumber[w.number] = built;
+    }
+    return byNumber.values.toList()
+      ..sort((a, b) => b.startTime.compareTo(a.startTime));
+  }
+
+  @override
+  Future<SwimDiagnosisReport> loadSwimDiagnosisReport({
+    int? focusWorkoutNumber,
+  }) async {
+    final sessions = await loadAllCanonicalSwims();
+    return diagnoseSwimSessions(
+      sessions,
+      focusWorkoutNumber: focusWorkoutNumber,
+    );
   }
 
   @override
@@ -112,6 +156,19 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
       GateAPrefs.workoutsJson,
       jsonEncode(merged.map((w) => w.toJson()).toList()),
     );
+
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final swimSessions = <CanonicalSwimSession>[];
+    for (final w in incoming) {
+      final session = CanonicalSwimSession.fromWorkoutSummary(
+        w,
+        builtAtUnix: now,
+      );
+      if (session != null) swimSessions.add(session);
+    }
+    if (swimSessions.isNotEmpty) {
+      await _swimStore.saveAll(swimSessions);
+    }
 
     // Book-keeping only while Sync still uses the full-history window.
     var maxEnd = 0;

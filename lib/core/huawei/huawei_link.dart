@@ -848,6 +848,83 @@ class ActivitySyncResult {
   }
 }
 
+class EnrichmentTagRef {
+  const EnrichmentTagRef({required this.id, required this.len});
+
+  final int id;
+  final int len;
+
+  factory EnrichmentTagRef.fromMap(Map<String, dynamic> map) {
+    int asInt(Object? v) => v == null ? 0 : (v as num).toInt();
+    return EnrichmentTagRef(
+      id: asInt(map['id']),
+      len: asInt(map['len']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {'id': id, 'len': len};
+}
+
+class WorkoutSegment {
+  const WorkoutSegment({
+    required this.index,
+    this.distanceM,
+    this.durationSec,
+    this.swimType,
+    this.style,
+    this.strokes,
+    this.avgSwolf,
+    this.paceSecPer100m,
+    this.tags,
+  });
+
+  final int index;
+  final int? distanceM;
+  final int? durationSec;
+  final int? swimType;
+  final int? style;
+  final int? strokes;
+  final int? avgSwolf;
+  final int? paceSecPer100m;
+  final List<EnrichmentTagRef>? tags;
+
+  factory WorkoutSegment.fromMap(Map<String, dynamic> map) {
+    int? asInt(Object? v) => v == null ? null : (v as num).toInt();
+    List<EnrichmentTagRef>? tags;
+    final rawTags = map['tags'];
+    if (rawTags is List) {
+      tags = rawTags
+          .whereType<Map>()
+          .map((e) => EnrichmentTagRef.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    return WorkoutSegment(
+      index: asInt(map['index']) ?? 0,
+      distanceM: asInt(map['distanceM']),
+      durationSec: asInt(map['durationSec']),
+      swimType: asInt(map['swimType']),
+      style: asInt(map['style']),
+      strokes: asInt(map['strokes']),
+      avgSwolf: asInt(map['avgSwolf']),
+      paceSecPer100m: asInt(map['paceSecPer100m']),
+      tags: tags,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'index': index,
+        if (distanceM != null) 'distanceM': distanceM,
+        if (durationSec != null) 'durationSec': durationSec,
+        if (swimType != null) 'swimType': swimType,
+        if (style != null) 'style': style,
+        if (strokes != null) 'strokes': strokes,
+        if (avgSwolf != null) 'avgSwolf': avgSwolf,
+        if (paceSecPer100m != null) 'paceSecPer100m': paceSecPer100m,
+        if (tags != null && tags!.isNotEmpty)
+          'tags': tags!.map((t) => t.toJson()).toList(),
+      };
+}
+
 class WorkoutSummary {
   const WorkoutSummary({
     required this.number,
@@ -858,8 +935,23 @@ class WorkoutSummary {
     this.calories,
     this.distanceM,
     this.steps,
+    this.dataCount,
+    this.paceCount,
+    this.segmentsCount,
+    this.sampleCount,
+    this.enrichmentStatus,
+    this.hrMin,
+    this.hrMax,
+    this.hrPeak,
+    this.swimType,
+    this.strokes,
+    this.strokeRate,
     this.avgSwolf,
     this.sessionFlag,
+    this.poolLength,
+    this.laps,
+    this.enrichmentTags,
+    this.segments,
   });
 
   final int number;
@@ -870,15 +962,44 @@ class WorkoutSummary {
   final int? calories;
   final int? distanceM;
   final int? steps;
-
-  /// Optional swim signal for list rows (filled when enrichment is present).
+  final int? dataCount;
+  final int? paceCount;
+  final int? segmentsCount;
+  final int? sampleCount;
+  final String? enrichmentStatus;
+  final int? hrMin;
+  final int? hrMax;
+  final int? hrPeak;
+  final int? swimType;
+  final int? strokes;
+  final int? strokeRate;
   final int? avgSwolf;
 
   /// Optional one-line teaser for the list (e.g. pace decay). Never a chart.
   final String? sessionFlag;
+  final int? poolLength;
+  final int? laps;
+  final List<EnrichmentTagRef>? enrichmentTags;
+  final List<WorkoutSegment>? segments;
 
   factory WorkoutSummary.fromMap(Map<String, dynamic> map) {
     int? asInt(Object? v) => v == null ? null : (v as num).toInt();
+    List<EnrichmentTagRef>? tags;
+    final rawTags = map['enrichmentTags'];
+    if (rawTags is List) {
+      tags = rawTags
+          .whereType<Map>()
+          .map((e) => EnrichmentTagRef.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    List<WorkoutSegment>? segments;
+    final rawSegments = map['segments'];
+    if (rawSegments is List) {
+      segments = rawSegments
+          .whereType<Map>()
+          .map((e) => WorkoutSegment.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+    }
     return WorkoutSummary(
       number: asInt(map['number']) ?? 0,
       startTime: asInt(map['startTime']) ?? 0,
@@ -888,8 +1009,23 @@ class WorkoutSummary {
       calories: asInt(map['calories']),
       distanceM: asInt(map['distanceM']),
       steps: asInt(map['steps']),
+      dataCount: asInt(map['dataCount']),
+      paceCount: asInt(map['paceCount']),
+      segmentsCount: asInt(map['segmentsCount']),
+      sampleCount: asInt(map['sampleCount']),
+      enrichmentStatus: map['enrichmentStatus'] as String?,
+      hrMin: asInt(map['hrMin']),
+      hrMax: asInt(map['hrMax']),
+      hrPeak: asInt(map['hrPeak']),
+      swimType: asInt(map['swimType']),
+      strokes: asInt(map['strokes']),
+      strokeRate: asInt(map['strokeRate']),
       avgSwolf: asInt(map['avgSwolf']),
       sessionFlag: map['sessionFlag'] as String?,
+      poolLength: asInt(map['poolLength']),
+      laps: asInt(map['laps']),
+      enrichmentTags: tags,
+      segments: segments,
     );
   }
 
@@ -902,8 +1038,25 @@ class WorkoutSummary {
         if (calories != null) 'calories': calories,
         if (distanceM != null) 'distanceM': distanceM,
         if (steps != null) 'steps': steps,
+        if (dataCount != null) 'dataCount': dataCount,
+        if (paceCount != null) 'paceCount': paceCount,
+        if (segmentsCount != null) 'segmentsCount': segmentsCount,
+        if (sampleCount != null) 'sampleCount': sampleCount,
+        if (enrichmentStatus != null) 'enrichmentStatus': enrichmentStatus,
+        if (hrMin != null) 'hrMin': hrMin,
+        if (hrMax != null) 'hrMax': hrMax,
+        if (hrPeak != null) 'hrPeak': hrPeak,
+        if (swimType != null) 'swimType': swimType,
+        if (strokes != null) 'strokes': strokes,
+        if (strokeRate != null) 'strokeRate': strokeRate,
         if (avgSwolf != null) 'avgSwolf': avgSwolf,
         if (sessionFlag != null) 'sessionFlag': sessionFlag,
+        if (poolLength != null) 'poolLength': poolLength,
+        if (laps != null) 'laps': laps,
+        if (enrichmentTags != null && enrichmentTags!.isNotEmpty)
+          'enrichmentTags': enrichmentTags!.map((t) => t.toJson()).toList(),
+        if (segments != null && segments!.isNotEmpty)
+          'segments': segments!.map((s) => s.toJson()).toList(),
       };
 }
 
