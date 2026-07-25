@@ -14,7 +14,7 @@ void registerOneShotAutoSync(GetIt sl) {
     final workouts = sl<WorkoutHistoryRepository>();
     final vitals = sl<VitalsRepository>();
     return OneShotAutoSync(
-      isSessionReady: () => link.sessionReady,
+      isSessionReady: () => isAutoSyncSessionReady(link.state),
       isSyncBusy: () =>
           link.syncInFlight || vitals.isSyncOrMergeInFlight,
       runPass: () async {

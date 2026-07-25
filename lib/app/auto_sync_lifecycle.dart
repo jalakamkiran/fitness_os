@@ -5,7 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync.dart';
 
-/// Binds [OneShotAutoSync] to app lifecycle + Huawei session-ready events.
+/// Binds [OneShotAutoSync] to app lifecycle + fully-connected link events.
 class AutoSyncLifecycle extends StatefulWidget {
   const AutoSyncLifecycle({
     super.key,
@@ -36,7 +36,8 @@ class _AutoSyncLifecycleState extends State<AutoSyncLifecycle>
   }
 
   void _onLinkEvent(HuaweiLinkEvent event) {
-    if (event is LinkStateChanged && widget.link.sessionReady) {
+    if (event is LinkStateChanged &&
+        isAutoSyncSessionReady(widget.link.state)) {
       widget.autoSync.onSessionReady();
     }
   }

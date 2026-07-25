@@ -2,6 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart' show AppLifecycleState;
 
+import 'package:fitness_os/core/huawei/huawei_link.dart' show LinkState;
+
+/// Auto-sync requires full pairing ([LinkState.connected]) only.
+///
+/// [HuaweiLink.sessionReady] is also true for [LinkState.gateAIncomplete],
+/// but that state must not arm/consume the one-shot (sync would no-op).
+bool isAutoSyncSessionReady(LinkState state) => state == LinkState.connected;
+
 /// Outcome of a single auto-sync schedule attempt (R10).
 enum AutoSyncOutcome {
   /// Workouts + vitals pass started (and completed when awaited).

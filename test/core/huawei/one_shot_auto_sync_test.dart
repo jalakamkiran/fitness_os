@@ -3,12 +3,59 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  group('isAutoSyncSessionReady', () {
+    test('connected only — not gateAIncomplete or other sessionReady states',
+        () {
+      expect(isAutoSyncSessionReady(LinkState.connected), isTrue);
+      expect(isAutoSyncSessionReady(LinkState.gateAIncomplete), isFalse);
+      expect(isAutoSyncSessionReady(LinkState.disconnected), isFalse);
+      expect(isAutoSyncSessionReady(LinkState.authenticating), isFalse);
+    });
+  });
+
   group('OneShotAutoSync', () {
+    test(
+        'gateAIncomplete does not consume shot; subsequent connected can fire',
+        () async {
+      var state = LinkState.gateAIncomplete;
+      var passCalls = 0;
+      final sync = OneShotAutoSync(
+        isSessionReady: () => isAutoSyncSessionReady(state),
+        isSyncBusy: () => false,
+        runPass: () async {
+          passCalls++;
+        },
+      );
+
+      sync.onResumed();
+      await Future<void>.delayed(Duration.zero);
+      expect(passCalls, 0);
+      expect(sync.passStarts, 0);
+
+      // Explicit schedule while still Gate-A incomplete must stay notReady.
+      final whileIncomplete = await sync.trySchedule();
+      expect(whileIncomplete, AutoSyncOutcome.notReady);
+      expect(passCalls, 0);
+      expect(sync.passStarts, 0);
+
+      // Post-pairing connected in the same resume window may fire once.
+      state = LinkState.connected;
+      sync.onSessionReady();
+      await Future<void>.delayed(Duration.zero);
+      expect(passCalls, 1);
+      expect(sync.passStarts, 1);
+
+      final second = await sync.trySchedule();
+      expect(second, AutoSyncOutcome.alreadyFired);
+      expect(passCalls, 1);
+    });
+
     test('fires once per resume when session is ready', () async {
       var passCalls = 0;
       final sync = OneShotAutoSync(
