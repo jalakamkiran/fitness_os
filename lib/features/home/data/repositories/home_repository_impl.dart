@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync.dart';
+import 'package:fitness_os/core/observability/sentry_sync_instrumentation.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/home/domain/home_precedence.dart';
 import 'package:fitness_os/features/home/domain/repositories/home_repository.dart';
@@ -178,20 +179,35 @@ class HomeRepositoryImpl implements HomeRepository {
 
   @override
   Future<bool> syncNow() async {
-    final workoutResult = await _workouts.syncFromWatch();
-    final vitalsResult = await _vitals.syncFromWatch();
-    final ok = workoutResult.isRight && vitalsResult.isRight;
-    await _prefs.setString(
-      GateAPrefs.homeLastSyncStatus,
-      ok ? 'ok' : 'failed',
+    final pass = SentrySyncInstrumentation.startPassTransaction(
+      trigger: 'manual',
     );
-    if (ok) {
-      await _prefs.setInt(
-        GateAPrefs.homeLastSyncAtMs,
-        _now().millisecondsSinceEpoch,
+    try {
+      final workoutResult = await _workouts.syncFromWatch();
+      final vitalsResult = await _vitals.syncFromWatch();
+      final ok = workoutResult.isRight && vitalsResult.isRight;
+      await _prefs.setString(
+        GateAPrefs.homeLastSyncStatus,
+        ok ? 'ok' : 'failed',
       );
+      if (ok) {
+        await _prefs.setInt(
+          GateAPrefs.homeLastSyncAtMs,
+          _now().millisecondsSinceEpoch,
+        );
+      }
+      await SentrySyncInstrumentation.finishWithStatus(
+        pass,
+        status: ok ? 'ok' : 'error',
+      );
+      return ok;
+    } catch (_) {
+      await SentrySyncInstrumentation.finishWithStatus(
+        pass,
+        status: 'error',
+      );
+      rethrow;
     }
-    return ok;
   }
 }
 

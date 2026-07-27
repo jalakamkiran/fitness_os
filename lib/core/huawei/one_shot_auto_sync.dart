@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart' show AppLifecycleState;
 
 import 'package:fitness_os/core/huawei/huawei_link.dart' show LinkState;
+import 'package:fitness_os/core/observability/sentry_sync_instrumentation.dart';
 
 /// Auto-sync requires full pairing ([LinkState.connected]) only.
 ///
@@ -110,14 +111,18 @@ class OneShotAutoSync {
 
   /// Schedule at most one pass for the current resume generation.
   Future<AutoSyncOutcome> trySchedule() async {
-    if (!_inForeground) return AutoSyncOutcome.inactive;
-    if (_consumedGeneration == _resumeGeneration) {
-      return AutoSyncOutcome.alreadyFired;
+    if (!_inForeground) {
+      return _finishSchedule(AutoSyncOutcome.inactive);
     }
-    if (!_isSessionReady()) return AutoSyncOutcome.notReady;
+    if (_consumedGeneration == _resumeGeneration) {
+      return _finishSchedule(AutoSyncOutcome.alreadyFired);
+    }
+    if (!_isSessionReady()) {
+      return _finishSchedule(AutoSyncOutcome.notReady);
+    }
     if (_passInFlight || _isSyncBusy()) {
       // Do not consume — a later session-ready in this resume may retry.
-      return AutoSyncOutcome.rejectedBusy;
+      return _finishSchedule(AutoSyncOutcome.rejectedBusy);
     }
 
     // Claim synchronously before any await (single-flight vs concurrent schedule).
@@ -127,9 +132,14 @@ class OneShotAutoSync {
     try {
       // R11: never start sticky FGS — [_startForegroundService] is never invoked.
       await _runPass();
-      return AutoSyncOutcome.ran;
+      return _finishSchedule(AutoSyncOutcome.ran);
     } finally {
       _passInFlight = false;
     }
+  }
+
+  Future<AutoSyncOutcome> _finishSchedule(AutoSyncOutcome outcome) async {
+    await SentrySyncInstrumentation.addScheduleBreadcrumb(outcome);
+    return outcome;
   }
 }
