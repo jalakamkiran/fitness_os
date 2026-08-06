@@ -46,6 +46,65 @@ class AppDataExportService {
       _isForgetInFlight() ||
       _exportInFlight;
 
+  /// Assemble, redact, write under export cache, prune prior files.
+  Future<AppDataExportResult> exportToCache() async {
+    if (isBusy) {
+      return const AppDataExportResult.blocked('Export blocked — sync or Forget in progress');
+    }
+    _exportInFlight = true;
+    try {
+      final envelope = await assembleEnvelope();
+      final redacted = _redactEnvelope(envelope);
+      final selfCheck = _redactionSelfCheck(redacted);
+      if (selfCheck != null) {
+        return AppDataExportResult.failed(
+          'Export redaction failed — $selfCheck',
+        );
+      }
+      // Re-check external busy immediately before write (ignore self flag).
+      final externalBusy = _isSyncInFlight() ||
+          _isVitalsSyncOrMergeInFlight() ||
+          _isForgetInFlight();
+      if (externalBusy) {
+        return const AppDataExportResult.blocked(
+          'Export blocked — sync or Forget started during assemble',
+        );
+      }
+      final file = await _writeEnvelope(redacted);
+      await _prunePriorExports(keep: file);
+      if (!_isUnderExportCache(file)) {
+        try {
+          await file.delete();
+        } catch (_) {}
+        return const AppDataExportResult.failed(
+          'Export path escaped cache — refused',
+        );
+      }
+      return AppDataExportResult.success(
+        file: file,
+        byteLength: await file.length(),
+      );
+    } on FileSystemException catch (e) {
+      return AppDataExportResult.failed('Export write failed — ${e.message}');
+    } catch (e) {
+      return AppDataExportResult.failed('Export failed — $e');
+    } finally {
+      _exportInFlight = false;
+    }
+  }
+
+  /// Removes all files under the export cache directory (Forget wipe).
+  Future<void> pruneExportCache() async {
+    try {
+      final dir = await _exportCacheDir();
+      if (await dir.exists()) {
+        await dir.delete(recursive: true);
+      }
+    } catch (_) {
+      // Best-effort prune.
+    }
+  }
+
   /// Builds the versioned envelope from prefs + raw side-file listings.
   Future<Map<String, dynamic>> assembleEnvelope() async {
     final root = await _sideFileRoot();
@@ -392,7 +451,187 @@ class AppDataExportService {
       parseErrors: parseErrors,
     );
   }
+
+  Map<String, dynamic> _redactEnvelope(Map<String, dynamic> input) {
+    final knownSecretValues = <String>{
+      if (_prefs.getString(GateAPrefs.geminiApiKey) case final k?
+          when k.isNotEmpty)
+        k,
+      if (_prefs.getString(GateAPrefs.rememberedMac) case final m?
+          when m.isNotEmpty)
+        m,
+    };
+    return _redactNode(input, knownSecretValues) as Map<String, dynamic>;
+  }
+
+  dynamic _redactNode(dynamic node, Set<String> secretValues) {
+    if (node is Map) {
+      final out = <String, dynamic>{};
+      for (final e in node.entries) {
+        final key = e.key.toString();
+        if (_forbiddenKeys.contains(key) ||
+            _forbiddenKeys.contains(key.toLowerCase())) {
+          continue;
+        }
+        final value = _redactNode(e.value, secretValues);
+        if (value == null && e.value is String) continue;
+        out[key] = value;
+      }
+      return out;
+    }
+    if (node is List) {
+      final out = <dynamic>[];
+      for (final item in node) {
+        final value = _redactNode(item, secretValues);
+        if (item is String && value == null) continue;
+        out.add(value);
+      }
+      return out;
+    }
+    if (node is String) {
+      if (secretValues.contains(node)) return null;
+      if (_macColon.hasMatch(node) ||
+          _macPlain.hasMatch(node) ||
+          _userId.hasMatch(node)) {
+        return null;
+      }
+      return node;
+    }
+    return node;
+  }
+
+  /// Returns a failure reason if secrets/identity shapes remain; null if clean.
+  String? _redactionSelfCheck(Map<String, dynamic> envelope) {
+    final encoded = jsonEncode(envelope);
+    if (_macColon.hasMatch(encoded) || _macPlain.hasMatch(encoded)) {
+      return 'MAC shape detected';
+    }
+    if (_userId.hasMatch(encoded)) {
+      return 'userId shape detected';
+    }
+    final gemini = _prefs.getString(GateAPrefs.geminiApiKey);
+    if (gemini != null && gemini.isNotEmpty && encoded.contains(gemini)) {
+      return 'gemini_api_key value detected';
+    }
+    if (_containsForbiddenKey(envelope)) {
+      return 'forbidden key detected';
+    }
+    return null;
+  }
+
+  bool _containsForbiddenKey(dynamic node) {
+    if (node is Map) {
+      for (final e in node.entries) {
+        final key = e.key.toString();
+        if (_forbiddenKeys.contains(key) ||
+            _forbiddenKeys.contains(key.toLowerCase())) {
+          return true;
+        }
+        if (_containsForbiddenKey(e.value)) return true;
+      }
+    } else if (node is List) {
+      for (final item in node) {
+        if (_containsForbiddenKey(item)) return true;
+      }
+    }
+    return false;
+  }
+
+  Future<File> _writeEnvelope(Map<String, dynamic> envelope) async {
+    final dir = await _exportCacheDir();
+    final stamp = _clock().toUtc();
+    final y = stamp.year.toString().padLeft(4, '0');
+    final m = stamp.month.toString().padLeft(2, '0');
+    final d = stamp.day.toString().padLeft(2, '0');
+    final hh = stamp.hour.toString().padLeft(2, '0');
+    final mm = stamp.minute.toString().padLeft(2, '0');
+    final ss = stamp.second.toString().padLeft(2, '0');
+    final name =
+        'fitness_os_export_v${AppDataExportEnvelope.schemaVersion}_$y$m${d}_$hh$mm$ss.json';
+    final file = File('${dir.path}/$name');
+    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(envelope));
+    return file;
+  }
+
+  Future<void> _prunePriorExports({required File keep}) async {
+    final dir = await _exportCacheDir();
+    if (!await dir.exists()) return;
+    await for (final entity in dir.list()) {
+      if (entity is! File) continue;
+      if (entity.path == keep.path) continue;
+      if (!entity.path.endsWith('.json')) continue;
+      try {
+        await entity.delete();
+      } catch (_) {}
+    }
+  }
+
+  bool _isUnderExportCache(File file) {
+    final override = _exportCacheRootOverride?.call();
+    // Path check is resolved async in callers via _exportCacheDir; use sync
+    // best-effort against override or absolute path containing exports/.
+    final path = file.absolute.path;
+    if (override != null) {
+      final cache =
+          '${override.absolute.path}/${AppDataExportEnvelope.exportCacheDirName}';
+      return path.startsWith(cache);
+    }
+    return path.contains('/${AppDataExportEnvelope.exportCacheDirName}/');
+  }
+
+  static final _macColon = RegExp(
+    r'\b([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b',
+  );
+  static final _macPlain = RegExp(r'\b[0-9A-Fa-f]{12}\b');
+  static final _userId = RegExp(r'\b\d{17}\b');
+
+  static const _forbiddenKeys = {
+    'gemini_api_key',
+    'geminiApiKey',
+    'remembered_mac',
+    'rememberedMac',
+    'mac',
+    'userId',
+    'phoneMac',
+    'authKey',
+    'secret',
+    'secrets',
+  };
 }
+
+/// Outcome of [AppDataExportService.exportToCache].
+class AppDataExportResult {
+  const AppDataExportResult._({
+    required this.status,
+    this.file,
+    this.byteLength,
+    this.message,
+  });
+
+  const AppDataExportResult.success({
+    required File file,
+    required int byteLength,
+  }) : this._(
+          status: AppDataExportStatus.success,
+          file: file,
+          byteLength: byteLength,
+        );
+
+  const AppDataExportResult.blocked(String message)
+      : this._(status: AppDataExportStatus.blocked, message: message);
+
+  const AppDataExportResult.failed(String message)
+      : this._(status: AppDataExportStatus.failed, message: message);
+
+  final AppDataExportStatus status;
+  final File? file;
+  final int? byteLength;
+  final String? message;
+
+  bool get isSuccess => status == AppDataExportStatus.success;
+}
+
+enum AppDataExportStatus { success, blocked, failed }
 
 class _JsonListSection {
   const _JsonListSection({

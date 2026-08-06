@@ -23,6 +23,10 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
   Future<void> Function()? _onForgetWipeExtras;
   void Function()? _onForgot;
   bool Function()? _isForgetBlocked;
+  bool _forgetInFlight = false;
+
+  /// True while [forgetDevice] body is running (not the same as isForgetBlocked).
+  bool get forgetInFlight => _forgetInFlight;
 
   /// Registered by vitals DI — clears sleep/HR without pairing constructing that graph.
   set onForgetWipeExtras(Future<void> Function()? callback) {
@@ -136,39 +140,46 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
 
   @override
   Future<Either<Failure, void>> forgetDevice() async {
-    if (_link.syncInFlight || (_isForgetBlocked?.call() ?? false)) {
+    if (_link.syncInFlight ||
+        _forgetInFlight ||
+        (_isForgetBlocked?.call() ?? false)) {
       return const Left(
         ValidationFailure(
           'Sync in progress — wait for it to finish, then Forget',
         ),
       );
     }
-    await _prefs.remove(GateAPrefs.rememberedMac);
-    await _prefs.remove(GateAPrefs.rememberedName);
-    await _prefs.remove(GateAPrefs.gateAKillOk);
-    await _prefs.remove(GateAPrefs.gateARebootOk);
-    await _prefs.remove(GateAPrefs.gateABtToggleOk);
-    await _prefs.remove(GateAPrefs.gateAPassed);
-    await _prefs.remove(GateAPrefs.lastSyncCursor);
-    await _prefs.remove(GateAPrefs.swimSegmentParserVersion);
-    await _prefs.remove(GateAPrefs.workoutsJson);
-    await _onForgetWipeExtras?.call();
-    // Verify vitals keys gone when wipe callback was registered.
-    if (_onForgetWipeExtras != null) {
-      final sleepLeft = _prefs.containsKey(GateAPrefs.sleepSessionsJson);
-      final hrLeft = _prefs.containsKey(GateAPrefs.dailyHrJson);
-      final enableLeft =
-          _prefs.containsKey(GateAPrefs.lastAutoTrackingEnableJson);
-      if (sleepLeft || hrLeft || enableLeft) {
-        return const Left(
-          ValidationFailure('Forget verify failed — vitals residue remains'),
-        );
+    _forgetInFlight = true;
+    try {
+      await _prefs.remove(GateAPrefs.rememberedMac);
+      await _prefs.remove(GateAPrefs.rememberedName);
+      await _prefs.remove(GateAPrefs.gateAKillOk);
+      await _prefs.remove(GateAPrefs.gateARebootOk);
+      await _prefs.remove(GateAPrefs.gateABtToggleOk);
+      await _prefs.remove(GateAPrefs.gateAPassed);
+      await _prefs.remove(GateAPrefs.lastSyncCursor);
+      await _prefs.remove(GateAPrefs.swimSegmentParserVersion);
+      await _prefs.remove(GateAPrefs.workoutsJson);
+      await _onForgetWipeExtras?.call();
+      // Verify vitals keys gone when wipe callback was registered.
+      if (_onForgetWipeExtras != null) {
+        final sleepLeft = _prefs.containsKey(GateAPrefs.sleepSessionsJson);
+        final hrLeft = _prefs.containsKey(GateAPrefs.dailyHrJson);
+        final enableLeft =
+            _prefs.containsKey(GateAPrefs.lastAutoTrackingEnableJson);
+        if (sleepLeft || hrLeft || enableLeft) {
+          return const Left(
+            ValidationFailure('Forget verify failed — vitals residue remains'),
+          );
+        }
       }
+      await _link.clearSecrets();
+      await _link.disconnect();
+      _onForgot?.call();
+      return const Right(null);
+    } finally {
+      _forgetInFlight = false;
     }
-    await _link.clearSecrets();
-    await _link.disconnect();
-    _onForgot?.call();
-    return const Right(null);
   }
 
   @override

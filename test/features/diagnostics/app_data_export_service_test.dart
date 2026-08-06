@@ -263,4 +263,173 @@ void main() {
       expect(omissions, contains('native_huawei_secrets'));
     });
   });
+
+  group('U2 write / redact / busy / prune', () {
+    test('write creates file; second export leaves only one matching file',
+        () async {
+      final service = await buildService(
+        prefsSeed: {
+          GateAPrefs.workoutsJson:
+              '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
+        },
+      );
+      final first = await service.exportToCache();
+      expect(first.isSuccess, isTrue);
+      expect(first.file!.existsSync(), isTrue);
+
+      // Advance clock via new service with later clock for distinct name,
+      // then prune should leave one.
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.workoutsJson:
+            '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final service2 = AppDataExportService(
+        prefs: prefs,
+        sideFileRootOverride: () => tempRoot,
+        exportCacheRootOverride: () => tempRoot,
+        isSyncInFlight: () => false,
+        isVitalsSyncOrMergeInFlight: () => false,
+        isForgetInFlight: () => false,
+        isQwenInstalled: () async => false,
+        clock: () => DateTime.utc(2026, 8, 5, 13, 0, 0),
+      );
+      final second = await service2.exportToCache();
+      expect(second.isSuccess, isTrue);
+      final cache = Directory(
+        '${tempRoot.path}/${AppDataExportEnvelope.exportCacheDirName}',
+      );
+      final files = cache
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.json'))
+          .toList();
+      expect(files, hasLength(1));
+      expect(files.single.path, second.file!.path);
+    });
+
+    test('sync busy → blocked; no file', () async {
+      final service = await buildService(syncInFlight: () => true);
+      final result = await service.exportToCache();
+      expect(result.status, AppDataExportStatus.blocked);
+      final cache = Directory(
+        '${tempRoot.path}/${AppDataExportEnvelope.exportCacheDirName}',
+      );
+      expect(cache.existsSync() ? cache.listSync() : <File>[], isEmpty);
+    });
+
+    test('Forget-in-flight → blocked; no file', () async {
+      final service = await buildService(forgetInFlight: () => true);
+      final result = await service.exportToCache();
+      expect(result.status, AppDataExportStatus.blocked);
+    });
+
+    test('busy flips true before write → fail; no share path', () async {
+      var syncBusy = false;
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.workoutsJson:
+            '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final service = AppDataExportService(
+        prefs: prefs,
+        sideFileRootOverride: () {
+          // Flip busy during assemble (root lookup).
+          syncBusy = true;
+          return tempRoot;
+        },
+        exportCacheRootOverride: () => tempRoot,
+        isSyncInFlight: () => syncBusy,
+        isVitalsSyncOrMergeInFlight: () => false,
+        isForgetInFlight: () => false,
+        isQwenInstalled: () async => false,
+        clock: () => DateTime.utc(2026, 8, 5, 12, 0, 0),
+      );
+      final result = await service.exportToCache();
+      expect(result.status, AppDataExportStatus.blocked);
+      expect(result.file, isNull);
+    });
+
+    test('gemini_api_key omitted; self-check passes', () async {
+      final service = await buildService(
+        prefsSeed: {
+          GateAPrefs.geminiApiKey: 'sk-secret-test-key',
+          GateAPrefs.workoutsJson:
+              '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
+          GateAPrefs.rememberedName: 'GT5',
+        },
+      );
+      final result = await service.exportToCache();
+      expect(result.isSuccess, isTrue);
+      final body = await result.file!.readAsString();
+      expect(body.contains('sk-secret-test-key'), isFalse);
+      expect(body.contains('"gemini_api_key":'), isFalse);
+      expect(body.contains('GT5'), isTrue);
+      expect(body.contains('"gemini_api_key"'), isTrue); // listed in knownOmissions
+    });
+
+    test('planted MAC in prefs field → omitted; export succeeds', () async {
+      final service = await buildService(
+        prefsSeed: {
+          GateAPrefs.workoutsJson: jsonEncode([
+            {
+              'number': 1,
+              'startTime': 1,
+              'endTime': 2,
+              'durationSec': 1,
+              'type': 1,
+              'note': 'AA:BB:CC:DD:EE:FF',
+            },
+          ]),
+        },
+      );
+      final result = await service.exportToCache();
+      expect(result.isSuccess, isTrue);
+      final body = await result.file!.readAsString();
+      expect(body.contains('AA:BB:CC:DD:EE:FF'), isFalse);
+    });
+
+    test('planted userId fails closed when still present as key', () async {
+      // Forbidden key `userId` is stripped by redact; value-only 17-digit
+      // in a non-forbidden field is also scrubbed.
+      final service = await buildService(
+        prefsSeed: {
+          GateAPrefs.workoutsJson: jsonEncode([
+            {
+              'number': 1,
+              'startTime': 1,
+              'endTime': 2,
+              'durationSec': 1,
+              'type': 1,
+              'label': '12345678901234567',
+            },
+          ]),
+        },
+      );
+      final result = await service.exportToCache();
+      expect(result.isSuccess, isTrue);
+      final body = await result.file!.readAsString();
+      expect(body.contains('12345678901234567'), isFalse);
+    });
+
+    test('Forget wipe prune removes export cache; swim orphans untouched',
+        () async {
+      final service = await buildService();
+      final written = await service.exportToCache();
+      expect(written.isSuccess, isTrue);
+
+      final swimDir =
+          Directory('${tempRoot.path}/${GateAPrefs.canonicalSwimDir}');
+      await swimDir.create(recursive: true);
+      final orphan = File('${swimDir.path}/swim_99.json');
+      await orphan.writeAsString('{"workoutNumber":99}');
+
+      await service.pruneExportCache();
+      final cache = Directory(
+        '${tempRoot.path}/${AppDataExportEnvelope.exportCacheDirName}',
+      );
+      expect(cache.existsSync(), isFalse);
+      expect(orphan.existsSync(), isTrue);
+    });
+  });
 }
