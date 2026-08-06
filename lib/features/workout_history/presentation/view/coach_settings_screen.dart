@@ -165,6 +165,7 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
 
     final file = result.file!;
     final bytes = result.byteLength ?? await file.length();
+    if (!mounted) return;
     if (bytes > AppDataExportEnvelope.softWarnBytes) {
       final mb = (bytes / (1024 * 1024)).toStringAsFixed(1);
       final cont = await showDialog<bool>(
