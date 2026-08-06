@@ -198,6 +198,14 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
     }
 
     if (!mounted) return;
+    final sharePath = file.absolute.path;
+    if (!sharePath.contains('/${AppDataExportEnvelope.exportCacheDirName}/')) {
+      setState(() {
+        _busy = false;
+        _status = 'Export path refused — not under export cache.';
+      });
+      return;
+    }
     try {
       final share = widget.shareExport;
       if (share != null) {

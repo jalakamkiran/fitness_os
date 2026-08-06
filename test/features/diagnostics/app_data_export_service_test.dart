@@ -240,6 +240,34 @@ void main() {
       expect(omissions, isNot(contains('swim_pace_blocks')));
     });
 
+    test('missingCanonicalSwim ignores non-swim workouts', () async {
+      final service = await buildService(
+        prefsSeed: {
+          GateAPrefs.workoutsJson: jsonEncode([
+            {
+              'number': 1,
+              'startTime': 1,
+              'endTime': 2,
+              'durationSec': 1,
+              'type': 1,
+            },
+            {
+              'number': 42,
+              'startTime': 1,
+              'endTime': 2,
+              'durationSec': 1,
+              'type': 6,
+            },
+          ]),
+        },
+      );
+      final envelope = await service.assembleEnvelope();
+      final inv =
+          (envelope['meta'] as Map)['sideFileInventory'] as Map<String, dynamic>;
+      expect(inv['missingCanonicalSwim'], [42]);
+      expect(inv['missingCanonicalSwim'], isNot(contains(1)));
+    });
+
     test('option 2: absent optional streams remain in knownOmissions',
         () async {
       final service = await buildService(
@@ -410,6 +438,27 @@ void main() {
       expect(result.isSuccess, isTrue);
       final body = await result.file!.readAsString();
       expect(body.contains('12345678901234567'), isFalse);
+    });
+
+    test('planted dash-MAC omitted; export succeeds', () async {
+      final service = await buildService(
+        prefsSeed: {
+          GateAPrefs.workoutsJson: jsonEncode([
+            {
+              'number': 1,
+              'startTime': 1,
+              'endTime': 2,
+              'durationSec': 1,
+              'type': 1,
+              'note': 'AA-BB-CC-DD-EE-FF',
+            },
+          ]),
+        },
+      );
+      final result = await service.exportToCache();
+      expect(result.isSuccess, isTrue);
+      final body = await result.file!.readAsString();
+      expect(body.contains('AA-BB-CC-DD-EE-FF'), isFalse);
     });
 
     test('Forget wipe prune removes export cache; swim orphans untouched',

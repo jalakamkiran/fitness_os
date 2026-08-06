@@ -1,7 +1,7 @@
 ---
 title: "feat: App data JSON export for offline analysis"
 type: feat
-status: active
+status: completed
 date: 2026-08-05
 deepened: 2026-08-05
 ---

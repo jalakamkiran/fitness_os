@@ -93,12 +93,22 @@ class AppDataExportService {
     }
   }
 
-  /// Removes all files under the export cache directory (Forget wipe).
+  /// Removes export cache and share_plus residual copies (Forget wipe).
   Future<void> pruneExportCache() async {
     try {
       final dir = await _exportCacheDir();
       if (await dir.exists()) {
         await dir.delete(recursive: true);
+      }
+    } catch (_) {
+      // Best-effort prune.
+    }
+    try {
+      // share_plus copies shared files into cacheDir/share_plus before grant.
+      final temp = await getTemporaryDirectory();
+      final shareCache = Directory('${temp.path}/share_plus');
+      if (await shareCache.exists()) {
+        await shareCache.delete(recursive: true);
       }
     } catch (_) {
       // Best-effort prune.
@@ -124,7 +134,9 @@ class AppDataExportService {
     for (final item in workoutSection.items) {
       if (item is Map) {
         final n = item['number'];
-        if (n is num) workoutNumbers.add(n.toInt());
+        if (n is num && _looksLikeSwimMap(item)) {
+          workoutNumbers.add(n.toInt());
+        }
         if (item['dataPages'] is List && (item['dataPages'] as List).isNotEmpty) {
           hasDataPages = true;
         }
@@ -304,6 +316,16 @@ class AppDataExportService {
       }
     }
     return out;
+  }
+
+  /// Mirrors [CanonicalSwimSession.looksLikeSwim] for raw prefs maps.
+  bool _looksLikeSwimMap(Map<dynamic, dynamic> item) {
+    final type = item['type'];
+    if (type is num && type.toInt() >= 5 && type.toInt() <= 8) return true;
+    return item['poolLength'] != null ||
+        item['strokes'] != null ||
+        item['avgSwolf'] != null ||
+        (item['segments'] is List && (item['segments'] as List).isNotEmpty);
   }
 
   Future<_SwimInventory> _inventoryCanonicalSwim(
@@ -491,6 +513,7 @@ class AppDataExportService {
     if (node is String) {
       if (secretValues.contains(node)) return null;
       if (_macColon.hasMatch(node) ||
+          _macDash.hasMatch(node) ||
           _macPlain.hasMatch(node) ||
           _userId.hasMatch(node)) {
         return null;
@@ -503,7 +526,9 @@ class AppDataExportService {
   /// Returns a failure reason if secrets/identity shapes remain; null if clean.
   String? _redactionSelfCheck(Map<String, dynamic> envelope) {
     final encoded = jsonEncode(envelope);
-    if (_macColon.hasMatch(encoded) || _macPlain.hasMatch(encoded)) {
+    if (_macColon.hasMatch(encoded) ||
+        _macDash.hasMatch(encoded) ||
+        _macPlain.hasMatch(encoded)) {
       return 'MAC shape detected';
     }
     if (_userId.hasMatch(encoded)) {
@@ -512,6 +537,10 @@ class AppDataExportService {
     final gemini = _prefs.getString(GateAPrefs.geminiApiKey);
     if (gemini != null && gemini.isNotEmpty && encoded.contains(gemini)) {
       return 'gemini_api_key value detected';
+    }
+    final mac = _prefs.getString(GateAPrefs.rememberedMac);
+    if (mac != null && mac.isNotEmpty && encoded.contains(mac)) {
+      return 'remembered_mac value detected';
     }
     if (_containsForbiddenKey(envelope)) {
       return 'forbidden key detected';
@@ -567,20 +596,22 @@ class AppDataExportService {
   }
 
   bool _isUnderExportCache(File file) {
-    final override = _exportCacheRootOverride?.call();
-    // Path check is resolved async in callers via _exportCacheDir; use sync
-    // best-effort against override or absolute path containing exports/.
     final path = file.absolute.path;
+    final override = _exportCacheRootOverride?.call();
     if (override != null) {
       final cache =
           '${override.absolute.path}/${AppDataExportEnvelope.exportCacheDirName}';
-      return path.startsWith(cache);
+      return path == cache || path.startsWith('$cache/');
     }
-    return path.contains('/${AppDataExportEnvelope.exportCacheDirName}/');
+    final marker = '/${AppDataExportEnvelope.exportCacheDirName}/';
+    return path.contains(marker);
   }
 
   static final _macColon = RegExp(
     r'\b([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b',
+  );
+  static final _macDash = RegExp(
+    r'\b([0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2}\b',
   );
   static final _macPlain = RegExp(r'\b[0-9A-Fa-f]{12}\b');
   static final _userId = RegExp(r'\b\d{17}\b');
