@@ -150,6 +150,7 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
     await _prefs.remove(GateAPrefs.gateABtToggleOk);
     await _prefs.remove(GateAPrefs.gateAPassed);
     await _prefs.remove(GateAPrefs.lastSyncCursor);
+    await _prefs.remove(GateAPrefs.swimSegmentParserVersion);
     await _prefs.remove(GateAPrefs.workoutsJson);
     await _onForgetWipeExtras?.call();
     // Verify vitals keys gone when wipe callback was registered.

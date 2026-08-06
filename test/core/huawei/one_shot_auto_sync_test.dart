@@ -203,5 +203,32 @@ void main() {
       expect(outcome, AutoSyncOutcome.inactive);
       expect(sync.passStarts, 0);
     });
+
+    test('onPassSettled fires after passInFlight clears', () async {
+      final gate = Completer<void>();
+      var settledWhileInFlight = true;
+      var settleCalls = 0;
+      late final OneShotAutoSync sync;
+      sync = OneShotAutoSync(
+        isSessionReady: () => true,
+        isSyncBusy: () => false,
+        runPass: () => gate.future,
+        onPassSettled: () {
+          settleCalls++;
+          settledWhileInFlight = sync.passInFlight;
+        },
+      );
+
+      sync.onResumed();
+      await Future<void>.delayed(Duration.zero);
+      expect(sync.passInFlight, isTrue);
+      expect(settleCalls, 0);
+
+      gate.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(sync.passInFlight, isFalse);
+      expect(settleCalls, 1);
+      expect(settledWhileInFlight, isFalse);
+    });
   });
 }

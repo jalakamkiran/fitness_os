@@ -43,10 +43,12 @@ class OneShotAutoSync {
     required bool Function() isSyncBusy,
     required Future<void> Function() runPass,
     ForegroundServiceStarter? startForegroundService,
+    void Function()? onPassSettled,
   })  : _isSessionReady = isSessionReady,
         _isSyncBusy = isSyncBusy,
         _runPass = runPass,
-        _startForegroundService = startForegroundService;
+        _startForegroundService = startForegroundService,
+        _onPassSettled = onPassSettled;
 
   final bool Function() _isSessionReady;
   final bool Function() _isSyncBusy;
@@ -54,6 +56,9 @@ class OneShotAutoSync {
 
   /// Injected only for tests; production wiring leaves this null and never calls it.
   final ForegroundServiceStarter? _startForegroundService;
+
+  /// Called after [passInFlight] clears so listeners see settled sync state.
+  final void Function()? _onPassSettled;
 
   bool _inForeground = false;
   int _resumeGeneration = 0;
@@ -134,7 +139,13 @@ class OneShotAutoSync {
       await _runPass();
       return _finishSchedule(AutoSyncOutcome.ran);
     } finally {
+      // Clear before settle-notify so Home's syncInProgress reads false.
       _passInFlight = false;
+      try {
+        _onPassSettled?.call();
+      } catch (_) {
+        // Settle notify must not mask the pass outcome.
+      }
     }
   }
 

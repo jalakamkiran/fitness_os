@@ -1,5 +1,6 @@
 import 'package:get_it/get_it.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync_di.dart';
+import 'package:fitness_os/core/storage/store_invalidation.dart';
 import 'package:fitness_os/features/device_pairing/data/di/device_pairing_di.dart';
 import 'package:fitness_os/features/home/data/di/home_di.dart';
 import 'package:fitness_os/features/vitals/data/di/vitals_di.dart';
@@ -10,6 +11,10 @@ final sl = GetIt.instance;
 Future<void> initDependencies() async {
   // Core dependencies (e.g., network client, local storage)
   // _initCore();
+
+  if (!sl.isRegistered<StoreInvalidation>()) {
+    sl.registerSingleton<StoreInvalidation>(StoreInvalidation());
+  }
 
   await _initDevicePairing();
   await _initWorkoutHistory();

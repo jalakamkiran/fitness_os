@@ -17,17 +17,28 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     required SharedPreferences prefs,
     CanonicalSwimStore? swimStore,
     Directory? Function()? swimRootOverride,
+    void Function()? onSyncSettled,
   })  : _link = link,
         _prefs = prefs,
         _swimStore = swimStore ??
-            CanonicalSwimStore(rootOverride: swimRootOverride);
+            CanonicalSwimStore(rootOverride: swimRootOverride),
+        _onSyncSettled = onSyncSettled;
 
   final HuaweiLink _link;
   final SharedPreferences _prefs;
   final CanonicalSwimStore _swimStore;
+  final void Function()? _onSyncSettled;
 
   /// Same empty-history floor as GB / native HuaweiWorkoutSync.
   static const fallbackStartUnix = 1654819200;
+
+  /// Overlap when advancing from [GateAPrefs.lastSyncCursor] so boundary
+  /// workouts are not missed if the watch clocks slightly disagree.
+  static const cursorOverlapSec = 86400;
+
+  /// v2: swim/pace page index TLV 0x08 + GB 0x83 field map (strokes/time).
+  /// Pref below this → next Sync uses [fallbackStartUnix] once, then stamps.
+  static const currentSwimSegmentParserVersion = 2;
 
   @override
   Future<bool> isGateAPassed() async =>
@@ -92,51 +103,80 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
       );
     }
 
-    // Gate B testing: always request full history from the GB-style floor.
-    // Incremental cursor sync can return later once AE6 is proven.
-    final startUnix = fallbackStartUnix;
     final endUnix = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final startUnix = await _resolveSyncStartUnix(endUnix);
 
-    final result = await _link.syncWorkouts(
-      startUnix: startUnix,
-      endUnix: endUnix,
-    );
+    try {
+      final result = await _link.syncWorkouts(
+        startUnix: startUnix,
+        endUnix: endUnix,
+      );
 
-    switch (result.status) {
-      case WorkoutSyncStatus.notReady:
-        return Left(
-          ServerFailure(result.message ?? 'Session not ready — reconnect'),
-        );
-      case WorkoutSyncStatus.busy:
-        // Non-destructive — another Sync owns the radio.
-        return Left(
-          ServerFailure(
-            result.message ?? 'Another Sync is already in progress',
-          ),
-        );
-      case WorkoutSyncStatus.stuck:
-        return Left(
-          ServerFailure(
-            result.message ?? 'Sync stuck — disconnect and reconnect',
-          ),
-        );
-      case WorkoutSyncStatus.partialBatch:
-        // Workouts do not merge on partial_batch this cut (vitals path only).
-        return Left(
-          ServerFailure(
-            result.message ?? 'Workout Sync incomplete — retry after reconnect',
-          ),
-        );
-      case WorkoutSyncStatus.error:
-        return Left(ServerFailure(result.message ?? 'Sync failed'));
-      case WorkoutSyncStatus.empty:
-        // Keep prior rows; empty window is success.
-        final local = await loadLocal();
-        return Right(local);
-      case WorkoutSyncStatus.ok:
-        final merged = await _mergeAndPersist(result.workouts);
-        return Right(merged);
+      switch (result.status) {
+        case WorkoutSyncStatus.notReady:
+          return Left(
+            ServerFailure(result.message ?? 'Session not ready — reconnect'),
+          );
+        case WorkoutSyncStatus.busy:
+          // Non-destructive — another Sync owns the radio.
+          return Left(
+            ServerFailure(
+              result.message ?? 'Another Sync is already in progress',
+            ),
+          );
+        case WorkoutSyncStatus.stuck:
+          return Left(
+            ServerFailure(
+              result.message ?? 'Sync stuck — disconnect and reconnect',
+            ),
+          );
+        case WorkoutSyncStatus.partialBatch:
+          // Workouts do not merge on partial_batch this cut (vitals path only).
+          return Left(
+            ServerFailure(
+              result.message ??
+                  'Workout Sync incomplete — retry after reconnect',
+            ),
+          );
+        case WorkoutSyncStatus.error:
+          return Left(ServerFailure(result.message ?? 'Sync failed'));
+        case WorkoutSyncStatus.empty:
+          // Keep prior rows; empty window is success.
+          final local = await loadLocal();
+          return Right(local);
+        case WorkoutSyncStatus.ok:
+          final merged = await _mergeAndPersist(result.workouts);
+          await _prefs.setInt(
+            GateAPrefs.swimSegmentParserVersion,
+            currentSwimSegmentParserVersion,
+          );
+          return Right(merged);
+      }
+    } finally {
+      _onSyncSettled?.call();
     }
+  }
+
+  /// Incremental when cursor exists and no local row is still partial;
+  /// otherwise full-history from [fallbackStartUnix] (plan invariant).
+  /// Also full-history once after [currentSwimSegmentParserVersion] bumps.
+  Future<int> _resolveSyncStartUnix(int endUnix) async {
+    final parserVer =
+        _prefs.getInt(GateAPrefs.swimSegmentParserVersion) ?? 0;
+    if (parserVer < currentSwimSegmentParserVersion) {
+      return fallbackStartUnix;
+    }
+    final cursor = _prefs.getInt(GateAPrefs.lastSyncCursor);
+    final local = await loadLocal();
+    final hasPartial =
+        local.any((w) => w.enrichmentStatus == 'partial');
+    if (cursor == null || cursor <= 0 || hasPartial) {
+      return fallbackStartUnix;
+    }
+    final withOverlap = cursor - cursorOverlapSec;
+    if (withOverlap < fallbackStartUnix) return fallbackStartUnix;
+    if (withOverlap > endUnix) return endUnix;
+    return withOverlap;
   }
 
   Future<List<WorkoutSummary>> _mergeAndPersist(
@@ -170,7 +210,6 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
       await _swimStore.saveAll(swimSessions);
     }
 
-    // Book-keeping only while Sync still uses the full-history window.
     var maxEnd = 0;
     for (final w in merged) {
       if (w.endTime > maxEnd) maxEnd = w.endTime;

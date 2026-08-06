@@ -7,6 +7,7 @@ import 'package:fitness_os/app/splash/fathom_splash_timing.dart';
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync.dart';
+import 'package:fitness_os/features/device_pairing/domain/repositories/device_pairing_repository.dart';
 
 class FitnessOsApp extends StatelessWidget {
   const FitnessOsApp({
@@ -25,6 +26,7 @@ class FitnessOsApp extends StatelessWidget {
     return AutoSyncLifecycle(
       autoSync: sl<OneShotAutoSync>(),
       link: sl<HuaweiLink>(),
+      pairing: sl<DevicePairingRepository>(),
       child: MaterialApp(
         title: 'Fathom',
         theme: BpTheme.light(),

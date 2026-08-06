@@ -144,6 +144,8 @@ class HomeRepositoryImpl implements HomeRepository {
           'When you finish a pool session, the takeaway lands here — one line, not a chart.';
     }
 
+    final sessionReady = _link.sessionReady;
+
     return HomeSnapshot(
       precedence: precedence,
       deviceLabel: rememberedName,
@@ -153,8 +155,16 @@ class HomeRepositoryImpl implements HomeRepository {
         lastSyncedLabel: lastSyncedLabel,
       ),
       syncPillLabel: _pillLabel(precedence),
-      syncTitle: _syncTitle(precedence, rememberedName),
-      syncCaption: _syncCaption(precedence, lastSyncedLabel),
+      syncTitle: _syncTitle(
+        precedence,
+        rememberedName,
+        sessionReady: sessionReady,
+      ),
+      syncCaption: _syncCaption(
+        precedence,
+        lastSyncedLabel,
+        sessionReady: sessionReady,
+      ),
       lastSyncedLabel: lastSyncedLabel,
       caloriesLabel: everSynced &&
               precedence != HomePrecedence.pairedNeverSynced &&
@@ -267,24 +277,37 @@ String _brandSubtitle({
         'GT5 · synced ${lastSyncedLabel ?? 'just now'}',
     };
 
-String _syncTitle(HomePrecedence p, String device) => switch (p) {
+String _syncTitle(
+  HomePrecedence p,
+  String device, {
+  required bool sessionReady,
+}) =>
+    switch (p) {
       HomePrecedence.notPaired => 'Pair a GT5 to begin',
       HomePrecedence.pairedNeverSynced => '$device paired',
       HomePrecedence.syncInProgress => 'Pulling today’s data',
       HomePrecedence.syncFailed => 'Couldn’t sync',
       HomePrecedence.dataAvailable ||
       HomePrecedence.noSwimDataYet =>
-        '$device connected',
+        sessionReady ? '$device connected' : '$device paired',
     };
 
-String _syncCaption(HomePrecedence p, String? lastSynced) => switch (p) {
+String _syncCaption(
+  HomePrecedence p,
+  String? lastSynced, {
+  required bool sessionReady,
+}) =>
+    switch (p) {
       HomePrecedence.notPaired => 'Home stays empty until a watch is linked.',
       HomePrecedence.pairedNeverSynced =>
         'No sync yet · run first pass to load today.',
       HomePrecedence.syncInProgress => 'One-shot pass on open · keep UI calm.',
       HomePrecedence.syncFailed =>
         'Last good data kept when available · retry when ready.',
-      HomePrecedence.dataAvailable =>
-        'Auto-sync on open · last pass ${lastSynced ?? 'recently'}',
-      HomePrecedence.noSwimDataYet => 'Sync healthy · no swim session today',
+      HomePrecedence.dataAvailable => sessionReady
+          ? 'Auto-sync on open · last pass ${lastSynced ?? 'recently'}'
+          : 'Session offline · last pass ${lastSynced ?? 'recently'}',
+      HomePrecedence.noSwimDataYet => sessionReady
+          ? 'Sync healthy · no swim session today'
+          : 'Session offline · last sync kept · no swim session today',
     };
