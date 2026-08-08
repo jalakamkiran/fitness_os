@@ -80,6 +80,13 @@ class _EmptyVitals implements VitalsRepository {
       const [];
 
   @override
+  Future<List<FitnessTotalsDay>> loadFitnessTotals() async => const [];
+
+  @override
+  Future<FitnessTotalsDay?> loadFitnessTotalsForDay(String dayKey) async =>
+      null;
+
+  @override
   Future<AutoTrackingEnableResult?> loadLastEnable() async => null;
 
   @override

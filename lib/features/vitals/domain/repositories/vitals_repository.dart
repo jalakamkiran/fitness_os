@@ -18,6 +18,12 @@ abstract class VitalsRepository {
   /// Per-minute HR samples for one local calendar day (`yyyy-MM-dd`), if persisted.
   Future<List<DailyHrSample>> loadDailyHrSeries(String dayKey);
 
+  /// FitnessTotals day rows (replace-by-day store). Fail-closed on corrupt JSON.
+  Future<List<FitnessTotalsDay>> loadFitnessTotals();
+
+  /// Single local-day FitnessTotals row, or null if absent / load fail-closed.
+  Future<FitnessTotalsDay?> loadFitnessTotalsForDay(String dayKey);
+
   /// Last explicit Enable SoT (null if never run or corrupt).
   Future<AutoTrackingEnableResult?> loadLastEnable();
 
@@ -27,7 +33,7 @@ abstract class VitalsRepository {
   /// Explicit auto-tracking enable → persist last-run.
   Future<Either<Failure, AutoTrackingEnableResult>> enableAutoTracking();
 
-  /// Wipe sleep + HR + last-enable prefs (+ side-file dirs when present).
+  /// Wipe sleep + HR + fitness totals + last-enable prefs (+ side-file dirs when present).
   Future<void> clearLocal();
 }
 

@@ -25,6 +25,7 @@ class VitalsRepositoryImpl implements VitalsRepository {
   /// Set when prefs JSON is corrupt — fail-closed; empty sync must not "confirm" wipe.
   bool _sleepLoadFailed = false;
   bool _hrLoadFailed = false;
+  bool _fitnessTotalsLoadFailed = false;
   bool _mergeInFlight = false;
 
   @override
@@ -112,6 +113,42 @@ class VitalsRepositoryImpl implements VitalsRepository {
   }
 
   @override
+  Future<List<FitnessTotalsDay>> loadFitnessTotals() async {
+    final raw = _prefs.getString(GateAPrefs.fitnessTotalsDayJson);
+    if (raw == null || raw.isEmpty) {
+      _fitnessTotalsLoadFailed = false;
+      return const [];
+    }
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      _fitnessTotalsLoadFailed = false;
+      return list
+          .whereType<Map>()
+          .map((e) => FitnessTotalsDay.fromMap(Map<String, dynamic>.from(e)))
+          .where((d) => d.dayKey.isNotEmpty)
+          .toList()
+        ..sort((a, b) => b.dayKey.compareTo(a.dayKey));
+    } catch (_) {
+      _fitnessTotalsLoadFailed = true;
+      throw const FormatException('Corrupt fitness_totals_day_json');
+    }
+  }
+
+  @override
+  Future<FitnessTotalsDay?> loadFitnessTotalsForDay(String dayKey) async {
+    if (dayKey.isEmpty) return null;
+    try {
+      final days = await loadFitnessTotals();
+      for (final d in days) {
+        if (d.dayKey == dayKey) return d;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
   Future<Either<Failure, VitalsSnapshot>> syncFromWatch() async {
     if (!await isGateAPassed()) {
       return const Left(
@@ -149,7 +186,7 @@ class VitalsRepositoryImpl implements VitalsRepository {
         case ActivitySyncStatus.error:
           return Left(ServerFailure(result.message ?? 'Sync failed'));
         case ActivitySyncStatus.empty:
-          if (_sleepLoadFailed || _hrLoadFailed) {
+          if (_sleepLoadFailed || _hrLoadFailed || _fitnessTotalsLoadFailed) {
             return const Left(
               ServerFailure('Local vitals store unreadable — not overwriting'),
             );
@@ -305,6 +342,9 @@ class VitalsRepositoryImpl implements VitalsRepository {
     try {
       await loadDailyHr();
     } catch (_) {}
+    try {
+      await loadFitnessTotals();
+    } catch (_) {}
   }
 
   Future<void> _mergeContainers(ActivitySyncResult result) async {
@@ -318,6 +358,11 @@ class VitalsRepositoryImpl implements VitalsRepository {
         result.dailyHrSamples.isNotEmpty &&
         !_hrLoadFailed) {
       await _mergeDailyHr(result.dailyHrSamples);
+    }
+    if (!_gateStillPassed()) return;
+    // FitnessTotals: merge even all-zero scalar rows (do not copy HR samples guard).
+    if (completed.contains('fitness_totals') && !_fitnessTotalsLoadFailed) {
+      await _mergeFitnessTotals(result.fitnessTotals);
     }
   }
 
@@ -392,6 +437,27 @@ class VitalsRepositoryImpl implements VitalsRepository {
     await _persistDailyHrSeries(byDaySamples);
   }
 
+  /// Replace-by-local-day across the completed FitnessTotals payload.
+  /// Keeps prior rows for days not in the incoming set (incl. all-zero rows).
+  Future<void> _mergeFitnessTotals(List<FitnessTotalsDay> incoming) async {
+    if (!_gateStillPassed()) return;
+    final valid = incoming.where((d) => d.dayKey.isNotEmpty).toList();
+    if (valid.isEmpty) return;
+
+    final existing = await _safeLoadFitnessTotals();
+    final map = <String, FitnessTotalsDay>{
+      for (final d in existing) d.dayKey: d,
+      for (final d in valid) d.dayKey: d,
+    };
+    final merged = map.values.toList()
+      ..sort((a, b) => b.dayKey.compareTo(a.dayKey));
+    if (!_gateStillPassed()) return;
+    await _prefs.setString(
+      GateAPrefs.fitnessTotalsDayJson,
+      jsonEncode(merged.map((d) => d.toJson()).toList()),
+    );
+  }
+
   Future<void> _persistDailyHrSeries(
     Map<String, List<DailyHrSample>> incomingByDay,
   ) async {
@@ -458,13 +524,23 @@ class VitalsRepositoryImpl implements VitalsRepository {
     }
   }
 
+  Future<List<FitnessTotalsDay>> _safeLoadFitnessTotals() async {
+    try {
+      return await loadFitnessTotals();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   @override
   Future<void> clearLocal() async {
     await _prefs.remove(GateAPrefs.sleepSessionsJson);
     await _prefs.remove(GateAPrefs.dailyHrJson);
+    await _prefs.remove(GateAPrefs.fitnessTotalsDayJson);
     await _prefs.remove(GateAPrefs.lastAutoTrackingEnableJson);
     _sleepLoadFailed = false;
     _hrLoadFailed = false;
+    _fitnessTotalsLoadFailed = false;
     await _wipeSideFiles();
   }
 

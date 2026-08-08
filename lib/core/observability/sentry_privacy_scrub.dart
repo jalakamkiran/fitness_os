@@ -18,6 +18,7 @@ abstract final class SentryPrivacyScrub {
     'paceBlocks',
     'dailyHrSamples',
     'sleepSessions',
+    'fitnessTotals',
     'hrSeries',
     'samples',
     'mac',

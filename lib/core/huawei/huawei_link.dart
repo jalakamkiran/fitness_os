@@ -708,6 +708,47 @@ class DailyHrDaySummary {
       };
 }
 
+/// FitnessTotals day rollup from activity Sync (`0x07:0x03`).
+///
+/// Field map is capture-gated / provisional — see wire-spec FitnessTotals section.
+class FitnessTotalsDay {
+  const FitnessTotalsDay({
+    required this.dayKey,
+    required this.dayStartUnix,
+    required this.calories,
+    required this.steps,
+    required this.exerciseDurationSec,
+  });
+
+  /// Local calendar day `yyyy-MM-dd`.
+  final String dayKey;
+  final int dayStartUnix;
+  final int calories;
+  final int steps;
+
+  /// Provisional: native treats wire `0x07` as seconds.
+  final int exerciseDurationSec;
+
+  factory FitnessTotalsDay.fromMap(Map<String, dynamic> map) {
+    int asInt(Object? v) => v == null ? 0 : (v as num).toInt();
+    return FitnessTotalsDay(
+      dayKey: map['dayKey'] as String? ?? '',
+      dayStartUnix: asInt(map['dayStartUnix']),
+      calories: asInt(map['calories']),
+      steps: asInt(map['steps']),
+      exerciseDurationSec: asInt(map['exerciseDurationSec']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'dayKey': dayKey,
+        'dayStartUnix': dayStartUnix,
+        'calories': calories,
+        'steps': steps,
+        'exerciseDurationSec': exerciseDurationSec,
+      };
+}
+
 enum AutoTrackingEnableStatus { ok, busy, notReady, error }
 
 enum AutoTrackingOverall { allArmed, partial, noneArmed }
@@ -867,6 +908,7 @@ class ActivitySyncResult {
     this.message,
     this.sleepSessions = const [],
     this.dailyHrSamples = const [],
+    this.fitnessTotals = const [],
     this.completedContainers = const {},
     this.enableSkipped = false,
   });
@@ -875,6 +917,7 @@ class ActivitySyncResult {
   final String? message;
   final List<SleepSessionSummary> sleepSessions;
   final List<DailyHrSample> dailyHrSamples;
+  final List<FitnessTotalsDay> fitnessTotals;
   final Set<String> completedContainers;
   final bool enableSkipped;
 
@@ -909,6 +952,16 @@ class ActivitySyncResult {
         }
       }
     }
+    final totals = <FitnessTotalsDay>[];
+    final rawTotals = map['fitnessTotals'];
+    if (rawTotals is List) {
+      for (final item in rawTotals) {
+        if (item is Map) {
+          final day = FitnessTotalsDay.fromMap(Map<String, dynamic>.from(item));
+          if (day.dayKey.isNotEmpty) totals.add(day);
+        }
+      }
+    }
     final completed = <String>{};
     final rawCompleted = map['completedContainers'];
     if (rawCompleted is List) {
@@ -921,6 +974,7 @@ class ActivitySyncResult {
       message: map['message'] as String?,
       sleepSessions: sleep,
       dailyHrSamples: hr,
+      fitnessTotals: totals,
       completedContainers: completed,
       enableSkipped: map['enableSkipped'] as bool? ?? false,
     );
