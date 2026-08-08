@@ -726,7 +726,8 @@ class FitnessTotalsDay {
   final int calories;
   final int steps;
 
-  /// Provisional: native treats wire `0x07` as seconds.
+  /// Raw wire `0x07` (channel name retained). **Not** watch exercise minutes —
+  /// Home workout time uses today's workout-sum until a duration tag is owned.
   final int exerciseDurationSec;
 
   factory FitnessTotalsDay.fromMap(Map<String, dynamic> map) {

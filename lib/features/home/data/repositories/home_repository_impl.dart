@@ -15,6 +15,10 @@ const int kPoolSwimType = 5;
 /// Open-water swim type id.
 const int kOpenWaterSwimType = 6;
 
+/// When FT today reports 0 kcal but workouts burned more than this, treat the
+/// FT row as untrusted (e.g. wrong day-anchor zeros) and use workout-sum.
+const int _kFitnessTotalsUntrustedWorkoutCalThreshold = 10;
+
 class HomeRepositoryImpl implements HomeRepository {
   HomeRepositoryImpl({
     required SharedPreferences prefs,
@@ -50,9 +54,11 @@ class HomeRepositoryImpl implements HomeRepository {
 
     final workouts = await _workouts.loadLocal();
     final hrDays = await _vitals.loadDailyHr();
+    final fitnessTotals = await _vitals.loadFitnessTotals();
     final everSynced = _prefs.containsKey(GateAPrefs.lastSyncCursor) ||
         workouts.isNotEmpty ||
         hrDays.isNotEmpty ||
+        fitnessTotals.isNotEmpty ||
         _prefs.getString(GateAPrefs.homeLastSyncStatus) == 'ok';
 
     final syncInProgress = _link.syncInFlight ||
@@ -103,11 +109,11 @@ class HomeRepositoryImpl implements HomeRepository {
             _now(),
           );
 
-    final calories = todayWorkouts.fold<int>(
+    final workoutCalories = todayWorkouts.fold<int>(
       0,
       (sum, w) => sum + (w.calories ?? 0),
     );
-    final steps = todayWorkouts.fold<int>(
+    final workoutSteps = todayWorkouts.fold<int>(
       0,
       (sum, w) => sum + (w.steps ?? 0),
     );
@@ -115,6 +121,33 @@ class HomeRepositoryImpl implements HomeRepository {
       0,
       (sum, w) => sum + w.durationSec,
     );
+
+    // Capture-locked: FT supplies day calories/steps; wire 0x07 is not exercise
+    // minutes, so workout time stays on today's workout-sum until a duration
+    // tag is owned. Sanity: FT cal=0 while workouts burned meaningfully →
+    // untrusted (wrong day-anchor residue) → full workout-sum triple.
+    FitnessTotalsDay? ftToday;
+    for (final d in fitnessTotals) {
+      if (d.dayKey == today) {
+        ftToday = d;
+        break;
+      }
+    }
+    final int calories;
+    final int steps;
+    final int displayWorkoutSec;
+    final ft = ftToday;
+    if (ft != null &&
+        !(ft.calories == 0 &&
+            workoutCalories > _kFitnessTotalsUntrustedWorkoutCalThreshold)) {
+      calories = ft.calories;
+      steps = ft.steps;
+      displayWorkoutSec = workoutSec;
+    } else {
+      calories = workoutCalories;
+      steps = workoutSteps;
+      displayWorkoutSec = workoutSec;
+    }
 
     final hrToday = hrDays.where((d) => d.dayKey == today).toList();
     final hr = hrToday.isNotEmpty
@@ -178,7 +211,7 @@ class HomeRepositoryImpl implements HomeRepository {
           : null,
       workoutTimeLabel: precedence == HomePrecedence.noSwimDataYet ||
               precedence == HomePrecedence.dataAvailable
-          ? '${workoutSec ~/ 60}m'
+          ? '${displayWorkoutSec ~/ 60}m'
           : null,
       vitalsSnapshotLabel: vitalsLabel,
       swimTakeawayTitle: takeawayTitle,

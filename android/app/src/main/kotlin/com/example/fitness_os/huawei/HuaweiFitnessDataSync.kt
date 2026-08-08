@@ -208,15 +208,19 @@ class HuaweiFitnessDataSync(
     /**
      * FitnessTotals day row (`0x07:0x03`).
      *
-     * Field map from `capture:owner-2026-08-07-post-day-reset` (steps/calories locked;
-     * duration unit + day-anchor provisional until swim/high-burn capture).
+     * Field map from `capture:owner-2026-08-07-post-day-reset` +
+     * `capture:owner-2026-08-08-swim` (steps/calories + day-anchor locked;
+     * wire `0x07` is **not** watch exercise minutes — retained for diagnostics only).
      */
     data class FitnessTotalsDay(
         val dayKey: String,
         val dayStartUnix: Long,
         val calories: Int,
         val steps: Int,
-        /** Provisional: wire `0x07` u32 treated as seconds. */
+        /**
+         * Raw wire `0x07` u32. **Not** Home workout-time: swim-day cross-check
+         * (watch 58m vs wire 5064) rejected exercise-minute semantics.
+         */
         val exerciseDurationSec: Int,
     ) {
         fun toMap(): Map<String, Any?> = mapOf(
@@ -607,11 +611,15 @@ class HuaweiFitnessDataSync(
     /**
      * Parse FitnessTotals day slots under `0x81` → repeated `0x83`.
      *
-     * Owned leaves (`capture:owner-2026-08-07-post-day-reset`):
-     * - `0x05` u32 steps, `0x06` u16 calories kcal, `0x07` u32 duration (provisional seconds)
+     * Owned leaves (`capture:owner-2026-08-07-post-day-reset` +
+     * `capture:owner-2026-08-08-swim`):
+     * - `0x05` u32 steps, `0x06` u16 calories kcal
+     * - `0x07` u32 retained as [FitnessTotalsDay.exerciseDurationSec] but **not**
+     *   watch exercise minutes (Home uses workout-sum for workout time)
      *
-     * Day-anchor (provisional): TLV order maps onto the last N local calendar days
-     * ending at [endUnix]'s local day (last slot = today). Revisit after swim capture.
+     * Day-anchor (locked): inner `0x04` slot tag → days before local today at
+     * [endUnix]; `0x04=1` is today (`daysBefore = tag - 1`). Tag `0` skipped
+     * (padding in both owner captures).
      */
     fun parseFitnessTotals(
         frame: HuaweiFraming.Frame,
@@ -634,42 +642,63 @@ class HuaweiFitnessDataSync(
             return FitnessTotalsParse(emptyList(), unknown)
         }
         val days = ArrayList<FitnessTotalsDay>(slotValues.size)
-        for ((i, value) in slotValues.withIndex()) {
-            val daysBefore = slotValues.size - 1 - i
+        for (value in slotValues) {
+            val leaves = parseFitnessTotalsSlotLeaves(value)
+            val daysBefore = daysBeforeForSlotTag(leaves.slotTag) ?: continue
             val dayStart = localDayStartUnix(endUnix, daysBefore = daysBefore, tz = tz)
             val dayKey = localDayKey(dayStart, tz)
-            days.add(parseFitnessTotalsSlot(value, dayKey, dayStart))
+            days.add(
+                FitnessTotalsDay(
+                    dayKey = dayKey,
+                    dayStartUnix = dayStart,
+                    calories = leaves.calories,
+                    steps = leaves.steps,
+                    exerciseDurationSec = leaves.wire07,
+                ),
+            )
         }
         return FitnessTotalsParse(days, unknown)
     }
 
-    private fun parseFitnessTotalsSlot(
-        value: ByteArray,
-        dayKey: String,
-        dayStartUnix: Long,
-    ): FitnessTotalsDay {
+    /**
+     * `0x04=1` → today; `0x04=N` (N≥1) → N−1 local days before [endUnix].
+     * Tag `0` is padding — omit.
+     */
+    fun daysBeforeForSlotTag(slotTag: Int): Int? =
+        if (slotTag <= 0) null else slotTag - 1
+
+    private data class FitnessTotalsSlotLeaves(
+        val slotTag: Int,
+        val steps: Int,
+        val calories: Int,
+        val wire07: Int,
+    )
+
+    private fun parseFitnessTotalsSlotLeaves(value: ByteArray): FitnessTotalsSlotLeaves {
         val inner = HuaweiFraming.decodeTlvs(value)
+        var slotTag = 0
         var steps = 0
         var calories = 0
-        var durationSec = 0
+        var wire07 = 0
         for (child in inner) {
             when (child.tag) {
-                0x04 -> Unit // slot/type/weekday candidate — provisional
+                0x04 -> if (child.value.isNotEmpty()) {
+                    slotTag = child.value[0].toInt() and 0xFF
+                }
                 0x05 -> if (child.value.size >= 4) steps = u32(child.value).toInt()
                 0x06 -> if (child.value.size >= 2) calories = u16(child.value)
                 0x07 -> if (child.value.size >= 4) {
-                    durationSec = u32(child.value).toInt().coerceAtLeast(0)
+                    wire07 = u32(child.value).toInt().coerceAtLeast(0)
                 }
                 0x08, 0x0B -> Unit // present; meaning unknown
                 else -> Unit
             }
         }
-        return FitnessTotalsDay(
-            dayKey = dayKey,
-            dayStartUnix = dayStartUnix,
-            calories = calories.coerceAtLeast(0),
+        return FitnessTotalsSlotLeaves(
+            slotTag = slotTag,
             steps = steps.coerceAtLeast(0),
-            exerciseDurationSec = durationSec,
+            calories = calories.coerceAtLeast(0),
+            wire07 = wire07,
         )
     }
 

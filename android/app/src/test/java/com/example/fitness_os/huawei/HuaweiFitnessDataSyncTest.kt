@@ -321,33 +321,47 @@ class HuaweiFitnessDataSyncTest {
     }
 
     @Test
-    fun parseFitnessTotals_ownedTags_mapsSlotsOntoWindowEndLocalDays() {
-        // Pre-promotion fixture shaped like capture:owner-2026-08-07-post-day-reset.
-        // Provisional day-anchor: TLV order → last N local days ending at endUnix.
+    fun parseFitnessTotals_ownedTags_mapsSlotTag1OntoLocalToday() {
+        // capture:owner-2026-08-07 + capture:owner-2026-08-08-swim:
+        // 0x04=1 → today; tag 0 skipped (padding).
         val end = 1_704_067_200L + 12 * 3600 // 2024-01-01 noon UTC
         val sync = HuaweiFitnessDataSync(exchangeEncrypted = { _, _, _, _ -> null })
         val frame = fitnessTotalsFrame(
             slots = listOf(
+                FitnessSlot(slotTag = 1, steps = 7825, calories = 525, durationSec = 5064),
                 FitnessSlot(slotTag = 0, steps = 0, calories = 0, durationSec = 0),
+            ),
+        )
+        val parsed = sync.parseFitnessTotals(frame, endUnix = end)
+        assertEquals(1, parsed.days.size)
+        val today = parsed.days[0]
+        assertEquals(HuaweiFitnessDataSync.localDayKey(end), today.dayKey)
+        assertEquals(7825, today.steps)
+        assertEquals(525, today.calories)
+        assertEquals(5064, today.exerciseDurationSec)
+    }
+
+    @Test
+    fun parseFitnessTotals_slotTagN_mapsToNMinusOneDaysBefore() {
+        val end = 1_704_067_200L + 12 * 3600
+        val sync = HuaweiFitnessDataSync(exchangeEncrypted = { _, _, _, _ -> null })
+        val frame = fitnessTotalsFrame(
+            slots = listOf(
                 FitnessSlot(slotTag = 1, steps = 27, calories = 1, durationSec = 15),
+                FitnessSlot(slotTag = 3, steps = 76, calories = 3, durationSec = 52),
             ),
         )
         val parsed = sync.parseFitnessTotals(frame, endUnix = end)
         assertEquals(2, parsed.days.size)
-        val older = parsed.days[0]
-        val newer = parsed.days[1]
+        val today = parsed.days.first { it.calories == 1 }
+        val older = parsed.days.first { it.calories == 3 }
+        assertEquals(HuaweiFitnessDataSync.localDayKey(end), today.dayKey)
         assertEquals(
             HuaweiFitnessDataSync.localDayKey(
-                HuaweiFitnessDataSync.localDayStartUnix(end, daysBefore = 1),
+                HuaweiFitnessDataSync.localDayStartUnix(end, daysBefore = 2),
             ),
             older.dayKey,
         )
-        assertEquals(0, older.steps)
-        assertEquals(0, older.calories)
-        assertEquals(HuaweiFitnessDataSync.localDayKey(end), newer.dayKey)
-        assertEquals(27, newer.steps)
-        assertEquals(1, newer.calories)
-        assertEquals(15, newer.exerciseDurationSec)
     }
 
     @Test

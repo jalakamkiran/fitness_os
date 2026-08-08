@@ -17,32 +17,51 @@ Home KPIs currently sum today’s **workout Totals** (calories, steps, duration)
 
 Owner debug (export `fitness_os_export_v1_20260806_180552.json`) showed exact workout-sum math on Home:
 
-| Metric | Home (workout sum) | Watch (day Activity) |
-|--------|--------------------|----------------------|
-| Calories | 781 (= 340 + 441) | 966 |
-| Workout time | 120m (= ⌊7208/60⌋) | 127m |
+
+| Metric       | Home (workout sum) | Watch (day Activity) |
+| ------------ | ------------------ | -------------------- |
+| Calories     | 781 (= 340 + 441)  | 966                  |
+| Workout time | 120m (= ⌊7208/60⌋) | 127m                 |
+
 
 Brand IA requires Home to show **today’s totals** (calories, steps, workout time) as calm “now” mix — not workout-only proxies `(see origin: docs/brainstorms/2026-07-25-fathom-companion-brand-ia-requirements.md)`. Export / prior plans already document the gap: FitnessTotals day calories are not persisted; Home = Σ workout calories.
 
 ## Requirements Trace
 
+
+
 ### Data & persistence
+
 - R1. Persist FitnessTotals day rollup fields needed for Home: **calories**, **exercise/workout duration**, and **steps** when present on the wire.
 - R6. Forget / vitals `clearLocal` wipes the new store; late merge after Gate A cleared remains a no-op.
 
+
+
 ### Home KPI behavior
+
 - R2. Drive Home KPI labels from FitnessTotals for the **local calendar day** when that day’s row was merged from a completed `fitness_totals` container.
 - R3. Fall back to today’s **workout-sum triple** (calories + steps + duration together) when no FitnessTotals row exists for local today (no blank regression after workout-only progress).
 
+
+
 ### Sync & parser
+
 - R4. Reuse the existing activity sync chain slot for `0x07:0x03` (already after step data); do not invent a parallel sync path.
 - R5. Promote owned wire-spec + probe evidence before treating the parser as normative (AGPL oracle only; no paste).
 
+
+
 ### Lifecycle & export
+
 - R7. Diagnostic export includes the persisted day rollup; drop `daily_activity_calories_beyond_workout_totals_sum` from `knownOmissions` when the store is present with `parseStatus: ok`; update schema notes so Home calorie math is accurate. Non-blocking for Home↔watch MVP.
 
+
+
 ### UI scope
+
 - R8. Vitals tab UI stays sleep + whole-day HR only — no new FitnessTotals charts on Vitals `(see origin)`.
+
+
 
 ## Scope Boundaries
 
@@ -52,6 +71,8 @@ Brand IA requires Home to show **today’s totals** (calories, steps, workout ti
 - Do **not** claim watch parity until owner confirms Home vs watch after a real sync (acceptance is evidence-backed).
 - Do **not** backfill historical days beyond the existing `syncActivity` window without an explicit follow-up.
 
+
+
 ### Deferred to Separate Tasks
 
 - Catalog score promotion to **4/5** after multi-session captures: update `docs/catalogs/gt5-a07-full-metrics.md` / probe matrix score rows in a docs-only follow-up once captures exist (Unit 1 updates probe Pending→observed text only as needed for the TLV table).
@@ -59,7 +80,11 @@ Brand IA requires Home to show **today’s totals** (calories, steps, workout ti
 - Relabel-only honesty without FitnessTotals (workout-only copy): superseded by this plan.
 - Full export/schema polish (Unit 5) if deferred from the Home KPI MVP train.
 
+
+
 ## Context & Research
+
+
 
 ### Relevant Code and Patterns
 
@@ -73,15 +98,21 @@ Brand IA requires Home to show **today’s totals** (calories, steps, workout ti
 - Wire / catalog status: `docs/wire-specs/huawei-br-gt5-fitness-data.md`, `docs/experiments/gt5-a07-full-metrics-probe-matrix.md` (FitnessTotals **Pending** / score **2**).
 - Prior decision (superseded for this product need): vitals plan R13 — do not persist fitness-totals *that cut*; handoff-only — `docs/plans/2026-07-18-004-feat-vitals-sleep-hr-tab-plan.md`.
 
+
+
 ### Institutional Learnings
 
 - No `docs/solutions/` tree; prior art is plans + wire-specs + catalogs.
 - Evidence honesty: do not promote parsers from unobserved TLV tables; synthetic fixtures OK for scaffolding; owner capture required for normative claim.
 - Privacy: log tag+len / counts only — never full health series or raw calorie dumps in Sentry.
 
+
+
 ### External References
 
 - Skipped deep external framework research: local sleep/step TLV + channel/merge patterns are sufficient; FitnessTotals **field map** is intentionally capture-gated, not copied from AGPL sources.
+
+
 
 ## Key Technical Decisions
 
@@ -97,10 +128,14 @@ Brand IA requires Home to show **today’s totals** (calories, steps, workout ti
 - **Stuck / sleepCount timeout:** Same starvation class as `partial_batch` — attempt FitnessTotals when link still usable before returning `stuck`, **or** explicitly accept no-totals on sleepCount timeout and cover with a fixture (document the chosen rule in Unit 2).
 - **Parser gate:** Privacy-safe capture (tag+len histogram + presence/counts; debug-gated scalars only) → update wire-spec → parser against owned tables + synthetic fixtures. Behavioral oracle may suggest candidate tags only — no AGPL paste.
 - **UI:** Home labels unchanged (“Calories”, “Steps”, “Workout time”); values change source to day exercise/energy rollup (accept 120→127 class semantic). No Vitals UI for day rollup.
-- **Auto-sync quirk (unchanged):** `OneShotAutoSync` already runs vitals/activity but does not stamp `home_last_sync_*`; Home still refreshes via `StoreInvalidation`. Totals may land without flipping the sync pill — accept as existing behavior.
+- **Auto-sync quirk (unchanged):** `OneShotAutoSync` already runs vitals/activity but does not stamp `home_last_sync_`*; Home still refreshes via `StoreInvalidation`. Totals may land without flipping the sync pill — accept as existing behavior.
 - **Rounding:** Prefer watch-aligned display once duration units are known (minutes vs seconds). Document units in wire-spec; store one canonical unit in prefs; format Home once.
 
+
+
 ## Open Questions
+
+
 
 ### Resolved During Planning
 
@@ -116,6 +151,8 @@ Brand IA requires Home to show **today’s totals** (calories, steps, workout ti
 - Fail-closed / corrupt FT load ⇒ absent for Home (workout-sum triple when synced).
 - Intentional dual surface: Home day rollup vs Workouts per-session Totals — document in schema/export notes.
 
+
+
 ### Deferred to Implementation
 
 - Exact TLV tag → field map for calories / steps / exercise duration / day anchor (requires capture) — **ship blocker for normative parser**; **also** whether steps live on `0x07:0x03` or only on minute samples / workouts.
@@ -123,6 +160,8 @@ Brand IA requires Home to show **today’s totals** (calories, steps, workout ti
 - Whether one FitnessTotals response returns multiple days or a single window aggregate (parser must match observed shape).
 - Whether to rename Home “Workout time” after validating exercise-minute semantics — default keep Brand IA label; document source as day exercise rollup in schema notes.
 - Exact JSON field names inside each day row and whether to retain raw wire units alongside display units.
+
+
 
 ## High-Level Technical Design
 
@@ -146,14 +185,20 @@ sequenceDiagram
   Home->>Home: KPI triple = FT today else workout-sum
 ```
 
+
+
 **Precedence matrix (Home, local today):**
 
-| Home precedence / sync state | FitnessTotals today row | Workouts today | KPI labels |
-|------------------------------|-------------------------|----------------|------------|
-| `notPaired` / `pairedNeverSynced` | any | any | `null` (existing precedence — hide KPIs) |
-| Synced / data available | Present (incl. legitimate zeros) | any | FitnessTotals row (all three) |
-| Synced / data available | Absent or **load fail-closed** | non-empty | Workout-sum triple |
-| Synced / data available | Absent or load fail-closed | empty | `0` / `0m` |
+
+| Home precedence / sync state      | FitnessTotals today row          | Workouts today | KPI labels                               |
+| --------------------------------- | -------------------------------- | -------------- | ---------------------------------------- |
+| `notPaired` / `pairedNeverSynced` | any                              | any            | `null` (existing precedence — hide KPIs) |
+| Synced / data available           | Present (incl. legitimate zeros) | any            | FitnessTotals row (all three)            |
+| Synced / data available           | Absent or **load fail-closed**   | non-empty      | Workout-sum triple                       |
+| Synced / data available           | Absent or load fail-closed       | empty          | `0` / `0m`                               |
+
+
+
 
 ## Implementation Units
 
@@ -169,6 +214,8 @@ flowchart TB
   U4 --> U5
 ```
 
+
+
 - [ ] **Unit 1: Capture FitnessTotals evidence and promote wire-spec**
 
 **Goal:** Turn the already-issued `0x07:0x03` exchange into an owned, privacy-safe observation so parsing is normative.
@@ -178,26 +225,31 @@ flowchart TB
 **Dependencies:** Owner device sync available for at least one real capture. **Unit 4 is hard-blocked** on this unit’s verification checklist (not merely on Unit 2 synthetic fixtures).
 
 **Files:**
+
 - Modify: `android/app/src/main/kotlin/com/example/fitness_os/huawei/HuaweiFitnessDataSync.kt` (privacy-safe capture logs)
 - Modify: `docs/wire-specs/huawei-br-gt5-fitness-data.md`
 - Modify: `docs/experiments/gt5-a07-full-metrics-probe-matrix.md`
 
 **Approach:**
+
 - On FitnessTotals response: record service/cmd and **TLV tag+len histogram + presence/counts only** in default/release logging.
 - Restrict any decoded scalar cross-check (e.g. mapping candidates to ~966 kcal / ~127 min) to **owner-local, debug-gated, non-Sentry** paths; production builds must not log decoded day energy/steps/duration.
 - Cross-check one owner day against watch Activity (target class: ~966 kcal / ~127 min vs workout-sum 781 / 120). **Also record whether watch day steps appear on this frame** — if steps are absent on `0x07:0x03`, document before Unit 4 claims all three KPIs from FT.
-- Define **day-anchor → local `yyyy-MM-dd`** in the wire-spec (UTC unix + `toLocal()` like sleep/step; shared helper with HR merge). Unit 3/U4 must use the same helper so Home “today” cannot miss a row and silently fall back.
+- Define **day-anchor → local** `yyyy-MM-dd` in the wire-spec (UTC unix + `toLocal()` like sleep/step; shared helper with HR merge). Unit 3/U4 must use the same helper so Home “today” cannot miss a row and silently fall back.
 - Write owned TLV table into the wire-spec with `capture:…` citation; mark probe matrix row out of Pending.
 - Catalog score bumps stay in Deferred to Separate Tasks (not this unit).
 
 **Patterns to follow:**
+
 - Sleep/step capture notes in `docs/wire-specs/huawei-br-gt5-fitness-data.md` (UTC anchors, privacy rules).
 - Existing `FOS_HUAWEI` activity-sync log style (counts, not series).
 
 **Test scenarios:**
+
 - Test expectation: none for docs-only promotion — evidence is owner capture + wire-spec citation. If logging helpers are extracted as pure functions, unit-test histogram shaping only.
 
 **Verification:**
+
 - Wire-spec contains FitnessTotals TLV field table with capture id; probe matrix no longer Pending for `0x07:0x03`.
 
 - [ ] **Unit 2: Parse FitnessTotals in native activity sync and return container**
@@ -209,11 +261,13 @@ flowchart TB
 **Dependencies:** Unit 1 field map (or synthetic fixture table explicitly marked pre-promotion if capture lags — must not ship Home-driving parser as “proven” without Unit 1).
 
 **Files:**
+
 - Modify: `android/app/src/main/kotlin/com/example/fitness_os/huawei/HuaweiFitnessDataSync.kt`
 - Modify: `android/app/src/main/kotlin/com/example/fitness_os/huawei/HuaweiSession.kt` / `HuaweiBtPlugin.kt` only if result plumbing needs it
 - Test: `android/app/src/test/java/com/example/fitness_os/huawei/HuaweiFitnessDataSyncTest.kt`
 
 **Approach:**
+
 - Replace discard-only exchange with parse → list of day maps (`dayKey` or unix dayStart, calories, steps?, exerciseDuration in documented units).
 - Add `fitness_totals` to `completed` when ≥1 usable day row; timeout/null frame → soft-omit completed bit; keep prior Flutter rows.
 - **Restructure early returns:** extract a shared finalize (directional: `attemptFitnessTotalsAndFinalize`) used by the happy path and sleep/step `partial_batch` / `stuck` paths when still connected — avoid duplicating battery/idle handoff and missing one exit. Update chain tests that currently expect timeout without a totals queue.
@@ -225,10 +279,12 @@ flowchart TB
 **Execution note:** Characterization-first for the existing opaque handoff test fixtures — extend chain tests so FitnessTotals frames are asserted, not ignored.
 
 **Patterns to follow:**
+
 - `parseSleepStages` / `parseStepDataHr` style; `resultMap` + `completedContainers` contract in the same class.
 - Workout Totals calorie TLV discipline in `HuaweiWorkoutSync.kt` (owned tags only).
 
 **Test scenarios:**
+
 - Happy path: fixture frame with known tags → parsed calories/duration/steps + `fitness_totals` in `completedContainers`.
 - Edge case: empty TLVs / unknown tags only → not completed; sleep/HR results still returned.
 - Edge case: multi-day window fixture → one row per day key; no cross-day merge in native.
@@ -237,6 +293,7 @@ flowchart TB
 - Integration: full chain fixture (sleep + step + totals) returns all three payload families; cmd order remains sleep → step → totals.
 
 **Verification:**
+
 - Kotlin tests green; real sync log shows parsed counts (not only handoff).
 
 - [ ] **Unit 3: Channel DTO, vitals merge/persist, Forget wipe**
@@ -248,6 +305,7 @@ flowchart TB
 **Dependencies:** Unit 2
 
 **Files:**
+
 - Modify: `lib/core/huawei/huawei_link.dart` (`ActivitySyncResult` + model type)
 - Modify: `lib/features/device_pairing/domain/gate_a_prefs.dart`
 - Modify: `lib/features/vitals/data/repositories/vitals_repository_impl.dart` (merge + `clearLocal` + load API as needed)
@@ -256,6 +314,7 @@ flowchart TB
 - Optional Test: channel/DTO decode tests if present beside `huawei_link`
 
 **Approach:**
+
 - Decode `fitnessTotals` from platform map; merge replace-by-local-day when `completedContainers` contains `fitness_totals` — **including all-zero scalar rows** (do **not** copy the daily_hr `samples.isNotEmpty` guard).
 - Gate A cleared → merge no-op (existing pattern).
 - Day keys via the Unit 1 local-day helper shared with HR merge.
@@ -264,9 +323,11 @@ flowchart TB
 - Align export probe in Unit 5 to the same GateAPrefs constant only (no legacy dual-read).
 
 **Patterns to follow:**
+
 - `_mergeDailyHr` replace-by-day + `_hrLoadFailed` fail-closed; `clearLocal` + forget verify keys in `device_pairing_repository_impl.dart`.
 
 **Test scenarios:**
+
 - Happy path: sync result with completed fitness totals → prefs contain today’s calories/duration/steps.
 - Happy path: **totals-only** payload (no sleep/HR) with status `ok` → Dart merge persists `fitness_totals_day_json`.
 - Edge case: second sync replaces same `dayKey`, preserves other days in the 14-day set.
@@ -275,9 +336,10 @@ flowchart TB
 - Integration: Forget wipe removes fitness totals key; verify catches residue.
 
 **Verification:**
+
 - Vitals tests cover merge/wipe; no Gate A late-write after forget.
 
-- [ ] **Unit 4: Drive Home KPIs from FitnessTotals with workout fallback**
+- [x] **Unit 4: Drive Home KPIs from FitnessTotals with workout fallback**
 
 **Goal:** Home calories / steps / workout time match day rollup when available.
 
@@ -286,25 +348,31 @@ flowchart TB
 **Dependencies:** Unit 3 **and** Unit 1 verification complete (capture cited + owner cross-check). Synthetic-only U2/U3 is insufficient to enable this unit in production.
 
 **Files:**
+
 - Modify: `lib/features/home/data/repositories/home_repository_impl.dart`
 - Modify: `lib/features/home/domain/repositories/home_repository.dart` only if new dependency required
 - Modify: `lib/features/home/data/di/home_di.dart` if constructor gains vitals totals loader
 - Test: `test/features/home/home_repository_kpi_test.dart` (create); update `home_repository_session_copy_test.dart` only if it asserts numeric KPI sources — **no Home screen widget harness** unless a widget hard-codes workout-sum values.
 
 **Approach:**
-- For local today: if FT row present (and passes sanity gate), bind all three KPIs from that row; else fold today’s workouts as the triple.
+
+- For local today: if FT row present (and passes sanity gate), bind **calories + steps** from FT; **workout time** from today’s workout-sum (wire `0x07` rejected as exercise minutes on `capture:owner-2026-08-08-swim`). Else fold today’s workouts as the full triple.
 - Count FitnessTotals prefs presence toward `everSynced` (or equivalent) so totals-only days still show KPI labels.
 - Keep precedence / sync pill behavior otherwise unchanged (including OneShot not stamping `home_last_sync_*`).
 - Do not surface FitnessTotals on Vitals UI.
-- Duration formatting: convert wire units once; keep `Nm` label shape unless wire proves fractional minutes need different rounding (document choice).
-- Today with FT and **zero workouts** still shows FT.
+- Duration formatting: workout-sum seconds `~/ 60` until a duration tag is owned.
+- Today with FT and **zero workouts** still shows FT cal/steps (and `0m` workout time).
+
+**Capture amend (vs plan “all three from FT”):** owner swim-day showed FT calories/steps match watch; `0x07` does not match 58m exercise. Home therefore mixes FT energy/steps with workout-sum minutes until duration is owned — documented in wire-spec.
 
 **Execution note:** Test-first for KPI precedence matrix (FT vs workout-sum) before changing `loadSnapshot`. No home calorie aggregation tests exist today — add `home_repository_kpi_test.dart`.
 
 **Patterns to follow:**
+
 - Existing today filter via `_localDayKey`; `_formatInt` / `workoutSec ~/ 60` display helpers; vitals dayKey loading.
 
 **Test scenarios:**
+
 - Happy path: FT today calories=966, duration→127m, steps=S → labels match; workouts ignored for KPIs.
 - Happy path: no FT, two workouts 340+441 / 7208s → `781` / `120m` (fallback characterization).
 - Edge case: FT today all zeros with **no** workouts → show zeros.
@@ -315,6 +383,7 @@ flowchart TB
 - Integration: mocked vitals FT prefs + empty workouts → Home still shows FT after sync invalidation.
 
 **Verification:**
+
 - Unit tests encode the precedence matrix; Home UI still shows three KPIs without new chrome.
 
 - [ ] **Unit 5: Export envelope + schema honesty** *(non-blocking for Home↔watch MVP acceptance)*
@@ -326,6 +395,7 @@ flowchart TB
 **Dependencies:** Unit 3 (persist key); Unit 4 for doc accuracy on Home behavior. May ship after U1–U4.
 
 **Files:**
+
 - Modify: `lib/features/diagnostics/data/app_data_export_service.dart`
 - Modify: `lib/features/diagnostics/data/app_data_export_envelope.dart` if omission list / always-omitted semantics change
 - Modify: `docs/export/app-data-export-schema.md`
@@ -333,22 +403,28 @@ flowchart TB
 - Test: `test/features/diagnostics/app_data_export_service_test.dart`
 
 **Approach:**
-- When prefs key present with usable parse, emit under **`vitals`** (parallel to sleep/HR) using the GateAPrefs-aligned name; confirm `sensitivityNotes` covers multi-day day-rollup biometrics; Forget/export-cache prune continues to cover export files.
+
+- When prefs key present with usable parse, emit under `vitals` (parallel to sleep/HR) using the GateAPrefs-aligned name; confirm `sensitivityNotes` covers multi-day day-rollup biometrics; Forget/export-cache prune continues to cover export files.
 - Treat R7 “store present” as: canonical key exists **and** section `parseStatus` is `ok`. Corrupt/fail-closed → keep omission marker (or emit corrupt section without dropping the beyond-workout omission inconsistently — match neighboring vitals section behavior).
 - Omit `daily_activity_calories_beyond_workout_totals_sum` from `knownOmissions` only when store present per above.
 - Update schema offline analysis note: Home prefers FitnessTotals day energy/time/steps with workout-sum fallback; Workouts list remains per-session Totals (intentional dual surface).
 - Prefer canonical key only (no legacy alias read unless proven needed).
 
 **Patterns to follow:**
+
 - Existing optional daily-calorie pref probes in `app_data_export_service.dart` — retarget to `GateAPrefs.fitnessTotalsDayJson` (name directional).
 
 **Test scenarios:**
+
 - Happy path: prefs with fitness totals → export body includes them under vitals; omission list lacks the beyond-workout marker.
 - Happy path: prefs absent → omission present; export still succeeds.
 - Edge case: corrupt totals JSON → section `parseStatus` corrupt; omission handling per R7 “present = ok parse” rule.
 
 **Verification:**
+
 - Export tests updated; schema doc matches runtime Home behavior.
+
+
 
 ## System-Wide Impact
 
@@ -371,31 +447,41 @@ flowchart TB
   Forget --> Prefs
 ```
 
-- **Interaction graph:** `syncActivity` result shape → vitals merge → Home snapshot; OneShotAutoSync / Home `syncNow` already pull vitals — no new sync CTA required. StoreInvalidation refreshes Home after auto-sync even when `home_last_sync_*` unset.
+
+
+- **Interaction graph:** `syncActivity` result shape → vitals merge → Home snapshot; OneShotAutoSync / Home `syncNow` already pull vitals — no new sync CTA required. StoreInvalidation refreshes Home after auto-sync even when `home_last_sync_`* unset.
 - **Error propagation:** FitnessTotals parse soft-failure must not demote successful sleep/HR merges; Home falls back per R3. Early `partial_batch` paths must not skip the totals exchange when connected.
 - **State lifecycle risks:** Forget verify must include `fitness_totals_day_json`; single writer; 14-day replace-by-day must not delete unrelated older retained rows unless an explicit retention policy is added (default: keep union of prior + incoming keys).
 - **API surface parity:** Platform channel map keys must stay aligned Kotlin ↔ Dart; workout sync path unchanged; do not merge workout Totals clocks with FitnessTotals.
 - **Integration coverage:** Owner check — sync then compare Home KPIs to watch Activity for the same local day (target class: 966 / 127 vs prior 781 / 120).
 - **Unchanged invariants:** Workout history calories remain per-workout Totals; Vitals UI remains sleep + HR; FeatureUpload hard-off / single-flight sync locks unchanged; minute step/SpO2 still not persisted.
 
+
+
 ## Risks & Dependencies
 
-| Risk | Mitigation |
-|------|------------|
-| TLV map wrong → Home shows plausible but incorrect KPIs | Capture gate + watch cross-check day; workout-sum triple fallback; privacy-safe histograms for retune |
-| FitnessTotals duration semantics ≠ “workout time” label | Validate on debug day (127 vs 120); keep Brand IA label; document source as day exercise rollup |
-| Steps absent on wire day rollup | Show `0` when FT row present; defer `0x0B` step persist — do not mix workout steps into FT snapshot |
-| Partial sync never reaches totals today | Attempt FitnessTotals before `partial_batch` return when connected |
-| Totals-only day with empty sleep/HR marked `empty` | Count FitnessTotals toward mergeable/completed so merge runs |
-| Opaque handoff required for idle stability even when parse fails | Always exchange; completion bit optional |
-| Privacy / Sentry leakage of day energy | Counts + status enums only in telemetry; export remains owner-initiated |
-| Dual prefs keys / export drift | One GateAPrefs writer; export alias-read only |
+
+| Risk                                                             | Mitigation                                                                                            |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| TLV map wrong → Home shows plausible but incorrect KPIs          | Capture gate + watch cross-check day; workout-sum triple fallback; privacy-safe histograms for retune |
+| FitnessTotals duration semantics ≠ “workout time” label          | Validate on debug day (127 vs 120); keep Brand IA label; document source as day exercise rollup       |
+| Steps absent on wire day rollup                                  | Show `0` when FT row present; defer `0x0B` step persist — do not mix workout steps into FT snapshot   |
+| Partial sync never reaches totals today                          | Attempt FitnessTotals before `partial_batch` return when connected                                    |
+| Totals-only day with empty sleep/HR marked `empty`               | Count FitnessTotals toward mergeable/completed so merge runs                                          |
+| Opaque handoff required for idle stability even when parse fails | Always exchange; completion bit optional                                                              |
+| Privacy / Sentry leakage of day energy                           | Counts + status enums only in telemetry; export remains owner-initiated                               |
+| Dual prefs keys / export drift                                   | One GateAPrefs writer; export alias-read only                                                         |
+
+
+
 
 ## Documentation / Operational Notes
 
 - Update wire-spec + probe matrix as part of Unit 1 (not optional docs debt).
 - Owner acceptance: after implement, one sync on GT5-A07 comparing Home vs watch for calories / steps / workout time.
 - No feature flag required for owner-only app; fallback covers old installs until first successful totals parse.
+
+
 
 ## Sources & References
 
@@ -404,3 +490,4 @@ flowchart TB
 - Wire-spec: `docs/wire-specs/huawei-br-gt5-fitness-data.md`
 - Debug evidence: owner export + Home workout-sum identity (781 / 120)
 - Related code: `HuaweiFitnessDataSync`, `VitalsRepositoryImpl`, `HomeRepositoryImpl`
+
