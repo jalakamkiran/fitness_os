@@ -5,28 +5,31 @@
       "name": "fitness_os",
       "request": "launch",
       "type": "dart",
-      "program": "lib/main.dart"
+      "program": "lib/main.dart",
+      "toolArgs": ["--dart-define-from-file=.env"]
     },
     {
       "name": "fitness_os (Android)",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",
-      "toolArgs": ["-d", "android"]
+      "toolArgs": ["-d", "android", "--dart-define-from-file=.env"]
     },
     {
       "name": "fitness_os (profile)",
       "request": "launch",
       "type": "dart",
       "flutterMode": "profile",
-      "program": "lib/main.dart"
+      "program": "lib/main.dart",
+      "toolArgs": ["--dart-define-from-file=.env"]
     },
     {
       "name": "fitness_os (release)",
       "request": "launch",
       "type": "dart",
       "flutterMode": "release",
-      "program": "lib/main.dart"
+      "program": "lib/main.dart",
+      "toolArgs": ["--dart-define-from-file=.env"]
     }
   ]
 }

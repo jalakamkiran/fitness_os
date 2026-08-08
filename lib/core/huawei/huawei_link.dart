@@ -3,7 +3,9 @@ import 'dart:convert';
 
 import 'package:fitness_os/core/huawei/fos_huawei_log.dart';
 import 'package:fitness_os/core/huawei/huawei_bt_channel.dart';
+import 'package:fitness_os/core/observability/sentry_sync_instrumentation.dart';
 import 'package:flutter/services.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 /// Sole Flutter caller of the Huawei platform channel (Phase 1 pairing-scoped).
 class HuaweiLink {
@@ -273,21 +275,59 @@ class HuaweiLink {
       );
     }
     _syncInFlight = true;
+    final window = SentrySyncInstrumentation.windowClass(
+      startUnix: startUnix,
+      endUnix: endUnix,
+    );
+    final budget = SentrySyncInstrumentation.timeoutForWindow(
+      startUnix: startUnix,
+      endUnix: endUnix,
+    );
+    final parent = Sentry.getSpan();
+    final span = SentrySyncInstrumentation.startChild(
+      parent,
+      SentrySyncInstrumentation.nameWorkouts,
+    );
+    span?.setTag('window', window);
     FosHuaweiLog.i(
       'syncWorkouts window=[$startUnix,$endUnix]',
       op: 'sync',
     );
     try {
-      final map = await _channel.syncWorkouts(
-        startUnix: startUnix,
-        endUnix: endUnix,
+      var abandoned = false;
+      final map = await SentrySyncInstrumentation.invokeWithTimeout(
+        future: _channel.syncWorkouts(
+          startUnix: startUnix,
+          endUnix: endUnix,
+        ),
+        timeout: budget,
+        channel: 'syncWorkouts',
+        onAbandoned: () {
+          abandoned = true;
+          return <String, dynamic>{
+            'status': 'stuck',
+            'message': 'Sync abandoned — channel timed out',
+            'workouts': <dynamic>[],
+          };
+        },
       );
-      return WorkoutSyncResult.fromMap(map);
+      final result = WorkoutSyncResult.fromMap(map);
+      await SentrySyncInstrumentation.finishWithStatus(
+        span,
+        status: abandoned ? 'abandoned' : result.status.name,
+        count: result.workouts.length,
+      );
+      return result;
     } on PlatformException catch (e) {
       FosHuaweiLog.e('syncWorkouts failed', error: e, op: 'sync');
+      await SentrySyncInstrumentation.finishWithStatus(
+        span,
+        status: 'error',
+      );
       return WorkoutSyncResult(
         status: WorkoutSyncStatus.error,
-        message: e.message ?? 'sync failed',
+        // Safe short reason only — never forward raw protocol/hex details.
+        message: e.code,
         workouts: const [],
       );
     } finally {
@@ -322,23 +362,61 @@ class HuaweiLink {
     final start = startUnix ??
         end - activityWindowDays * 24 * 60 * 60;
     _syncInFlight = true;
+    final window = SentrySyncInstrumentation.windowClass(
+      startUnix: start,
+      endUnix: end,
+    );
+    final budget = SentrySyncInstrumentation.timeoutForWindow(
+      startUnix: start,
+      endUnix: end,
+    );
+    final parent = Sentry.getSpan();
+    final span = SentrySyncInstrumentation.startChild(
+      parent,
+      SentrySyncInstrumentation.nameVitals,
+    );
+    span?.setTag('window', window);
     FosHuaweiLog.i(
       'syncActivity window=[$start,$end] (${activityWindowDays}d)',
       op: 'sync',
     );
     try {
-      final map = await _channel.syncActivity(
-        startUnix: start,
-        endUnix: end,
-        skipTruSleepSoft: skipTruSleepSoft,
-        skipAutoHrSoft: skipAutoHrSoft,
+      var abandoned = false;
+      final map = await SentrySyncInstrumentation.invokeWithTimeout(
+        future: _channel.syncActivity(
+          startUnix: start,
+          endUnix: end,
+          skipTruSleepSoft: skipTruSleepSoft,
+          skipAutoHrSoft: skipAutoHrSoft,
+        ),
+        timeout: budget,
+        channel: 'syncActivity',
+        onAbandoned: () {
+          abandoned = true;
+          return <String, dynamic>{
+            'status': 'stuck',
+            'message': 'Sync abandoned — channel timed out',
+          };
+        },
       );
-      return ActivitySyncResult.fromMap(map);
+      final result = ActivitySyncResult.fromMap(map);
+      final partial = result.status == ActivitySyncStatus.partialBatch ||
+          result.status == ActivitySyncStatus.stuck;
+      await SentrySyncInstrumentation.finishWithStatus(
+        span,
+        status: abandoned ? 'abandoned' : result.status.name,
+        partial: partial,
+      );
+      return result;
     } on PlatformException catch (e) {
       FosHuaweiLog.e('syncActivity failed', error: e, op: 'sync');
+      await SentrySyncInstrumentation.finishWithStatus(
+        span,
+        status: 'error',
+      );
       return ActivitySyncResult(
         status: ActivitySyncStatus.error,
-        message: e.message ?? 'sync failed',
+        message: e.code,
       );
     } finally {
       _syncInFlight = false;
@@ -482,6 +560,7 @@ class HuaweiLink {
     FosHuaweiLog.i('state $_state → $next', op: 'state');
     _state = next;
     _controller.add(LinkStateChanged(next));
+    unawaited(SentrySyncInstrumentation.addLinkStateBreadcrumb(next.name));
   }
 
   static String _redact(String mac) {
@@ -626,6 +705,48 @@ class DailyHrDaySummary {
         'avgBpm': avgBpm,
         'maxBpm': maxBpm,
         'sampleCount': sampleCount,
+      };
+}
+
+/// FitnessTotals day rollup from activity Sync (`0x07:0x03`).
+///
+/// Field map is capture-gated / provisional — see wire-spec FitnessTotals section.
+class FitnessTotalsDay {
+  const FitnessTotalsDay({
+    required this.dayKey,
+    required this.dayStartUnix,
+    required this.calories,
+    required this.steps,
+    required this.exerciseDurationSec,
+  });
+
+  /// Local calendar day `yyyy-MM-dd`.
+  final String dayKey;
+  final int dayStartUnix;
+  final int calories;
+  final int steps;
+
+  /// Raw wire `0x07` (channel name retained). **Not** watch exercise minutes —
+  /// Home workout time uses today's workout-sum until a duration tag is owned.
+  final int exerciseDurationSec;
+
+  factory FitnessTotalsDay.fromMap(Map<String, dynamic> map) {
+    int asInt(Object? v) => v == null ? 0 : (v as num).toInt();
+    return FitnessTotalsDay(
+      dayKey: map['dayKey'] as String? ?? '',
+      dayStartUnix: asInt(map['dayStartUnix']),
+      calories: asInt(map['calories']),
+      steps: asInt(map['steps']),
+      exerciseDurationSec: asInt(map['exerciseDurationSec']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'dayKey': dayKey,
+        'dayStartUnix': dayStartUnix,
+        'calories': calories,
+        'steps': steps,
+        'exerciseDurationSec': exerciseDurationSec,
       };
 }
 
@@ -788,6 +909,7 @@ class ActivitySyncResult {
     this.message,
     this.sleepSessions = const [],
     this.dailyHrSamples = const [],
+    this.fitnessTotals = const [],
     this.completedContainers = const {},
     this.enableSkipped = false,
   });
@@ -796,6 +918,7 @@ class ActivitySyncResult {
   final String? message;
   final List<SleepSessionSummary> sleepSessions;
   final List<DailyHrSample> dailyHrSamples;
+  final List<FitnessTotalsDay> fitnessTotals;
   final Set<String> completedContainers;
   final bool enableSkipped;
 
@@ -830,6 +953,16 @@ class ActivitySyncResult {
         }
       }
     }
+    final totals = <FitnessTotalsDay>[];
+    final rawTotals = map['fitnessTotals'];
+    if (rawTotals is List) {
+      for (final item in rawTotals) {
+        if (item is Map) {
+          final day = FitnessTotalsDay.fromMap(Map<String, dynamic>.from(item));
+          if (day.dayKey.isNotEmpty) totals.add(day);
+        }
+      }
+    }
     final completed = <String>{};
     final rawCompleted = map['completedContainers'];
     if (rawCompleted is List) {
@@ -842,6 +975,7 @@ class ActivitySyncResult {
       message: map['message'] as String?,
       sleepSessions: sleep,
       dailyHrSamples: hr,
+      fitnessTotals: totals,
       completedContainers: completed,
       enableSkipped: map['enableSkipped'] as bool? ?? false,
     );

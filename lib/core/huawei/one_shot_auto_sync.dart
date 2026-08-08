@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart' show AppLifecycleState;
 
 import 'package:fitness_os/core/huawei/huawei_link.dart' show LinkState;
+import 'package:fitness_os/core/observability/sentry_sync_instrumentation.dart';
 
 /// Auto-sync requires full pairing ([LinkState.connected]) only.
 ///
@@ -42,10 +43,12 @@ class OneShotAutoSync {
     required bool Function() isSyncBusy,
     required Future<void> Function() runPass,
     ForegroundServiceStarter? startForegroundService,
+    void Function()? onPassSettled,
   })  : _isSessionReady = isSessionReady,
         _isSyncBusy = isSyncBusy,
         _runPass = runPass,
-        _startForegroundService = startForegroundService;
+        _startForegroundService = startForegroundService,
+        _onPassSettled = onPassSettled;
 
   final bool Function() _isSessionReady;
   final bool Function() _isSyncBusy;
@@ -53,6 +56,9 @@ class OneShotAutoSync {
 
   /// Injected only for tests; production wiring leaves this null and never calls it.
   final ForegroundServiceStarter? _startForegroundService;
+
+  /// Called after [passInFlight] clears so listeners see settled sync state.
+  final void Function()? _onPassSettled;
 
   bool _inForeground = false;
   int _resumeGeneration = 0;
@@ -110,14 +116,18 @@ class OneShotAutoSync {
 
   /// Schedule at most one pass for the current resume generation.
   Future<AutoSyncOutcome> trySchedule() async {
-    if (!_inForeground) return AutoSyncOutcome.inactive;
-    if (_consumedGeneration == _resumeGeneration) {
-      return AutoSyncOutcome.alreadyFired;
+    if (!_inForeground) {
+      return _finishSchedule(AutoSyncOutcome.inactive);
     }
-    if (!_isSessionReady()) return AutoSyncOutcome.notReady;
+    if (_consumedGeneration == _resumeGeneration) {
+      return _finishSchedule(AutoSyncOutcome.alreadyFired);
+    }
+    if (!_isSessionReady()) {
+      return _finishSchedule(AutoSyncOutcome.notReady);
+    }
     if (_passInFlight || _isSyncBusy()) {
       // Do not consume — a later session-ready in this resume may retry.
-      return AutoSyncOutcome.rejectedBusy;
+      return _finishSchedule(AutoSyncOutcome.rejectedBusy);
     }
 
     // Claim synchronously before any await (single-flight vs concurrent schedule).
@@ -127,9 +137,20 @@ class OneShotAutoSync {
     try {
       // R11: never start sticky FGS — [_startForegroundService] is never invoked.
       await _runPass();
-      return AutoSyncOutcome.ran;
+      return _finishSchedule(AutoSyncOutcome.ran);
     } finally {
+      // Clear before settle-notify so Home's syncInProgress reads false.
       _passInFlight = false;
+      try {
+        _onPassSettled?.call();
+      } catch (_) {
+        // Settle notify must not mask the pass outcome.
+      }
     }
+  }
+
+  Future<AutoSyncOutcome> _finishSchedule(AutoSyncOutcome outcome) async {
+    await SentrySyncInstrumentation.addScheduleBreadcrumb(outcome);
+    return outcome;
   }
 }

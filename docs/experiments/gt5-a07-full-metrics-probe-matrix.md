@@ -85,7 +85,7 @@ Serialize after any activity Sync. Per row: `mode | priority | duration | type |
 | Enable auto-HR + auto-SpO2; wear ≥4h; activity Sync only | **Pending** | |
 | If SpO2/HR empty → reboot → re-sync (budget ≤2) | **Pending** | Then `absent-in-observed-sessions` + score ≤2 |
 | Presence rates + unknownTV histogram (tag+len) | **Pending** | |
-| FitnessTotals day rollup `0x07:0x03` | **Pending** | |
+| FitnessTotals day rollup `0x07:0x03` | **Partial — map locked for Home cal/steps** | `capture:owner-2026-08-07-post-day-reset` + `capture:owner-2026-08-08-swim`: `0x05` steps, `0x06` calories, `0x04=1` today locked; `0x07` ≠ exercise minutes (5064≠58m). See wire-spec FitnessTotals section |
 
 Battery (session UX): **Done** — `POC-2026-07-18-gate-a-battery`.
 
