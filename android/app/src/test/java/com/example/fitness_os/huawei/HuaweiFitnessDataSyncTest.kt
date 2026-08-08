@@ -248,7 +248,281 @@ class HuaweiFitnessDataSyncTest {
         assertEquals(null, sync.extractHrBpm(byteArrayOf(0x0E, 0, 1, 0, 2, 0, 3)))
     }
 
+    @Test
+    fun tlvTagLenHistogram_countsTopAndNested() {
+        val nested = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(1)),
+                HuaweiFraming.Tlv(0x05, HuaweiPacketCrypto.intBe(966)),
+                HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(127)),
+            ),
+        )
+        val tlvs = listOf(HuaweiFraming.Tlv(0x81, nested))
+        val hist = HuaweiFitnessDataSync.tlvTagLenHistogram(tlvs)
+        assertTrue(hist.contains("t=81:len=${nested.size}x1"))
+        assertTrue(hist.contains("nested["))
+        assertTrue(hist.contains("t=2:len=2x1"))
+        assertTrue(hist.contains("t=5:len=4x1"))
+        assertTrue(hist.contains("t=6:len=2x1"))
+    }
+
+    @Test
+    fun leafScalarCandidates_decodesBeLeavesWithoutClaimingMeaning() {
+        val nested = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x05, HuaweiPacketCrypto.intBe(966)),
+                HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(127)),
+            ),
+        )
+        val tlvs = listOf(HuaweiFraming.Tlv(0x81, nested))
+        val scalars = HuaweiFitnessDataSync.leafScalarCandidates(tlvs)
+        assertTrue(scalars.contains("0x81/0x5:u32=966"))
+        assertTrue(scalars.contains("0x81/0x6:u16=127"))
+    }
+
+    @Test
+    fun sync_stuckSleepCount_stillRequestsFitnessTotalsWhenConnected() {
+        val begin = 1_700_000_000L
+        val cmds = mutableListOf<Int>()
+        val queue = ArrayDeque(
+            listOf(
+                null, // soft TruSleep enable
+                null, // soft auto-HR enable
+                null, // sleepCount timeout
+                HuaweiFraming.Frame(
+                    HuaweiFitnessDataSync.SVC,
+                    HuaweiFitnessDataSync.CMD_FITNESS_TOTALS,
+                    listOf(
+                        HuaweiFraming.Tlv(
+                            0x81,
+                            HuaweiFraming.encodeTlvs(
+                                listOf(HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(1))),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, cmd, _ ->
+                cmds.add(cmd)
+                queue.removeFirstOrNull()
+            },
+        )
+        val result = sync.sync(begin - 100, begin + 10_000)
+        assertEquals("stuck", result["status"])
+        assertTrue(cmds.contains(HuaweiFitnessDataSync.CMD_FITNESS_TOTALS))
+        @Suppress("UNCHECKED_CAST")
+        val totals = result["fitnessTotals"] as List<*>
+        assertTrue(totals.isEmpty())
+        @Suppress("UNCHECKED_CAST")
+        val completed = result["completedContainers"] as List<String>
+        assertFalse(completed.contains("fitness_totals"))
+    }
+
+    @Test
+    fun parseFitnessTotals_ownedTags_mapsSlotsOntoWindowEndLocalDays() {
+        // Pre-promotion fixture shaped like capture:owner-2026-08-07-post-day-reset.
+        // Provisional day-anchor: TLV order → last N local days ending at endUnix.
+        val end = 1_704_067_200L + 12 * 3600 // 2024-01-01 noon UTC
+        val sync = HuaweiFitnessDataSync(exchangeEncrypted = { _, _, _, _ -> null })
+        val frame = fitnessTotalsFrame(
+            slots = listOf(
+                FitnessSlot(slotTag = 0, steps = 0, calories = 0, durationSec = 0),
+                FitnessSlot(slotTag = 1, steps = 27, calories = 1, durationSec = 15),
+            ),
+        )
+        val parsed = sync.parseFitnessTotals(frame, endUnix = end)
+        assertEquals(2, parsed.days.size)
+        val older = parsed.days[0]
+        val newer = parsed.days[1]
+        assertEquals(
+            HuaweiFitnessDataSync.localDayKey(
+                HuaweiFitnessDataSync.localDayStartUnix(end, daysBefore = 1),
+            ),
+            older.dayKey,
+        )
+        assertEquals(0, older.steps)
+        assertEquals(0, older.calories)
+        assertEquals(HuaweiFitnessDataSync.localDayKey(end), newer.dayKey)
+        assertEquals(27, newer.steps)
+        assertEquals(1, newer.calories)
+        assertEquals(15, newer.exerciseDurationSec)
+    }
+
+    @Test
+    fun parseFitnessTotals_unknownTagsOnly_notUsable() {
+        val sync = HuaweiFitnessDataSync(exchangeEncrypted = { _, _, _, _ -> null })
+        val frame = HuaweiFraming.Frame(
+            HuaweiFitnessDataSync.SVC,
+            HuaweiFitnessDataSync.CMD_FITNESS_TOTALS,
+            listOf(
+                HuaweiFraming.Tlv(
+                    0x81,
+                    HuaweiFraming.encodeTlvs(
+                        listOf(HuaweiFraming.Tlv(0x09, ByteArray(8))),
+                    ),
+                ),
+            ),
+        )
+        val parsed = sync.parseFitnessTotals(frame, endUnix = 1_704_067_200L)
+        assertTrue(parsed.days.isEmpty())
+    }
+
+    @Test
+    fun sync_happyPath_parsesFitnessTotalsIntoCompletedContainer() {
+        val overnightBegin = 1_700_000_000L
+        val end = overnightBegin + 86400
+        val sleepCount = countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1)
+        val sleep1 = sleepDataFrame(1, listOf(Stage(overnightBegin, 90, 1)))
+        val stepCount = countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 0)
+        val totals = fitnessTotalsFrame(
+            slots = listOf(
+                FitnessSlot(slotTag = 1, steps = 8500, calories = 966, durationSec = 7620),
+            ),
+        )
+        val enableOk = HuaweiFraming.Frame(
+            HuaweiFitnessDataSync.SVC,
+            0,
+            listOf(HuaweiFraming.Tlv(0x7F, HuaweiPacketCrypto.intBe(HuaweiPacketCrypto.RESULT_OK))),
+        )
+        val queue = ArrayDeque(
+            listOf(
+                enableOk.copy(commandId = HuaweiFitnessDataSync.CMD_TRUSLEEP_ENABLE),
+                enableOk.copy(commandId = HuaweiFitnessDataSync.CMD_AUTO_HR_ENABLE),
+                sleepCount,
+                sleep1,
+                stepCount,
+                totals,
+            ),
+        )
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, cmd, _ ->
+                val next = queue.removeFirstOrNull()
+                assertEquals("unexpected cmd 0x${cmd.toString(16)}", cmd, next?.commandId ?: cmd)
+                next
+            },
+        )
+        val result = sync.sync(overnightBegin - 86400, end)
+        assertEquals("ok", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val completed = result["completedContainers"] as List<String>
+        assertTrue(completed.contains("sleep"))
+        assertTrue(completed.contains("fitness_totals"))
+        @Suppress("UNCHECKED_CAST")
+        val days = result["fitnessTotals"] as List<Map<String, Any?>>
+        assertEquals(1, days.size)
+        assertEquals(966, days[0]["calories"])
+        assertEquals(8500, days[0]["steps"])
+        assertEquals(7620, days[0]["exerciseDurationSec"])
+        assertEquals(HuaweiFitnessDataSync.localDayKey(end), days[0]["dayKey"])
+    }
+
+    @Test
+    fun sync_fitnessTotalsTimeout_softOmitsCompletedBit() {
+        val begin = 1_700_000_000L
+        val queue = ArrayDeque(
+            listOf(
+                null,
+                null,
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1),
+                sleepDataFrame(1, listOf(Stage(begin, 90, 1))),
+                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 0),
+                null, // FitnessTotals timeout
+            ),
+        )
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
+        )
+        val result = sync.sync(begin - 100, begin + 10_000)
+        assertEquals("ok", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val completed = result["completedContainers"] as List<String>
+        assertTrue(completed.contains("sleep"))
+        assertFalse(completed.contains("fitness_totals"))
+        @Suppress("UNCHECKED_CAST")
+        val totals = result["fitnessTotals"] as List<*>
+        assertTrue(totals.isEmpty())
+    }
+
+    @Test
+    fun sync_stepDataTimeout_stillIssuesFitnessTotalsThenPartialBatch() {
+        val begin = 1_700_000_000L
+        val cmds = mutableListOf<Int>()
+        val totals = fitnessTotalsFrame(
+            slots = listOf(
+                FitnessSlot(slotTag = 1, steps = 100, calories = 50, durationSec = 600),
+            ),
+        )
+        val queue = ArrayDeque(
+            listOf(
+                null,
+                null,
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1),
+                sleepDataFrame(1, listOf(Stage(begin, 90, 1))),
+                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 1),
+                null, // stepData timeout
+                totals,
+            ),
+        )
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, cmd, _ ->
+                cmds.add(cmd)
+                queue.removeFirstOrNull()
+            },
+        )
+        val result = sync.sync(begin - 100, begin + 10_000)
+        assertEquals("partial_batch", result["status"])
+        assertTrue(cmds.contains(HuaweiFitnessDataSync.CMD_FITNESS_TOTALS))
+        @Suppress("UNCHECKED_CAST")
+        val completed = result["completedContainers"] as List<String>
+        assertTrue(completed.contains("sleep"))
+        assertTrue(completed.contains("fitness_totals"))
+        @Suppress("UNCHECKED_CAST")
+        val days = result["fitnessTotals"] as List<Map<String, Any?>>
+        assertEquals(1, days.size)
+        assertEquals(50, days[0]["calories"])
+    }
+
+    @Test
+    fun sync_totalsOnlyPayload_statusOkNotEmpty() {
+        val begin = 1_700_000_000L
+        val end = begin + 3600
+        val totals = fitnessTotalsFrame(
+            slots = listOf(
+                FitnessSlot(slotTag = 1, steps = 10, calories = 5, durationSec = 60),
+            ),
+        )
+        val queue = ArrayDeque(
+            listOf(
+                null,
+                null,
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 0),
+                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 0),
+                totals,
+            ),
+        )
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
+        )
+        val result = sync.sync(begin, end)
+        assertEquals("ok", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val completed = result["completedContainers"] as List<String>
+        assertTrue(completed.contains("fitness_totals"))
+        @Suppress("UNCHECKED_CAST")
+        val sleeps = result["sleepSessions"] as List<*>
+        assertTrue(sleeps.isEmpty())
+    }
+
     private data class Stage(val ts: Long, val durMin: Int, val type: Int)
+
+    private data class FitnessSlot(
+        val slotTag: Int,
+        val steps: Int,
+        val calories: Int,
+        val durationSec: Int,
+    )
 
     private data class MinuteSample(
         val minute: Int,
@@ -321,6 +595,34 @@ class HuaweiFitnessDataSyncTest {
             HuaweiFitnessDataSync.SVC,
             HuaweiFitnessDataSync.CMD_STEP_DATA,
             listOf(HuaweiFraming.Tlv(0x81, HuaweiFraming.encodeTlvs(children))),
+        )
+    }
+
+    /** Synthetic FitnessTotals shaped like wire-spec nested `0x83` day slots. */
+    private fun fitnessTotalsFrame(slots: List<FitnessSlot>): HuaweiFraming.Frame {
+        val entries = mutableListOf(
+            HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.intBe(1)),
+        )
+        for (s in slots) {
+            entries += HuaweiFraming.Tlv(
+                0x83,
+                HuaweiFraming.encodeTlvs(
+                    listOf(
+                        HuaweiFraming.Tlv(0x04, byteArrayOf(s.slotTag.toByte())),
+                        HuaweiFraming.Tlv(0x05, HuaweiPacketCrypto.intBe(s.steps)),
+                        HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(s.calories)),
+                        HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.intBe(s.durationSec)),
+                        HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(0)),
+                        HuaweiFraming.Tlv(0x0B, HuaweiPacketCrypto.intBe(0)),
+                    ),
+                ),
+            )
+        }
+        entries += HuaweiFraming.Tlv(0x09, ByteArray(8))
+        return HuaweiFraming.Frame(
+            HuaweiFitnessDataSync.SVC,
+            HuaweiFitnessDataSync.CMD_FITNESS_TOTALS,
+            listOf(HuaweiFraming.Tlv(0x81, HuaweiFraming.encodeTlvs(entries))),
         )
     }
 

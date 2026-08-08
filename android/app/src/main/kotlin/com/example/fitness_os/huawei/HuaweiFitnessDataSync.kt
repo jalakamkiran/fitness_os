@@ -2,14 +2,18 @@ package com.example.fitness_os.huawei
 
 import android.util.Log
 import java.nio.ByteBuffer
+import java.util.Calendar
+import java.util.Locale
+import java.util.TimeZone
 
 /**
- * Clean-room FitnessData (`0x07`) activity Sync — sleep messages + daily HR.
+ * Clean-room FitnessData (`0x07`) activity Sync — sleep messages + daily HR +
+ * FitnessTotals day rollup.
  *
  * Pre-promotion parsers: synthetic fixtures + owned wire-spec shapes only.
  * Do not treat as normative until `huawei-br-gt5-fitness-data.md` cites capture/ABSENT.
  *
- * FileSleep / TruSleep FileDownload deferred (U4).
+ * FileSleep / TruSleep FileDownload deferred (separate plan).
  */
 class HuaweiFitnessDataSync(
     private val exchangeEncrypted: (
@@ -62,6 +66,121 @@ class HuaweiFitnessDataSync(
             if (value.size < offset + 4) return 0L
             return ByteBuffer.wrap(value, offset, 4).int.toLong() and 0xFFFF_FFFFL
         }
+
+        /**
+         * Privacy-safe TLV shape: `t=81:len=42x1;nested[t=85:len=20x2,t=05:len=4x3]`.
+         * Recursively counts tag+len under nested containers (high bit set).
+         */
+        fun tlvTagLenHistogram(tlvs: List<HuaweiFraming.Tlv>): String {
+            if (tlvs.isEmpty()) return "empty"
+            val top = countTagLens(tlvs)
+            val nestedCounts = linkedMapOf<String, Int>()
+            fun walkNested(list: List<HuaweiFraming.Tlv>) {
+                for (tlv in list) {
+                    if (!tlv.isNested || tlv.value.isEmpty()) continue
+                    val inner = runCatching { HuaweiFraming.decodeTlvs(tlv.value) }.getOrNull()
+                        ?: continue
+                    for ((key, n) in countTagLens(inner)) {
+                        nestedCounts[key] = (nestedCounts[key] ?: 0) + n
+                    }
+                    walkNested(inner)
+                }
+            }
+            walkNested(tlvs)
+            return if (nestedCounts.isEmpty()) {
+                formatTagLens(top)
+            } else {
+                "${formatTagLens(top)};nested[${formatTagLens(nestedCounts)}]"
+            }
+        }
+
+        /**
+         * Debug-only leaf scalars (len 1/2/4) as BE integers — for owner watch cross-check.
+         * Does not claim field meaning.
+         */
+        fun leafScalarCandidates(
+            tlvs: List<HuaweiFraming.Tlv>,
+            maxEntries: Int = 48,
+        ): String {
+            val out = ArrayList<String>()
+            fun walk(list: List<HuaweiFraming.Tlv>, path: String) {
+                for (tlv in list) {
+                    if (out.size >= maxEntries) return
+                    val tagHex = "0x${tlv.tag.toString(16)}"
+                    val here = if (path.isEmpty()) tagHex else "$path/$tagHex"
+                    if (tlv.isNested && tlv.value.isNotEmpty()) {
+                        val inner = runCatching { HuaweiFraming.decodeTlvs(tlv.value) }.getOrNull()
+                        if (inner != null) {
+                            walk(inner, here)
+                            continue
+                        }
+                    }
+                    when (tlv.value.size) {
+                        1 -> out.add("$here:u8=${u8(tlv.value)}")
+                        2 -> out.add("$here:u16=${u16(tlv.value)}")
+                        4 -> out.add("$here:u32=${u32(tlv.value)}")
+                        else -> Unit
+                    }
+                }
+            }
+            walk(tlvs, "")
+            return out.joinToString(" ")
+        }
+
+        private fun countTagLens(tlvs: List<HuaweiFraming.Tlv>): Map<String, Int> {
+            val counts = linkedMapOf<String, Int>()
+            for (tlv in tlvs) {
+                val key = "t=${tlv.tag.toString(16)}:len=${tlv.value.size}"
+                counts[key] = (counts[key] ?: 0) + 1
+            }
+            return counts
+        }
+
+        private fun formatTagLens(counts: Map<String, Int>): String =
+            counts.entries.joinToString(",") { (k, n) -> "${k}x$n" }
+
+        private fun shouldLogDebugScalars(): Boolean {
+            return try {
+                val clazz = Class.forName("com.example.fitness_os.BuildConfig")
+                clazz.getField("DEBUG").getBoolean(null)
+            } catch (_: Throwable) {
+                false
+            }
+        }
+
+        /** Local calendar day `yyyy-MM-dd` (same semantics as Dart vitals `_localDayKey`). */
+        fun localDayKey(unixSec: Long, tz: TimeZone = TimeZone.getDefault()): String {
+            val cal = Calendar.getInstance(tz)
+            cal.timeInMillis = unixSec * 1000L
+            return String.format(
+                Locale.US,
+                "%04d-%02d-%02d",
+                cal.get(Calendar.YEAR),
+                cal.get(Calendar.MONTH) + 1,
+                cal.get(Calendar.DAY_OF_MONTH),
+            )
+        }
+
+        /**
+         * Local midnight unix for [unixSec]'s calendar day, then subtract [daysBefore] days.
+         * DST-safe via Calendar (not raw 86400 arithmetic).
+         */
+        fun localDayStartUnix(
+            unixSec: Long,
+            daysBefore: Int = 0,
+            tz: TimeZone = TimeZone.getDefault(),
+        ): Long {
+            val cal = Calendar.getInstance(tz)
+            cal.timeInMillis = unixSec * 1000L
+            cal.set(Calendar.HOUR_OF_DAY, 0)
+            cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0)
+            cal.set(Calendar.MILLISECOND, 0)
+            if (daysBefore != 0) {
+                cal.add(Calendar.DAY_OF_MONTH, -daysBefore)
+            }
+            return cal.timeInMillis / 1000L
+        }
     }
 
     data class SleepSession(
@@ -85,6 +204,34 @@ class HuaweiFitnessDataSync(
             "bpm" to bpm,
         )
     }
+
+    /**
+     * FitnessTotals day row (`0x07:0x03`).
+     *
+     * Field map from `capture:owner-2026-08-07-post-day-reset` (steps/calories locked;
+     * duration unit + day-anchor provisional until swim/high-burn capture).
+     */
+    data class FitnessTotalsDay(
+        val dayKey: String,
+        val dayStartUnix: Long,
+        val calories: Int,
+        val steps: Int,
+        /** Provisional: wire `0x07` u32 treated as seconds. */
+        val exerciseDurationSec: Int,
+    ) {
+        fun toMap(): Map<String, Any?> = mapOf(
+            "dayKey" to dayKey,
+            "dayStartUnix" to dayStartUnix,
+            "calories" to calories,
+            "steps" to steps,
+            "exerciseDurationSec" to exerciseDurationSec,
+        )
+    }
+
+    data class FitnessTotalsParse(
+        val days: List<FitnessTotalsDay>,
+        val unknownTags: Int,
+    )
 
     /**
      * Explicit auto-tracking enable batch (TruSleep / auto-HR / auto-SpO2).
@@ -147,7 +294,7 @@ class HuaweiFitnessDataSync(
     }
 
     /**
-     * @return status + sleepSessions + dailyHrSamples + completedContainers + flags
+     * @return status + sleepSessions + dailyHrSamples + fitnessTotals + completedContainers + flags
      */
     fun sync(
         startUnix: Long,
@@ -190,7 +337,10 @@ class HuaweiFitnessDataSync(
         )
         if (sleepCountFrame == null) {
             Log.w(TAG, "activity-sync sleepCount timeout")
-            return resultMap(
+            // Capture FitnessTotals when link still up — day KPIs independent of sleepCount.
+            return attemptFitnessTotalsAndFinalize(
+                startUnix = start,
+                endUnix = end,
                 status = "stuck",
                 message = "Sleep count timed out — disconnect and retry",
                 sleep = sleepSessions,
@@ -218,7 +368,9 @@ class HuaweiFitnessDataSync(
                     .filter { it.endUnix - it.beginUnix >= MIN_SESSION_SEC }
                 for (s in partial) sleepSessions.add(s.toMap())
                 if (sleepSessions.isNotEmpty()) completed.add("sleep")
-                return resultMap(
+                return attemptFitnessTotalsAndFinalize(
+                    startUnix = start,
+                    endUnix = end,
                     status = "partial_batch",
                     message = "Sleep data timed out after partial progress",
                     sleep = sleepSessions,
@@ -241,8 +393,8 @@ class HuaweiFitnessDataSync(
             "activity-sync sleepSessions=${sleepSessions.size} " +
                 "stages=${allSleepStages.size} pages=${sleepRefs.size}",
         )
-        val tz = java.util.TimeZone.getDefault()
-        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm z", java.util.Locale.US)
+        val tz = TimeZone.getDefault()
+        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm z", Locale.US)
         fmt.timeZone = tz
         for (s in aggregated) {
             val beginLabel = fmt.format(java.util.Date(s.beginUnix * 1000L))
@@ -264,7 +416,9 @@ class HuaweiFitnessDataSync(
         )
         if (stepCountFrame == null) {
             Log.w(TAG, "activity-sync stepCount timeout")
-            return resultMap(
+            return attemptFitnessTotalsAndFinalize(
+                startUnix = start,
+                endUnix = end,
                 status = "partial_batch",
                 message = "Step count timed out after sleep",
                 sleep = sleepSessions,
@@ -287,7 +441,9 @@ class HuaweiFitnessDataSync(
             if (dataFrame == null) {
                 Log.w(TAG, "activity-sync stepData timeout index=$index")
                 if (hrContainerCompleted) completed.add("daily_hr")
-                return resultMap(
+                return attemptFitnessTotalsAndFinalize(
+                    startUnix = start,
+                    endUnix = end,
                     status = "partial_batch",
                     message = "Step data timed out after partial progress",
                     sleep = sleepSessions,
@@ -315,37 +471,205 @@ class HuaweiFitnessDataSync(
         )
         // Absent HR bitmap ⇒ HR not completed — not partial_batch.
 
-        // Opaque idle handoff — no Flutter persistence.
-        exchangeEncrypted(
-            buildWindowRequest(CMD_FITNESS_TOTALS, start, end),
-            SVC,
-            CMD_FITNESS_TOTALS,
-            TIMEOUT_MS,
-        )
-        // FileSleep hook deferred (U4).
-        fetchBattery?.invoke()
-
-        if (unknownTlvCount > 0) {
-            Log.i(TAG, "activity-sync unknownTlvCount=$unknownTlvCount")
-        }
-
-        val hasMergeable = sleepSessions.isNotEmpty() || hrSamples.isNotEmpty()
-        val status = when {
-            hasMergeable -> "ok"
-            else -> "empty"
-        }
-        Log.i(
-            TAG,
-            "activity-sync done status=$status sleep=${sleepSessions.size} " +
-                "hrSamples=${hrSamples.size} completed=$completed enableSkipped=$enableSkipped",
-        )
-        return resultMap(
-            status = status,
+        return attemptFitnessTotalsAndFinalize(
+            startUnix = start,
+            endUnix = end,
+            status = "ok", // recomputed below from mergeable
             message = if (enableSkipped) "enable_skipped" else null,
             sleep = sleepSessions,
             hr = hrSamples,
             completed = completed,
             enableSkipped = enableSkipped,
+            unknownTlvCount = unknownTlvCount,
+            fetchBatteryAfter = true,
+            recomputeStatusFromMergeable = true,
+        )
+    }
+
+    /**
+     * Shared exit: exchange + parse FitnessTotals, then build the activity result map.
+     * Always attempts the idle handoff when connected; completion bit is optional.
+     *
+     * Production logs: tag+len histogram + day/row counts only (no decoded kcal/steps).
+     * Debug builds additionally log leaf scalar candidates for owner cross-check.
+     */
+    private fun attemptFitnessTotalsAndFinalize(
+        startUnix: Long,
+        endUnix: Long,
+        status: String,
+        message: String?,
+        sleep: List<Map<String, Any?>>,
+        hr: List<Map<String, Any?>>,
+        completed: MutableList<String>,
+        enableSkipped: Boolean,
+        unknownTlvCount: Int = 0,
+        fetchBatteryAfter: Boolean = false,
+        recomputeStatusFromMergeable: Boolean = false,
+    ): Map<String, Any?> {
+        val totals = attemptFitnessTotals(startUnix, endUnix)
+        if (totals.isNotEmpty()) {
+            completed.add("fitness_totals")
+        }
+        if (fetchBatteryAfter) {
+            // FileSleep hook deferred.
+            fetchBattery?.invoke()
+        }
+        if (unknownTlvCount > 0) {
+            Log.i(TAG, "activity-sync unknownTlvCount=$unknownTlvCount")
+        }
+        val resolvedStatus = if (recomputeStatusFromMergeable) {
+            val hasMergeable =
+                sleep.isNotEmpty() || hr.isNotEmpty() || totals.isNotEmpty()
+            if (hasMergeable) "ok" else "empty"
+        } else {
+            status
+        }
+        val resolvedMessage = if (recomputeStatusFromMergeable) {
+            if (enableSkipped) "enable_skipped" else null
+        } else {
+            message
+        }
+        Log.i(
+            TAG,
+            "activity-sync done status=$resolvedStatus sleep=${sleep.size} " +
+                "hrSamples=${hr.size} fitnessTotalsDays=${totals.size} " +
+                "completed=$completed enableSkipped=$enableSkipped",
+        )
+        return resultMap(
+            status = resolvedStatus,
+            message = resolvedMessage,
+            sleep = sleep,
+            hr = hr,
+            fitnessTotals = totals,
+            completed = completed,
+            enableSkipped = enableSkipped,
+        )
+    }
+
+    /**
+     * Exchange FitnessTotals when the link is usable. Returns parsed day rows, or empty
+     * on disconnect / timeout / unusable frame (soft-omit completed bit).
+     */
+    private fun attemptFitnessTotals(
+        startUnix: Long,
+        endUnix: Long,
+    ): List<Map<String, Any?>> {
+        if (!isConnected()) {
+            Log.i(TAG, "activity-sync fitnessTotals skipped (disconnected)")
+            return emptyList()
+        }
+        Log.i(
+            TAG,
+            "activity-sync fitnessTotals request window=[$startUnix,$endUnix] " +
+                "(re-fetch day rollup even if workouts/sleep already synced)",
+        )
+        val frame = exchangeEncrypted(
+            buildWindowRequest(CMD_FITNESS_TOTALS, startUnix, endUnix),
+            SVC,
+            CMD_FITNESS_TOTALS,
+            TIMEOUT_MS,
+        )
+        if (frame == null) {
+            Log.w(TAG, "activity-sync fitnessTotals timeout/null")
+            return emptyList()
+        }
+        val hist = tlvTagLenHistogram(frame.tlvs)
+        Log.i(
+            TAG,
+            "activity-sync fitnessTotals frame ok " +
+                "svc=0x${SVC.toString(16)} cmd=0x${CMD_FITNESS_TOTALS.toString(16)} " +
+                "topTlvCount=${frame.tlvs.size} hist=[$hist]",
+        )
+        if (shouldLogDebugScalars()) {
+            val scalars = leafScalarCandidates(frame.tlvs)
+            if (scalars.isNotEmpty()) {
+                Log.d(
+                    TAG,
+                    "activity-sync fitnessTotals debugScalars " +
+                        "(owner cross-check vs watch day; provisional map) $scalars",
+                )
+            }
+        }
+        return try {
+            val parsed = parseFitnessTotals(frame, endUnix = endUnix)
+            Log.i(
+                TAG,
+                "activity-sync fitnessTotals parsedDays=${parsed.days.size} " +
+                    "unknownTags=${parsed.unknownTags}",
+            )
+            parsed.days.map { it.toMap() }
+        } catch (t: Throwable) {
+            Log.w(TAG, "activity-sync fitnessTotals parse failed: ${t.message}")
+            emptyList()
+        }
+    }
+
+    /**
+     * Parse FitnessTotals day slots under `0x81` → repeated `0x83`.
+     *
+     * Owned leaves (`capture:owner-2026-08-07-post-day-reset`):
+     * - `0x05` u32 steps, `0x06` u16 calories kcal, `0x07` u32 duration (provisional seconds)
+     *
+     * Day-anchor (provisional): TLV order maps onto the last N local calendar days
+     * ending at [endUnix]'s local day (last slot = today). Revisit after swim capture.
+     */
+    fun parseFitnessTotals(
+        frame: HuaweiFraming.Frame,
+        endUnix: Long,
+        tz: TimeZone = TimeZone.getDefault(),
+    ): FitnessTotalsParse {
+        val container = frame.tlvs.firstOrNull { it.tag == 0x81 }?.value
+            ?: return FitnessTotalsParse(emptyList(), 0)
+        val tlvs = HuaweiFraming.decodeTlvs(container)
+        val slotValues = ArrayList<ByteArray>()
+        var unknown = 0
+        for (tlv in tlvs) {
+            when (tlv.tag) {
+                0x83 -> slotValues.add(tlv.value)
+                0x02, 0x09 -> Unit // header / trailer
+                else -> unknown++
+            }
+        }
+        if (slotValues.isEmpty()) {
+            return FitnessTotalsParse(emptyList(), unknown)
+        }
+        val days = ArrayList<FitnessTotalsDay>(slotValues.size)
+        for ((i, value) in slotValues.withIndex()) {
+            val daysBefore = slotValues.size - 1 - i
+            val dayStart = localDayStartUnix(endUnix, daysBefore = daysBefore, tz = tz)
+            val dayKey = localDayKey(dayStart, tz)
+            days.add(parseFitnessTotalsSlot(value, dayKey, dayStart))
+        }
+        return FitnessTotalsParse(days, unknown)
+    }
+
+    private fun parseFitnessTotalsSlot(
+        value: ByteArray,
+        dayKey: String,
+        dayStartUnix: Long,
+    ): FitnessTotalsDay {
+        val inner = HuaweiFraming.decodeTlvs(value)
+        var steps = 0
+        var calories = 0
+        var durationSec = 0
+        for (child in inner) {
+            when (child.tag) {
+                0x04 -> Unit // slot/type/weekday candidate — provisional
+                0x05 -> if (child.value.size >= 4) steps = u32(child.value).toInt()
+                0x06 -> if (child.value.size >= 2) calories = u16(child.value)
+                0x07 -> if (child.value.size >= 4) {
+                    durationSec = u32(child.value).toInt().coerceAtLeast(0)
+                }
+                0x08, 0x0B -> Unit // present; meaning unknown
+                else -> Unit
+            }
+        }
+        return FitnessTotalsDay(
+            dayKey = dayKey,
+            dayStartUnix = dayStartUnix,
+            calories = calories.coerceAtLeast(0),
+            steps = steps.coerceAtLeast(0),
+            exerciseDurationSec = durationSec,
         )
     }
 
@@ -630,6 +954,7 @@ class HuaweiFitnessDataSync(
         message: String?,
         sleep: List<Map<String, Any?>>,
         hr: List<Map<String, Any?>>,
+        fitnessTotals: List<Map<String, Any?>>,
         completed: List<String>,
         enableSkipped: Boolean,
     ): Map<String, Any?> = buildMap {
@@ -637,6 +962,7 @@ class HuaweiFitnessDataSync(
         if (message != null) put("message", message)
         put("sleepSessions", sleep)
         put("dailyHrSamples", hr)
+        put("fitnessTotals", fitnessTotals)
         put("completedContainers", completed)
         put("enableSkipped", enableSkipped)
     }

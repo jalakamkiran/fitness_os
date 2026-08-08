@@ -119,6 +119,41 @@ FileDownload sleep_state / sleep_data: see sleep-files stub — **not** promoted
 
 ---
 
+## FitnessTotals day rollup (map started)
+
+| Item | Value |
+|------|-------|
+| Capture | `capture:owner-2026-08-07-post-day-reset` — `activity-sync fitnessTotals capture=pending` + `frame ok svc=0x7 cmd=0x3` |
+| Codes | Request `0x07:0x03` with window `0x81 → 0x03/0x04` (same window shape as sleep/step count) |
+| Privacy | Default logs: **tag+len histogram + presence counts only**. Never commit raw series. |
+| Day anchor | **Provisional** — TLV `0x83` order maps onto last N local calendar days ending at request `endUnix` local day (last slot = today). Same `toLocal()` dayKey helper as sleep/HR. Revisit after swim/high-burn capture. |
+| Field map | Partial — see owned table below |
+| Catalog | score **2** / `partial` — steps + calories locked vs watch; duration unit still open (`0x07` treated as **seconds** in parser provisionally) |
+
+**Histogram (this capture):**
+
+`hist=[t=81:len=233x1;nested[t=2:len=4x1,t=83:len=29x7,t=9:len=8x1,t=4:len=1x7,t=5:len=4x7,t=6:len=2x7,t=7:len=4x7,t=8:len=2x7,t=b:len=4x7]]`
+
+**Owned TLV decode** (nested under outer `0x81`, same TLV framing as sleep):
+
+| Tag | Len | Role (this capture) | Status |
+|-----|-----|---------------------|--------|
+| `0x02` | 4 | Header / count-like (`beU32=1`) | Unknown |
+| `0x83` | 29 × 7 | Day/slot records | Structure locked |
+| `0x09` | 8 | Trailer (zeros) | Unknown |
+| `0x04` (in `0x83`) | 1 | Slot/type/weekday candidate (`{0,1,2,3,4,6,7}` — no `5`) | Provisional |
+| `0x05` (in `0x83`) | 4 BE u32 | **Steps** — matched watch **27** | Locked vs watch |
+| `0x06` (in `0x83`) | 2 BE u16 | **Calories (kcal)** — matched watch **1** | Locked vs watch |
+| `0x07` (in `0x83`) | 4 BE u32 | Duration candidate (`15` on active slot) | **Provisional seconds** in native parser; confirm vs watch exercise minutes on swim capture |
+| `0x08` / `0x0b` (in `0x83`) | 2 / 4 | Present, zero on this day | Unknown |
+
+**Owner cross-check (local today after day reset):** watch Activity = **1 kcal**, **27 steps**. Only the `0x83` row with `0x04=1` was non-zero; remaining six rows were empty.
+
+**Still open before U4:** confirm day-anchor (window-order provisional) and duration unit for `0x07` against a swim / higher-burn day. Prefer a second capture with higher burn / exercise minutes.
+
+---
+
+
 ## Skin temp / deferred matrix claims
 
 | Metric | Status |
