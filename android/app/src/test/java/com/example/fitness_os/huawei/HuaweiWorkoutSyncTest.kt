@@ -158,22 +158,31 @@ class HuaweiWorkoutSyncTest {
     }
 
     @Test
-    fun parseSwimSegments_expandsNested0x83Laps_swolfChecked() {
-        // Capture-shaped #11 lap: style free, 25m, 11s, SWOLF 135, 124 strokes
-        // (11 + 124 = 135). Wire index 1 → stored 0. half=0 preferred over half=1.
-        fun lap(wireIndex: Int, half: Int, distance: Int, duration: Int, style: Int, swolf: Int, strokes: Int) =
+    fun parseSwimSegments_expandsNested0x83Laps_gbFieldMap() {
+        // GB oracle: 0x0b=strokes, 0x0d=time, 0x05=unitType (0 metric / 1 imperial).
+        // SWOLF check: time + strokes (124 + 11 = 135).
+        fun lap(
+            wireIndex: Int,
+            unitType: Int,
+            distance: Int,
+            strokes: Int,
+            style: Int,
+            swolf: Int,
+            duration: Int,
+            pace: Int,
+        ) =
             HuaweiFraming.Tlv(
                 0x83,
                 HuaweiFraming.encodeTlvs(
                     listOf(
                         HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.shortBe(distance)),
-                        HuaweiFraming.Tlv(0x05, byteArrayOf(half.toByte())),
-                        HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(496)),
+                        HuaweiFraming.Tlv(0x05, byteArrayOf(unitType.toByte())),
+                        HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.intBe(pace)),
                         HuaweiFraming.Tlv(0x09, HuaweiPacketCrypto.shortBe(wireIndex)),
                         HuaweiFraming.Tlv(0x0a, byteArrayOf(style.toByte())),
-                        HuaweiFraming.Tlv(0x0b, byteArrayOf(duration.toByte())),
+                        HuaweiFraming.Tlv(0x0b, HuaweiPacketCrypto.shortBe(strokes)),
                         HuaweiFraming.Tlv(0x0c, HuaweiPacketCrypto.shortBe(swolf)),
-                        HuaweiFraming.Tlv(0x0d, HuaweiPacketCrypto.shortBe(strokes)),
+                        HuaweiFraming.Tlv(0x0d, HuaweiPacketCrypto.intBe(duration)),
                     ),
                 ),
             )
@@ -181,10 +190,10 @@ class HuaweiWorkoutSyncTest {
         val inner = HuaweiFraming.encodeTlvs(
             listOf(
                 HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(11)), // workout #
-                lap(1, 0, 25, 11, 2, 135, 124),
-                lap(1, 1, 25, 11, 2, 135, 124),
-                lap(2, 0, 25, 12, 2, 48, 36),
-                HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(0)),
+                HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(0)), // page
+                lap(1, 0, 25, 11, 2, 135, 124, 496),
+                lap(1, 1, 25, 11, 2, 135, 124, 496), // imperial twin
+                lap(2, 0, 25, 12, 2, 48, 36, 144),
             ),
         )
         val frame = HuaweiFraming.Frame(
@@ -196,25 +205,120 @@ class HuaweiWorkoutSyncTest {
         val all = sync.parseSwimSegments(frame)
         assertEquals(3, all.size)
         assertEquals(0, all[0].index)
-        assertEquals(0, all[0].half)
+        assertEquals(0, all[0].unitType)
         assertEquals(25L, all[0].distanceM)
-        assertEquals(11L, all[0].durationSec)
+        assertEquals(124L, all[0].durationSec)
         assertEquals(2, all[0].style)
-        assertEquals(124, all[0].strokes)
+        assertEquals(11, all[0].strokes)
         assertEquals(135, all[0].avgSwolf)
-        assertEquals(44, all[0].paceSecPer100m) // 11s * 100 / 25m
+        assertEquals(496, all[0].paceSecPer100m) // wire pace preferred
 
-        // Merge preference: half=0 wins when enriching duplicate indices.
-        val byIndex = linkedMapOf<Int, HuaweiWorkoutSync.SwimSegment>()
-        for (seg in all) {
-            val existing = byIndex[seg.index]
-            if (existing == null || (seg.half ?: 0) < (existing.half ?: 0)) {
-                byIndex[seg.index] = seg
-            }
-        }
-        assertEquals(2, byIndex.size)
-        assertEquals(0, byIndex[0]!!.half)
-        assertEquals(36, byIndex[1]!!.strokes)
+        // Enrichment keeps metric (unitType=0) only, then sequential indexes.
+        val metric = all.filter { it.unitType == null || it.unitType == 0 }
+        assertEquals(2, metric.size)
+        assertEquals(11, metric[0].strokes)
+        assertEquals(12, metric[1].strokes)
+    }
+
+    @Test
+    fun sync_swimRequestUsesPageTag0x08_andAppendsMetricLapsAcrossPages() {
+        val swimPageTags = ArrayList<Int>()
+        val enrichingSync = HuaweiWorkoutSync(
+            exchangeEncrypted = { request, service, cmd, _ ->
+                when {
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
+                        val entry = HuaweiFraming.encodeTlvs(
+                            listOf(
+                                HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(12)),
+                                HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.shortBe(0)),
+                                HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(0)),
+                                HuaweiFraming.Tlv(0x09, HuaweiPacketCrypto.shortBe(2)),
+                            ),
+                        )
+                        val container = HuaweiFraming.encodeTlvs(
+                            listOf(
+                                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(1)),
+                                HuaweiFraming.Tlv(0x85, entry),
+                            ),
+                        )
+                        HuaweiFraming.Frame(
+                            HuaweiWorkoutSync.SVC,
+                            HuaweiWorkoutSync.CMD_COUNT,
+                            listOf(HuaweiFraming.Tlv(0x81, container)),
+                        )
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
+                        val container = HuaweiFraming.encodeTlvs(
+                            listOf(
+                                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(12)),
+                                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(100)),
+                                HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.intBe(50)),
+                                HuaweiFraming.Tlv(0x12, HuaweiPacketCrypto.intBe(300)),
+                                HuaweiFraming.Tlv(0x14, byteArrayOf(0x06)),
+                                HuaweiFraming.Tlv(0x19, HuaweiPacketCrypto.shortBe(4)),
+                            ),
+                        )
+                        HuaweiFraming.Frame(
+                            HuaweiWorkoutSync.SVC,
+                            HuaweiWorkoutSync.CMD_TOTALS,
+                            listOf(HuaweiFraming.Tlv(0x81, container)),
+                        )
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_SWIM -> {
+                        val nested = request.tlvs.first { it.tag == 0x81 }.value
+                        val kids = HuaweiFraming.decodeTlvs(nested)
+                        val pageTag = kids.firstOrNull { it.tag == 0x08 }?.let {
+                            HuaweiWorkoutSync.u16(it.value)
+                        } ?: -1
+                        swimPageTags.add(pageTag)
+                        // Wrong legacy tag must not be used for swim pages.
+                        assertEquals(null, kids.firstOrNull { it.tag == 0x03 })
+
+                        fun lap(seg: Int, strokes: Int, duration: Int) = HuaweiFraming.Tlv(
+                            0x83,
+                            HuaweiFraming.encodeTlvs(
+                                listOf(
+                                    HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.shortBe(25)),
+                                    HuaweiFraming.Tlv(0x05, byteArrayOf(0)),
+                                    HuaweiFraming.Tlv(0x09, HuaweiPacketCrypto.shortBe(seg)),
+                                    HuaweiFraming.Tlv(0x0a, byteArrayOf(2)),
+                                    HuaweiFraming.Tlv(0x0b, HuaweiPacketCrypto.shortBe(strokes)),
+                                    HuaweiFraming.Tlv(0x0c, HuaweiPacketCrypto.shortBe(duration + strokes)),
+                                    HuaweiFraming.Tlv(0x0d, HuaweiPacketCrypto.intBe(duration)),
+                                ),
+                            ),
+                        )
+                        val base = pageTag * 2
+                        val container = HuaweiFraming.encodeTlvs(
+                            listOf(
+                                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(12)),
+                                HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(pageTag)),
+                                lap(base + 1, 10 + base, 20),
+                                lap(base + 2, 11 + base, 21),
+                            ),
+                        )
+                        HuaweiFraming.Frame(
+                            HuaweiWorkoutSync.SVC,
+                            HuaweiWorkoutSync.CMD_SWIM,
+                            listOf(HuaweiFraming.Tlv(0x81, container)),
+                        )
+                    }
+                    else -> null
+                }
+            },
+        )
+
+        val result = enrichingSync.sync(0, 999_999_999)
+        assertEquals("ok", result["status"])
+        assertEquals(listOf(0, 1), swimPageTags)
+        @Suppress("UNCHECKED_CAST")
+        val workouts = result["workouts"] as List<Map<String, Any?>>
+        @Suppress("UNCHECKED_CAST")
+        val segments = workouts[0]["segments"] as List<Map<String, Any?>>
+        assertEquals(4, segments.size)
+        assertEquals(10, segments[0]["strokes"])
+        assertEquals(20L, segments[0]["durationSec"])
+        assertEquals(13, segments[3]["strokes"])
     }
 
     @Test

@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync.dart';
+import 'package:fitness_os/core/observability/sentry_sync_instrumentation.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/home/domain/home_precedence.dart';
 import 'package:fitness_os/features/home/domain/repositories/home_repository.dart';
@@ -13,6 +14,10 @@ const int kPoolSwimType = 5;
 
 /// Open-water swim type id.
 const int kOpenWaterSwimType = 6;
+
+/// When FT today reports 0 kcal but workouts burned more than this, treat the
+/// FT row as untrusted (e.g. wrong day-anchor zeros) and use workout-sum.
+const int _kFitnessTotalsUntrustedWorkoutCalThreshold = 10;
 
 class HomeRepositoryImpl implements HomeRepository {
   HomeRepositoryImpl({
@@ -49,9 +54,11 @@ class HomeRepositoryImpl implements HomeRepository {
 
     final workouts = await _workouts.loadLocal();
     final hrDays = await _vitals.loadDailyHr();
+    final fitnessTotals = await _vitals.loadFitnessTotals();
     final everSynced = _prefs.containsKey(GateAPrefs.lastSyncCursor) ||
         workouts.isNotEmpty ||
         hrDays.isNotEmpty ||
+        fitnessTotals.isNotEmpty ||
         _prefs.getString(GateAPrefs.homeLastSyncStatus) == 'ok';
 
     final syncInProgress = _link.syncInFlight ||
@@ -102,11 +109,11 @@ class HomeRepositoryImpl implements HomeRepository {
             _now(),
           );
 
-    final calories = todayWorkouts.fold<int>(
+    final workoutCalories = todayWorkouts.fold<int>(
       0,
       (sum, w) => sum + (w.calories ?? 0),
     );
-    final steps = todayWorkouts.fold<int>(
+    final workoutSteps = todayWorkouts.fold<int>(
       0,
       (sum, w) => sum + (w.steps ?? 0),
     );
@@ -114,6 +121,33 @@ class HomeRepositoryImpl implements HomeRepository {
       0,
       (sum, w) => sum + w.durationSec,
     );
+
+    // Capture-locked: FT supplies day calories/steps; wire 0x07 is not exercise
+    // minutes, so workout time stays on today's workout-sum until a duration
+    // tag is owned. Sanity: FT cal=0 while workouts burned meaningfully →
+    // untrusted (wrong day-anchor residue) → full workout-sum triple.
+    FitnessTotalsDay? ftToday;
+    for (final d in fitnessTotals) {
+      if (d.dayKey == today) {
+        ftToday = d;
+        break;
+      }
+    }
+    final int calories;
+    final int steps;
+    final int displayWorkoutSec;
+    final ft = ftToday;
+    if (ft != null &&
+        !(ft.calories == 0 &&
+            workoutCalories > _kFitnessTotalsUntrustedWorkoutCalThreshold)) {
+      calories = ft.calories;
+      steps = ft.steps;
+      displayWorkoutSec = workoutSec;
+    } else {
+      calories = workoutCalories;
+      steps = workoutSteps;
+      displayWorkoutSec = workoutSec;
+    }
 
     final hrToday = hrDays.where((d) => d.dayKey == today).toList();
     final hr = hrToday.isNotEmpty
@@ -143,6 +177,8 @@ class HomeRepositoryImpl implements HomeRepository {
           'When you finish a pool session, the takeaway lands here — one line, not a chart.';
     }
 
+    final sessionReady = _link.sessionReady;
+
     return HomeSnapshot(
       precedence: precedence,
       deviceLabel: rememberedName,
@@ -152,8 +188,16 @@ class HomeRepositoryImpl implements HomeRepository {
         lastSyncedLabel: lastSyncedLabel,
       ),
       syncPillLabel: _pillLabel(precedence),
-      syncTitle: _syncTitle(precedence, rememberedName),
-      syncCaption: _syncCaption(precedence, lastSyncedLabel),
+      syncTitle: _syncTitle(
+        precedence,
+        rememberedName,
+        sessionReady: sessionReady,
+      ),
+      syncCaption: _syncCaption(
+        precedence,
+        lastSyncedLabel,
+        sessionReady: sessionReady,
+      ),
       lastSyncedLabel: lastSyncedLabel,
       caloriesLabel: everSynced &&
               precedence != HomePrecedence.pairedNeverSynced &&
@@ -167,7 +211,7 @@ class HomeRepositoryImpl implements HomeRepository {
           : null,
       workoutTimeLabel: precedence == HomePrecedence.noSwimDataYet ||
               precedence == HomePrecedence.dataAvailable
-          ? '${workoutSec ~/ 60}m'
+          ? '${displayWorkoutSec ~/ 60}m'
           : null,
       vitalsSnapshotLabel: vitalsLabel,
       swimTakeawayTitle: takeawayTitle,
@@ -178,20 +222,35 @@ class HomeRepositoryImpl implements HomeRepository {
 
   @override
   Future<bool> syncNow() async {
-    final workoutResult = await _workouts.syncFromWatch();
-    final vitalsResult = await _vitals.syncFromWatch();
-    final ok = workoutResult.isRight && vitalsResult.isRight;
-    await _prefs.setString(
-      GateAPrefs.homeLastSyncStatus,
-      ok ? 'ok' : 'failed',
+    final pass = SentrySyncInstrumentation.startPassTransaction(
+      trigger: 'manual',
     );
-    if (ok) {
-      await _prefs.setInt(
-        GateAPrefs.homeLastSyncAtMs,
-        _now().millisecondsSinceEpoch,
+    try {
+      final workoutResult = await _workouts.syncFromWatch();
+      final vitalsResult = await _vitals.syncFromWatch();
+      final ok = workoutResult.isRight && vitalsResult.isRight;
+      await _prefs.setString(
+        GateAPrefs.homeLastSyncStatus,
+        ok ? 'ok' : 'failed',
       );
+      if (ok) {
+        await _prefs.setInt(
+          GateAPrefs.homeLastSyncAtMs,
+          _now().millisecondsSinceEpoch,
+        );
+      }
+      await SentrySyncInstrumentation.finishWithStatus(
+        pass,
+        status: ok ? 'ok' : 'error',
+      );
+      return ok;
+    } catch (_) {
+      await SentrySyncInstrumentation.finishWithStatus(
+        pass,
+        status: 'error',
+      );
+      rethrow;
     }
-    return ok;
   }
 }
 
@@ -251,24 +310,37 @@ String _brandSubtitle({
         'GT5 · synced ${lastSyncedLabel ?? 'just now'}',
     };
 
-String _syncTitle(HomePrecedence p, String device) => switch (p) {
+String _syncTitle(
+  HomePrecedence p,
+  String device, {
+  required bool sessionReady,
+}) =>
+    switch (p) {
       HomePrecedence.notPaired => 'Pair a GT5 to begin',
       HomePrecedence.pairedNeverSynced => '$device paired',
       HomePrecedence.syncInProgress => 'Pulling today’s data',
       HomePrecedence.syncFailed => 'Couldn’t sync',
       HomePrecedence.dataAvailable ||
       HomePrecedence.noSwimDataYet =>
-        '$device connected',
+        sessionReady ? '$device connected' : '$device paired',
     };
 
-String _syncCaption(HomePrecedence p, String? lastSynced) => switch (p) {
+String _syncCaption(
+  HomePrecedence p,
+  String? lastSynced, {
+  required bool sessionReady,
+}) =>
+    switch (p) {
       HomePrecedence.notPaired => 'Home stays empty until a watch is linked.',
       HomePrecedence.pairedNeverSynced =>
         'No sync yet · run first pass to load today.',
       HomePrecedence.syncInProgress => 'One-shot pass on open · keep UI calm.',
       HomePrecedence.syncFailed =>
         'Last good data kept when available · retry when ready.',
-      HomePrecedence.dataAvailable =>
-        'Auto-sync on open · last pass ${lastSynced ?? 'recently'}',
-      HomePrecedence.noSwimDataYet => 'Sync healthy · no swim session today',
+      HomePrecedence.dataAvailable => sessionReady
+          ? 'Auto-sync on open · last pass ${lastSynced ?? 'recently'}'
+          : 'Session offline · last pass ${lastSynced ?? 'recently'}',
+      HomePrecedence.noSwimDataYet => sessionReady
+          ? 'Sync healthy · no swim session today'
+          : 'Session offline · last sync kept · no swim session today',
     };

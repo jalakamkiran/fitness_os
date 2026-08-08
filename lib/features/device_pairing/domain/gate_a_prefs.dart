@@ -8,12 +8,16 @@ abstract final class GateAPrefs {
   static const gateAPassed = 'gate_a_passed';
   static const lastSyncCursor = 'last_sync_cursor';
   static const lastR11Path = 'last_r11_winning_path';
+  /// Bumped when swim segment wire parse changes; forces one full-history re-sync.
+  static const swimSegmentParserVersion = 'swim_segment_parser_version';
   /// JSON list of synced workout summaries (Gate B local store).
   static const workoutsJson = 'workouts_json';
   /// JSON list of sleep session intervals (begin/end).
   static const sleepSessionsJson = 'sleep_sessions_json';
   /// JSON list of daily HR day summaries (min/avg/max/count).
   static const dailyHrJson = 'daily_hr_json';
+  /// JSON list of FitnessTotals day rollups (calories/steps/duration).
+  static const fitnessTotalsDayJson = 'fitness_totals_day_json';
   /// Side-file subdir under application support for per-day HR minute series.
   static const dailyHrSeriesDir = 'vitals/hr_series';
   /// Side-file subdir for canonical swim sessions (one JSON per workout #).

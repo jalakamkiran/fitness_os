@@ -119,6 +119,46 @@ FileDownload sleep_state / sleep_data: see sleep-files stub — **not** promoted
 
 ---
 
+## FitnessTotals day rollup (map started)
+
+| Item | Value |
+|------|-------|
+| Capture | `capture:owner-2026-08-07-post-day-reset` + `capture:owner-2026-08-08-swim` (post-swim activity sync) |
+| Codes | Request `0x07:0x03` with window `0x81 → 0x03/0x04` (same window shape as sleep/step count) |
+| Privacy | Default logs: **tag+len histogram + presence counts only**. Never commit raw series. |
+| Day anchor | **Locked** — inner `0x04` slot tag: `1` = local today at request `endUnix`; `N` (`N≥1`) = `N−1` local days before. Tag `0` skipped (padding). Same `toLocal()` dayKey helper as sleep/HR. **Not** TLV order / last-slot=today (rejected by swim capture: last slot empty, `0x04=1` matched watch today). |
+| Field map | Partial — see owned table below |
+| Catalog | score **2** / `partial` — steps + calories + day-anchor locked vs watch; wire `0x07` **not** exercise minutes |
+
+**Histogram (day-reset capture):**
+
+`hist=[t=81:len=233x1;nested[t=2:len=4x1,t=83:len=29x7,t=9:len=8x1,t=4:len=1x7,t=5:len=4x7,t=6:len=2x7,t=7:len=4x7,t=8:len=2x7,t=b:len=4x7]]`
+
+**Owned TLV decode** (nested under outer `0x81`, same TLV framing as sleep):
+
+| Tag | Len | Role | Status |
+|-----|-----|------|--------|
+| `0x02` | 4 | Header / count-like (`beU32=1`) | Unknown |
+| `0x83` | 29 × 7 | Day/slot records | Structure locked |
+| `0x09` | 8 | Trailer | Unknown |
+| `0x04` (in `0x83`) | 1 | Day-anchor slot tag (`1`=today; `N`→`N−1` days before; `0` padding) | **Locked** vs swim + day-reset captures |
+| `0x05` (in `0x83`) | 4 BE u32 | **Steps** — day-reset watch **27**; swim-day FT **7825** vs watch **7912** | Locked vs watch |
+| `0x06` (in `0x83`) | 2 BE u16 | **Calories (kcal)** — day-reset watch **1**; swim-day FT **525** vs watch **528** | Locked vs watch |
+| `0x07` (in `0x83`) | 4 BE u32 | **Not exercise minutes** — swim-day wire **5064** ≠ watch **58m** (55m swim + ~3m auto-walk). Meaning open (owner Activity UI showed no distance). Retained on channel as `exerciseDurationSec` for diagnostics only; **Home workout time uses workout-sum**. | Open / rejected as duration |
+| `0x08` / `0x0b` (in `0x83`) | 2 / 4 | Present; mostly zero | Unknown |
+
+**Owner cross-check (local today):**
+
+| Capture | Watch Activity | FT `0x04=1` slot |
+|---------|----------------|------------------|
+| `owner-2026-08-07-post-day-reset` | 1 kcal / 27 steps | matched |
+| `owner-2026-08-08-swim` | 528 kcal / 7912 steps / **58m** exercise | 525 kcal / 7825 steps / wire `0x07`=5064 (**≠58m**) |
+
+**Home KPI binding (U4):** calories + steps from FT today row when trusted; workout time from today’s workout-sum until a duration tag is owned. Sanity: FT cal=0 with meaningful workout calories → untrusted → full workout-sum triple.
+
+---
+
+
 ## Skin temp / deferred matrix claims
 
 | Metric | Status |

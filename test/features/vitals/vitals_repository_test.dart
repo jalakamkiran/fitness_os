@@ -241,6 +241,8 @@ void main() {
             '[{"beginUnix":100,"endUnix":200}]',
         GateAPrefs.dailyHrJson:
             '[{"dayKey":"2023-11-14","minBpm":60,"avgBpm":70,"maxBpm":80,"sampleCount":1}]',
+        GateAPrefs.fitnessTotalsDayJson:
+            '[{"dayKey":"2023-11-14","dayStartUnix":1700000000,"calories":10,"steps":100,"exerciseDurationSec":60}]',
         GateAPrefs.lastAutoTrackingEnableJson:
             '{"overall":"all_armed","features":[{"id":"auto_hr","outcome":"armed"}]}',
         GateAPrefs.workoutsJson:
@@ -254,6 +256,7 @@ void main() {
       await repo.clearLocal();
       expect(prefs.getString(GateAPrefs.sleepSessionsJson), isNull);
       expect(prefs.getString(GateAPrefs.dailyHrJson), isNull);
+      expect(prefs.getString(GateAPrefs.fitnessTotalsDayJson), isNull);
       expect(prefs.getString(GateAPrefs.lastAutoTrackingEnableJson), isNull);
       expect(prefs.getString(GateAPrefs.workoutsJson), isNotNull);
     });
@@ -372,6 +375,195 @@ void main() {
       await repo.clearLocal();
       expect(await repo.loadDailyHrSeries(dayKey), isEmpty);
       expect(await repo.loadDailyHr(), isEmpty);
+    });
+
+    test('fitness totals merge persists today row including zeros', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const ActivitySyncResult(
+          status: ActivitySyncStatus.ok,
+          fitnessTotals: [
+            FitnessTotalsDay(
+              dayKey: '2024-01-01',
+              dayStartUnix: 1704067200,
+              calories: 966,
+              steps: 8500,
+              exerciseDurationSec: 7620,
+            ),
+            FitnessTotalsDay(
+              dayKey: '2023-12-31',
+              dayStartUnix: 1703980800,
+              calories: 0,
+              steps: 0,
+              exerciseDurationSec: 0,
+            ),
+          ],
+          completedContainers: {'fitness_totals'},
+        ),
+      );
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      final days = await repo.loadFitnessTotals();
+      expect(days, hasLength(2));
+      final today = await repo.loadFitnessTotalsForDay('2024-01-01');
+      expect(today?.calories, 966);
+      expect(today?.steps, 8500);
+      expect(today?.exerciseDurationSec, 7620);
+      final zeroDay = await repo.loadFitnessTotalsForDay('2023-12-31');
+      expect(zeroDay?.calories, 0);
+      expect(zeroDay?.steps, 0);
+    });
+
+    test('totals-only ok payload merges without sleep or HR', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const ActivitySyncResult(
+          status: ActivitySyncStatus.ok,
+          fitnessTotals: [
+            FitnessTotalsDay(
+              dayKey: '2024-01-01',
+              dayStartUnix: 1704067200,
+              calories: 5,
+              steps: 10,
+              exerciseDurationSec: 60,
+            ),
+          ],
+          completedContainers: {'fitness_totals'},
+        ),
+      );
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+      await repo.syncFromWatch();
+      expect(await repo.loadSleepSessions(), isEmpty);
+      expect(await repo.loadDailyHr(), isEmpty);
+      expect(await repo.loadFitnessTotals(), hasLength(1));
+      expect(prefs.getString(GateAPrefs.fitnessTotalsDayJson), isNotNull);
+    });
+
+    test('second fitness totals sync replaces same dayKey and keeps others',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.fitnessTotalsDayJson:
+            '[{"dayKey":"2024-01-01","dayStartUnix":1704067200,"calories":1,"steps":1,"exerciseDurationSec":1},'
+            '{"dayKey":"2023-12-30","dayStartUnix":1703894400,"calories":9,"steps":9,"exerciseDurationSec":9}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const ActivitySyncResult(
+          status: ActivitySyncStatus.ok,
+          fitnessTotals: [
+            FitnessTotalsDay(
+              dayKey: '2024-01-01',
+              dayStartUnix: 1704067200,
+              calories: 966,
+              steps: 8500,
+              exerciseDurationSec: 7620,
+            ),
+          ],
+          completedContainers: {'fitness_totals'},
+        ),
+      );
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+      await repo.syncFromWatch();
+      final days = await repo.loadFitnessTotals();
+      expect(days, hasLength(2));
+      expect(
+        days.firstWhere((d) => d.dayKey == '2024-01-01').calories,
+        966,
+      );
+      expect(
+        days.firstWhere((d) => d.dayKey == '2023-12-30').calories,
+        9,
+      );
+    });
+
+    test('incomplete fitness_totals container keeps prior prefs', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.fitnessTotalsDayJson:
+            '[{"dayKey":"2024-01-01","dayStartUnix":1704067200,"calories":50,"steps":100,"exerciseDurationSec":600}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const ActivitySyncResult(
+          status: ActivitySyncStatus.ok,
+          sleepSessions: [
+            SleepSessionSummary(beginUnix: 100, endUnix: 200),
+          ],
+          fitnessTotals: [
+            FitnessTotalsDay(
+              dayKey: '2024-01-01',
+              dayStartUnix: 1704067200,
+              calories: 999,
+              steps: 999,
+              exerciseDurationSec: 999,
+            ),
+          ],
+          completedContainers: {'sleep'}, // fitness_totals absent
+        ),
+      );
+      final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+      await repo.syncFromWatch();
+      final today = await repo.loadFitnessTotalsForDay('2024-01-01');
+      expect(today?.calories, 50);
+      expect(today?.steps, 100);
+    });
+
+    test('corrupt fitness totals JSON is fail-closed', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.fitnessTotalsDayJson: '{not-json',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final repo = VitalsRepositoryImpl(
+        link: _StubLink(
+          result: const ActivitySyncResult(
+            status: ActivitySyncStatus.ok,
+            fitnessTotals: [
+              FitnessTotalsDay(
+                dayKey: '2024-01-01',
+                dayStartUnix: 1704067200,
+                calories: 1,
+                steps: 1,
+                exerciseDurationSec: 1,
+              ),
+            ],
+            completedContainers: {'fitness_totals'},
+          ),
+        ),
+        prefs: prefs,
+      );
+      expect(repo.loadFitnessTotals(), throwsA(isA<FormatException>()));
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      // fail-closed: do not overwrite corrupt store
+      expect(prefs.getString(GateAPrefs.fitnessTotalsDayJson), '{not-json');
+    });
+
+    test('empty sync with corrupt fitness totals does not wipe', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.fitnessTotalsDayJson: '{not-json',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final repo = VitalsRepositoryImpl(
+        link: _StubLink(
+          result: const ActivitySyncResult(status: ActivitySyncStatus.empty),
+        ),
+        prefs: prefs,
+      );
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Left>());
+      expect(prefs.getString(GateAPrefs.fitnessTotalsDayJson), '{not-json');
     });
   });
 }

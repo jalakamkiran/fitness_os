@@ -103,6 +103,8 @@ void main() {
       GateAPrefs.sleepSessionsJson: '[{"beginUnix":1,"endUnix":2}]',
       GateAPrefs.dailyHrJson:
           '[{"dayKey":"2023-01-01","minBpm":1,"avgBpm":1,"maxBpm":1,"sampleCount":1}]',
+      GateAPrefs.fitnessTotalsDayJson:
+          '[{"dayKey":"2023-01-01","dayStartUnix":1,"calories":1,"steps":1,"exerciseDurationSec":1}]',
       GateAPrefs.workoutsJson:
           '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
     });
@@ -116,6 +118,7 @@ void main() {
         wipeCalls++;
         await prefs.remove(GateAPrefs.sleepSessionsJson);
         await prefs.remove(GateAPrefs.dailyHrJson);
+        await prefs.remove(GateAPrefs.fitnessTotalsDayJson);
       },
     );
 
@@ -124,11 +127,33 @@ void main() {
     expect(wipeCalls, 1);
     expect(prefs.getString(GateAPrefs.sleepSessionsJson), isNull);
     expect(prefs.getString(GateAPrefs.dailyHrJson), isNull);
+    expect(prefs.getString(GateAPrefs.fitnessTotalsDayJson), isNull);
     expect(prefs.getString(GateAPrefs.workoutsJson), isNull);
 
     final second = await repo.forgetDevice();
     expect(second.isRight, isTrue);
     expect(wipeCalls, 2);
+  });
+
+  test('Forget verify fails when fitness totals residue remains', () async {
+    SharedPreferences.setMockInitialValues({
+      GateAPrefs.rememberedMac: 'AA:BB:CC:DD:EE:FF',
+      GateAPrefs.gateAPassed: true,
+      GateAPrefs.fitnessTotalsDayJson:
+          '[{"dayKey":"2023-01-01","dayStartUnix":1,"calories":1,"steps":1,"exerciseDurationSec":1}]',
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final repo = DevicePairingRepositoryImpl(
+      link: _StubLink(),
+      prefs: prefs,
+      onForgetWipeExtras: () async {
+        // Intentionally leave fitness totals — verify must catch residue.
+      },
+    );
+
+    final out = await repo.forgetDevice();
+    expect(out.isLeft, isTrue);
+    expect(prefs.getString(GateAPrefs.fitnessTotalsDayJson), isNotNull);
   });
 }
 
