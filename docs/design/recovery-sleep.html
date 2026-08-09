@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fathom — Recovery · Sleep</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="home-prototype/styles.css" />
+  <link rel="stylesheet" href="recovery-sleep.css" />
+</head>
+<body>
+  <div class="stage recovery-stage">
+    <aside class="rail" id="rail">
+      <p class="rail-back"><a href="index.html">← Design review hub</a></p>
+      <p class="eyebrow">Owner review · Recovery Sleep</p>
+      <h1>State control</h1>
+      <p class="lede">Drive every Sleep list / detail / history combination. Excalidraw + locked honesty guards win over older Vitals IA.</p>
+
+      <div class="rail-section">
+        <h2>Presets</h2>
+        <div class="preset-grid" id="presetGrid">
+          <button type="button" data-preset="happy">1. Happy path</button>
+          <button type="button" data-preset="survey">2. First open survey</button>
+          <button type="button" data-preset="stages_only">3. Stages only</button>
+          <button type="button" data-preset="hr_only">4. HR only</button>
+          <button type="button" data-preset="trusleep">5. TruSleep enrich</button>
+          <button type="button" data-preset="never">6. Never synced</button>
+          <button type="button" data-preset="failed">7. Sync failed keep prior</button>
+          <button type="button" data-preset="hist_empty">8. History empty month</button>
+        </div>
+        <div class="rail-actions" style="margin-top:8px">
+          <button type="button" id="resetHappy">Reset to happy path</button>
+        </div>
+      </div>
+
+      <div class="rail-section">
+        <h2>Navigation</h2>
+        <div class="rail-field">
+          <label for="ctrlScreen">screen</label>
+          <select id="ctrlScreen">
+            <option value="list">list</option>
+            <option value="detail">detail</option>
+            <option value="history">history</option>
+          </select>
+        </div>
+        <div class="rail-field">
+          <label for="ctrlSubtab">recoverySubtab</label>
+          <select id="ctrlSubtab">
+            <option value="sleep">sleep</option>
+            <option value="vitals">vitals</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="rail-section">
+        <h2>Sync / data</h2>
+        <div class="rail-field">
+          <label for="ctrlSync">syncStatus</label>
+          <select id="ctrlSync">
+            <option value="never_synced">never_synced</option>
+            <option value="syncing">syncing</option>
+            <option value="ok">ok</option>
+            <option value="failed">failed</option>
+          </select>
+        </div>
+        <div class="rail-field">
+          <label for="ctrlSessions">sessionsPresent</label>
+          <select id="ctrlSessions">
+            <option value="none">none</option>
+            <option value="today_only">today_only</option>
+            <option value="today_plus_history">today_plus_history</option>
+          </select>
+        </div>
+        <label class="rail-check"><input type="checkbox" id="ctrlStages" /> stagesPresent</label>
+        <label class="rail-check"><input type="checkbox" id="ctrlHr" /> hrPresent</label>
+        <label class="rail-check"><input type="checkbox" id="ctrlOvernight" /> overnightSpan</label>
+        <label class="rail-check"><input type="checkbox" id="ctrlEnrich" /> truSleepEnrichPresent</label>
+        <div class="rail-field">
+          <label for="ctrlDetailMode">detailMode</label>
+          <select id="ctrlDetailMode">
+            <option value="continuous_hr">continuous_hr</option>
+            <option value="trusleep_enrich">trusleep_enrich</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="rail-section">
+        <h2>Survey</h2>
+        <label class="rail-check"><input type="checkbox" id="ctrlSurveyShow" /> surveyShouldShow</label>
+        <label class="rail-check"><input type="checkbox" id="ctrlSurveyAnswered" /> surveyAnswered</label>
+      </div>
+
+      <div class="rail-section">
+        <h2>History</h2>
+        <div class="rail-field">
+          <label for="ctrlHistMonth">historyMonth</label>
+          <select id="ctrlHistMonth">
+            <option value="current">current</option>
+            <option value="empty_month">empty_month</option>
+            <option value="prior_with_rows">prior_with_rows</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="rail-section">
+        <h2>IA / honesty</h2>
+        <label class="rail-check"><input type="checkbox" id="ctrlAdvanced" checked /> showAdvancedLocked</label>
+        <label class="rail-check locked" title="Hard lock — never renders a Quality number">
+          <input type="checkbox" id="ctrlQuality" disabled /> showQualityScore (HARD LOCK off)
+        </label>
+      </div>
+
+      <p class="rail-note mono">
+        <strong>Locked 2026-08-09</strong><br />
+        Sync: messages+stages → HR window → FileDownload last.<br />
+        Toggle only if enrich present.<br />
+        No Quality score. Bottom tab = Recovery.
+      </p>
+      <div class="own-matrix">
+        <strong>IA</strong><br />
+        Home | Recovery | Workouts<br />
+        Recovery → Vitals | Sleep<br />
+        Graphs: Sleep detail / history only
+      </div>
+      <div class="rail-actions">
+        <button type="button" id="themeToggleRail">Toggle theme</button>
+        <a class="btn ghost" href="vitals-tab.html">Vitals tab →</a>
+        <a class="btn ghost" href="swim-analytics.html">Swim analytics →</a>
+      </div>
+    </aside>
+
+    <div class="phone" id="phone">
+      <header class="app-header" id="appHeader">
+        <!-- filled by render -->
+      </header>
+      <main class="scroll" id="main">
+        <!-- filled by render -->
+      </main>
+      <nav class="tabbar" aria-label="Primary" id="tabbar">
+        <a class="tab" href="home-prototype/"><span>⌂</span>Home</a>
+        <a class="tab active" href="recovery-sleep.html" aria-current="page"><span>◉</span>Recovery</a>
+        <a class="tab" href="workouts-tab.html"><span>≡</span>Workouts</a>
+      </nav>
+    </div>
+  </div>
+
+  <script>
+(() => {
+  const TODAY = {
+    dateLabel: "Sun 9 Aug",
+    window: "23:18 → 06:30",
+    duration: "7h 12m",
+    durationHero: { h: "7", m: "12" },
+    overnight: true,
+  };
+
+  const STAGES = [
+    { key: "light", name: "Light", mins: 200, pct: 46 },
+    { key: "deep", name: "Deep", mins: 105, pct: 24 },
+    { key: "rem", name: "REM", mins: 100, pct: 23 },
+    { key: "awake", name: "Awake", mins: 27, pct: 7 },
+  ];
+
+  // Approximate overnight hypnogram blocks (fractions of night)
+  const HYPNO = [
+    { key: "awake", w: 0.04 },
+    { key: "light", w: 0.12 },
+    { key: "deep", w: 0.14 },
+    { key: "light", w: 0.08 },
+    { key: "rem", w: 0.1 },
+    { key: "light", w: 0.1 },
+    { key: "deep", w: 0.1 },
+    { key: "light", w: 0.08 },
+    { key: "rem", w: 0.12 },
+    { key: "light", w: 0.08 },
+    { key: "awake", w: 0.04 },
+  ];
+
+  const HR_POINTS = [68, 64, 61, 58, 56, 55, 54, 56, 58, 57, 55, 54, 53, 55, 58, 62, 66, 70];
+  const HR_STATS = { min: 52, avg: 58, max: 72 };
+
+  const HISTORY_ROWS = [
+    { dateLabel: "Sat 8 Aug", window: "23:05 → 06:12", duration: "7h 07m", stages: true },
+    { dateLabel: "Fri 7 Aug", window: "22:48 → 05:55", duration: "7h 07m", stages: true },
+    { dateLabel: "Thu 6 Aug", window: "23:40 → 06:40", duration: "7h 00m", stages: false },
+    { dateLabel: "Wed 5 Aug", window: "00:12 → 06:50", duration: "6h 38m", stages: true },
+    { dateLabel: "Tue 4 Aug", window: "22:55 → 06:05", duration: "7h 10m", stages: true },
+  ];
+
+  const SURVEY = [
+    { emoji: "😫", lbl: "Awful" },
+    { emoji: "😕", lbl: "Meh" },
+    { emoji: "😐", lbl: "Okay" },
+    { emoji: "🙂", lbl: "Good" },
+    { emoji: "😄", lbl: "Great" },
+  ];
+
+  const state = {
+    screen: "list",
+    recoverySubtab: "sleep",
+    syncStatus: "ok",
+    sessionsPresent: "today_plus_history",
+    stagesPresent: true,
+    hrPresent: true,
+    overnightSpan: true,
+    truSleepEnrichPresent: false,
+    detailMode: "continuous_hr",
+    surveyShouldShow: false,
+    surveyAnswered: false,
+    historyMonth: "current",
+    showAdvancedLocked: true,
+    showQualityScore: false, // HARD LOCK — never render
+    activePreset: "happy",
+    surveyPick: null,
+  };
+
+  const PRESETS = {
+    happy: {
+      screen: "list",
+      recoverySubtab: "sleep",
+      syncStatus: "ok",
+      sessionsPresent: "today_plus_history",
+      stagesPresent: true,
+      hrPresent: true,
+      overnightSpan: true,
+      truSleepEnrichPresent: false,
+      detailMode: "continuous_hr",
+      surveyShouldShow: false,
+      surveyAnswered: false,
+      historyMonth: "current",
+      showAdvancedLocked: true,
+      surveyPick: null,
+    },
+    survey: {
+      screen: "list",
+      recoverySubtab: "sleep",
+      syncStatus: "ok",
+      sessionsPresent: "today_only",
+      stagesPresent: true,
+      hrPresent: true,
+      overnightSpan: true,
+      truSleepEnrichPresent: false,
+      detailMode: "continuous_hr",
+      surveyShouldShow: true,
+      surveyAnswered: false,
+      historyMonth: "current",
+      showAdvancedLocked: true,
+      surveyPick: null,
+    },
+    stages_only: {
+      screen: "detail",
+      recoverySubtab: "sleep",
+      syncStatus: "ok",
+      sessionsPresent: "today_only",
+      stagesPresent: true,
+      hrPresent: false,
+      overnightSpan: true,
+      truSleepEnrichPresent: false,
+      detailMode: "continuous_hr",
+      surveyShouldShow: false,
+      surveyAnswered: true,
+      historyMonth: "current",
+      showAdvancedLocked: true,
+      surveyPick: null,
+    },
+    hr_only: {
+      screen: "detail",
+      recoverySubtab: "sleep",
+      syncStatus: "ok",
+      sessionsPresent: "today_only",
+      stagesPresent: false,
+      hrPresent: true,
+      overnightSpan: true,
+      truSleepEnrichPresent: false,
+      detailMode: "continuous_hr",
+      surveyShouldShow: false,
+      surveyAnswered: true,
+      historyMonth: "current",
+      showAdvancedLocked: true,
+      surveyPick: null,
+    },
+    trusleep: {
+      screen: "detail",
+      recoverySubtab: "sleep",
+      syncStatus: "ok",
+      sessionsPresent: "today_plus_history",
+      stagesPresent: true,
+      hrPresent: true,
+      overnightSpan: true,
+      truSleepEnrichPresent: true,
+      detailMode: "trusleep_enrich",
+      surveyShouldShow: false,
+      surveyAnswered: true,
+      historyMonth: "current",
+      showAdvancedLocked: true,
+      surveyPick: null,
+    },
+    never: {
+      screen: "list",
+      recoverySubtab: "sleep",
+      syncStatus: "never_synced",
+      sessionsPresent: "none",
+      stagesPresent: false,
+      hrPresent: false,
+      overnightSpan: false,
+      truSleepEnrichPresent: false,
+      detailMode: "continuous_hr",
+      surveyShouldShow: false,
+      surveyAnswered: false,
+      historyMonth: "empty_month",
+      showAdvancedLocked: true,
+      surveyPick: null,
+    },
+    failed: {
+      screen: "list",
+      recoverySubtab: "sleep",
+      syncStatus: "failed",
+      sessionsPresent: "today_plus_history",
+      stagesPresent: true,
+      hrPresent: true,
+      overnightSpan: true,
+      truSleepEnrichPresent: false,
+      detailMode: "continuous_hr",
+      surveyShouldShow: false,
+      surveyAnswered: true,
+      historyMonth: "current",
+      showAdvancedLocked: true,
+      surveyPick: null,
+    },
+    hist_empty: {
+      screen: "history",
+      recoverySubtab: "sleep",
+      syncStatus: "ok",
+      sessionsPresent: "today_only",
+      stagesPresent: true,
+      hrPresent: true,
+      overnightSpan: true,
+      truSleepEnrichPresent: false,
+      detailMode: "continuous_hr",
+      surveyShouldShow: false,
+      surveyAnswered: true,
+      historyMonth: "empty_month",
+      showAdvancedLocked: true,
+      surveyPick: null,
+    },
+  };
+
+  const els = {
+    header: document.getElementById("appHeader"),
+    main: document.getElementById("main"),
+    phoneToggle: null,
+    railToggle: document.getElementById("themeToggleRail"),
+    presetGrid: document.getElementById("presetGrid"),
+    ctrls: {
+      screen: document.getElementById("ctrlScreen"),
+      recoverySubtab: document.getElementById("ctrlSubtab"),
+      syncStatus: document.getElementById("ctrlSync"),
+      sessionsPresent: document.getElementById("ctrlSessions"),
+      stagesPresent: document.getElementById("ctrlStages"),
+      hrPresent: document.getElementById("ctrlHr"),
+      overnightSpan: document.getElementById("ctrlOvernight"),
+      truSleepEnrichPresent: document.getElementById("ctrlEnrich"),
+      detailMode: document.getElementById("ctrlDetailMode"),
+      surveyShouldShow: document.getElementById("ctrlSurveyShow"),
+      surveyAnswered: document.getElementById("ctrlSurveyAnswered"),
+      historyMonth: document.getElementById("ctrlHistMonth"),
+      showAdvancedLocked: document.getElementById("ctrlAdvanced"),
+    },
+  };
+
+  function fmtMins(m) {
+    const h = Math.floor(m / 60);
+    const r = m % 60;
+    if (h === 0) return `${r}m`;
+    if (r === 0) return `${h}h`;
+    return `${h}h ${r}m`;
+  }
+
+  function syncPill() {
+    if (state.syncStatus === "ok") {
+      return `<span class="sync-pill"><i></i> Synced</span>`;
+    }
+    if (state.syncStatus === "syncing") {
+      return `<span class="sync-pill progress"><i></i> Syncing</span>`;
+    }
+    if (state.syncStatus === "failed") {
+      return `<span class="sync-pill fail"><i></i> Sync failed</span>`;
+    }
+    return `<span class="sync-pill progress"><i></i> Never synced</span>`;
+  }
+
+  function brandSub() {
+    if (state.screen === "detail") return "Sleep · session";
+    if (state.screen === "history") return "Sleep · history";
+    return "Recovery · GT5";
+  }
+
+  function pathFromPoints(pts, w, h, pad) {
+    const min = Math.min(...pts) - 2;
+    const max = Math.max(...pts) + 2;
+    const span = Math.max(1, max - min);
+    const step = (w - pad * 2) / Math.max(1, pts.length - 1);
+    return pts
+      .map((v, i) => {
+        const x = pad + i * step;
+        const y = pad + (1 - (v - min) / span) * (h - pad * 2);
+        return `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
+      })
+      .join(" ");
+  }
+
+  function stageChipsHtml() {
+    if (!state.stagesPresent) return "";
+    return `
+      <div class="stage-chips" aria-label="Stage mix">
+        ${STAGES.map((s) => `
+          <span class="stage-chip ${s.key}"><i></i>${s.name} ${fmtMins(s.mins)}</span>
+        `).join("")}
+      </div>
+      <p class="provisional-note">stage labels provisional · message path</p>
+    `;
+  }
+
+  function todayCardHtml(opts = {}) {
+    const { clickable = false, compact = false } = opts;
+    const tag = clickable ? "button" : "section";
+    const attrs = clickable
+      ? `type="button" class="card sleep-card" data-action="open-detail"`
+      : `class="card sleep-card" aria-label="Today's sleep"`;
+    return `
+      <${tag} ${attrs}>
+        <p class="kicker">Today · sleep</p>
+        <p class="sleep-date">${TODAY.dateLabel}</p>
+        <p class="sleep-duration">${TODAY.durationHero.h}<span class="unit">h</span> ${TODAY.durationHero.m}<span class="unit">m</span></p>
+        <p class="sleep-window">${TODAY.window}${state.overnightSpan ? " · overnight" : ""} · GT5</p>
+        ${stageChipsHtml()}
+        ${compact ? "" : `
+          <div class="sleep-actions">
+            <button type="button" class="btn primary" data-action="open-detail">View more details</button>
+          </div>
+        `}
+      </${tag}>
+    `;
+  }
+
+  function surveyHtml() {
+    if (!state.surveyShouldShow || state.surveyAnswered) return "";
+    return `
+      <section class="card survey-block" aria-label="Feel on wake">
+        <p class="kicker">Feel on wake</p>
+        <p class="survey-q">How do you feel waking up?</p>
+        <div class="survey-options" role="group" aria-label="Wake feeling">
+          ${SURVEY.map((s, i) => `
+            <button type="button" class="survey-opt${state.surveyPick === i ? " selected" : ""}" data-action="survey" data-idx="${i}">
+              <span class="emoji" aria-hidden="true">${s.emoji}</span>
+              <span class="lbl">${s.lbl}</span>
+            </button>
+          `).join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  function advancedLockedHtml() {
+    if (!state.showAdvancedLocked) return "";
+    return `
+      <section class="card locked-chrome" aria-disabled="true">
+        <p class="kicker">Coming later</p>
+        <p class="lock-label">Advanced sleep metrics — unlock soon</p>
+        <p class="lock-sub">no fake metrics · quality score deferred</p>
+      </section>
+    `;
+  }
+
+  function emptySleepHtml() {
+    const syncing = state.syncStatus === "syncing";
+    const failed = state.syncStatus === "failed";
+    let title = "No sleep yet";
+    let body = "No sleep sessions stored yet. Wear overnight (prefer night 2 after pairing), then Sync.";
+    if (syncing) {
+      title = "Syncing sleep";
+      body = "Pulling messages · stages first · HR window next · FileDownload last (non-blocking).";
+    } else if (failed && state.sessionsPresent === "none") {
+      title = "Sync failed";
+      body = "No prior sleep stored. Retry Sync when the watch is nearby.";
+    }
+    return `
+      <section class="card empty-block">
+        <p class="kicker">Sleep</p>
+        <p class="sleep-date" style="font-size:18px">${title}</p>
+        <p>${body}</p>
+        <p class="mono-hint">GT5 · ${state.syncStatus.replace("_", " ")}</p>
+      </section>
+    `;
+  }
+
+  function vitalsStubHtml() {
+    return `
+      <section class="card vitals-stub">
+        <p class="kicker">Vitals subtab</p>
+        <p class="stub-title">Enable · Sync · whole-day HR</p>
+        <p class="stub-body">Existing vitals surface stays here. This prototype focuses on Sleep.</p>
+        <ul class="stub-list">
+          <li>Enable auto-HR / TruSleep arming</li>
+          <li>Sync health + last pass</li>
+          <li>Whole-day continuous HR (not sleep-windowed)</li>
+        </ul>
+        <p class="provisional-note" style="margin-top:12px">see vitals-tab.html for trend craft</p>
+      </section>
+    `;
+  }
+
+  function hypnogramHtml() {
+    return `
+      <div class="hypnogram" aria-hidden="true">
+        ${HYPNO.map((h) => `<div class="hyp-seg ${h.key}" style="flex:${h.w}"></div>`).join("")}
+      </div>
+      <div class="hyp-legend">
+        <span class="light"><i></i>Light</span>
+        <span class="deep"><i></i>Deep</span>
+        <span class="rem"><i></i>REM</span>
+        <span class="awake"><i></i>Awake</span>
+      </div>
+    `;
+  }
+
+  function stageMixHtml() {
+    return `
+      <div class="mix-rows">
+        ${STAGES.map((s) => `
+          <div class="mix-row">
+            <span class="name">${s.name}</span>
+            <div class="mix-track"><div class="mix-fill ${s.key}" style="width:${s.pct}%"></div></div>
+            <span class="vals">${fmtMins(s.mins)} · ${s.pct}%</span>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function hrChartHtml() {
+    const d = pathFromPoints(HR_POINTS, 320, 110, 10);
+    return `
+      <div class="hr-metrics">
+        <div class="hr-metric"><p>Min</p><strong>${HR_STATS.min}<span class="unit">bpm</span></strong></div>
+        <div class="hr-metric"><p>Avg</p><strong>${HR_STATS.avg}<span class="unit">bpm</span></strong></div>
+        <div class="hr-metric"><p>Max</p><strong>${HR_STATS.max}<span class="unit">bpm</span></strong></div>
+      </div>
+      <div class="hr-chart" aria-hidden="true">
+        <svg viewBox="0 0 320 110" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="sleepHrFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.35" />
+              <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
+            </linearGradient>
+          </defs>
+          <path class="area" d="${d} L310 100 L10 100 Z" />
+          <path class="line" d="${d}" />
+        </svg>
+        <div class="axis">
+          <span>23:18</span><span>02:00</span><span>06:30</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function detailModeToggleHtml() {
+    if (!state.truSleepEnrichPresent) return "";
+    return `
+      <div class="detail-mode-toggle" role="tablist" aria-label="HR enrich mode">
+        <button type="button" role="tab" class="${state.detailMode === "continuous_hr" ? "active" : ""}" data-action="mode" data-mode="continuous_hr" aria-selected="${state.detailMode === "continuous_hr"}">Continuous HR</button>
+        <button type="button" role="tab" class="${state.detailMode === "trusleep_enrich" ? "active" : ""}" data-action="mode" data-mode="trusleep_enrich" aria-selected="${state.detailMode === "trusleep_enrich"}">TruSleep enrich</button>
+      </div>
+    `;
+  }
+
+  function structureSectionHtml() {
+    if (!state.stagesPresent) {
+      return `
+        <section class="card empty-block">
+          <p class="section-label">Stage structure</p>
+          <p>No stage blocks for this session. Message-path stages absent — not invented.</p>
+          <p class="mono-hint">wear overnight · Sync · stages from FitnessData</p>
+        </section>
+      `;
+    }
+    return `
+      <section class="card">
+        <p class="section-label">Stage structure</p>
+        ${hypnogramHtml()}
+      </section>
+      <section class="card">
+        <p class="section-label">Stage mix</p>
+        ${stageMixHtml()}
+        <p class="provisional-note">provisional stage mapping · message path SoT</p>
+      </section>
+    `;
+  }
+
+  function hrSectionHtml() {
+    // TruSleep enrich mode: honest placeholder, keep structure above; do not invent PPG BPM
+    if (state.truSleepEnrichPresent && state.detailMode === "trusleep_enrich") {
+      return `
+        <section class="card">
+          <p class="section-label">TruSleep enrich</p>
+          <div class="enrich-placeholder">
+            <p>TruSleep file on device · enrich preview</p>
+            <p class="mono-sub">PPG decode deferred · not a BPM claim</p>
+          </div>
+          ${state.hrPresent ? `
+            <p class="provisional-note" style="margin-top:12px">continuous HR still available · switch mode to emphasize</p>
+          ` : ""}
+        </section>
+      `;
+    }
+
+    if (!state.hrPresent) {
+      const withStages = state.stagesPresent
+        ? "Stages synced. Overnight HR needs auto-HR armed and wear — Sync again after."
+        : "Overnight HR needs auto-HR armed and wear — Sync again after.";
+      return `
+        <section class="card empty-block">
+          <p class="section-label">Continuous HR</p>
+          <p>${withStages}</p>
+          <p class="mono-hint">wear → Enable auto-HR → Sync</p>
+        </section>
+      `;
+    }
+
+    return `
+      <section class="card">
+        <p class="section-label">Continuous HR · windowed</p>
+        ${hrChartHtml()}
+        ${state.overnightSpan ? `<p class="provisional-note">window crossed midnight · both dayKeys</p>` : ""}
+      </section>
+    `;
+  }
+
+  function listHtml() {
+    if (state.recoverySubtab === "vitals") {
+      return `
+        <div class="period-row">
+          <div class="recovery-tabs" role="tablist" aria-label="Recovery">
+            <button type="button" class="recovery-tab active" data-action="subtab" data-sub="vitals" role="tab" aria-selected="true">Vitals</button>
+            <button type="button" class="recovery-tab" data-action="subtab" data-sub="sleep" role="tab" aria-selected="false">Sleep</button>
+          </div>
+          ${syncPill()}
+        </div>
+        ${vitalsStubHtml()}
+      `;
+    }
+
+    const hasToday = hasAnySession();
+    const failedKeepPrior = state.syncStatus === "failed" && hasToday;
+
+    return `
+      <div class="period-row">
+        <div class="recovery-tabs" role="tablist" aria-label="Recovery">
+          <button type="button" class="recovery-tab" data-action="subtab" data-sub="vitals" role="tab" aria-selected="false">Vitals</button>
+          <button type="button" class="recovery-tab active" data-action="subtab" data-sub="sleep" role="tab" aria-selected="true">Sleep</button>
+        </div>
+        ${syncPill()}
+      </div>
+      <div class="sleep-list-head">
+        <h1>Sleep</h1>
+        <span class="meta">${failedKeepPrior ? "prior kept" : "GT5 · today"}</span>
+      </div>
+      ${hasToday ? todayCardHtml() : emptySleepHtml()}
+      ${hasToday ? surveyHtml() : ""}
+      <button type="button" class="link-row" data-action="open-history">
+        <span>View historic sleep data</span>
+        <span class="chev" aria-hidden="true">›</span>
+      </button>
+      ${advancedLockedHtml()}
+    `;
+  }
+
+  function hasAnySession() {
+    return state.sessionsPresent === "today_only" || state.sessionsPresent === "today_plus_history";
+  }
+
+  function detailHtml() {
+    if (!hasAnySession()) {
+      return `
+        <div class="detail-head" style="padding-left:2px">
+          <div>
+            <p class="detail-title">No session</p>
+            <p class="detail-sub">nothing stored · Sync first</p>
+          </div>
+        </div>
+        <section class="card empty-block">
+          <p>No sleep sessions stored yet. Wear overnight (prefer night 2 after pairing), then Sync.</p>
+          <p class="mono-hint">GT5 · sessionsPresent=none</p>
+        </section>
+      `;
+    }
+    return `
+      <div class="detail-head" style="padding-left:2px">
+        <div>
+          <p class="detail-title">${TODAY.dateLabel}</p>
+          <p class="detail-sub">${TODAY.window} · ${TODAY.duration}${state.overnightSpan ? " · overnight" : ""}</p>
+        </div>
+      </div>
+      ${detailModeToggleHtml()}
+      ${structureSectionHtml()}
+      ${hrSectionHtml()}
+    `;
+  }
+
+  const MONTH_CYCLE = ["empty_month", "prior_with_rows", "current"];
+  const MONTH_LABELS = {
+    empty_month: "June 2026",
+    prior_with_rows: "July 2026",
+    current: "August 2026",
+  };
+
+  function historyHtml() {
+    const key = state.historyMonth;
+    const monthLabel = MONTH_LABELS[key] || "August 2026";
+    // No inventing history when nothing is stored at all
+    const forceEmpty = !hasAnySession() || key === "empty_month";
+    const prior = key === "prior_with_rows";
+    const rows = forceEmpty
+      ? []
+      : prior
+        ? HISTORY_ROWS.map((r) => ({ ...r, dateLabel: r.dateLabel.replace("Aug", "Jul") }))
+        : HISTORY_ROWS;
+
+    return `
+      <div class="detail-head" style="padding-left:2px">
+        <div>
+          <p class="detail-title">Sleep history</p>
+          <p class="detail-sub">month window · charts later</p>
+        </div>
+      </div>
+      <div class="month-nav">
+        <p class="month-label">${monthLabel}</p>
+        <div class="nav-btns">
+          <button type="button" data-action="month-prev" aria-label="Previous month">‹</button>
+          <button type="button" data-action="month-next" aria-label="Next month">›</button>
+        </div>
+      </div>
+      ${forceEmpty ? `
+        <section class="card empty-block">
+          <p class="kicker">This month</p>
+          <p>No sleep sessions stored yet. Wear overnight (prefer night 2 after pairing), then Sync.</p>
+          <p class="mono-hint">${monthLabel} · empty</p>
+        </section>
+      ` : `
+        <ul class="history-list" aria-label="Sleep sessions">
+          ${rows.map((r) => `
+            <li>
+              <button type="button" class="card sleep-card" data-action="open-detail" style="width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer">
+                <p class="kicker">Session</p>
+                <p class="sleep-date" style="font-size:17px">${r.dateLabel}</p>
+                <p class="sleep-window">${r.window} · ${r.duration}${r.stages ? " · stages" : ""}</p>
+              </button>
+            </li>
+          `).join("")}
+        </ul>
+      `}
+      <p class="charts-later">Charts later · list first</p>
+    `;
+  }
+
+  function syncRailFromState() {
+    const c = els.ctrls;
+    c.screen.value = state.screen;
+    c.recoverySubtab.value = state.recoverySubtab;
+    c.syncStatus.value = state.syncStatus;
+    c.sessionsPresent.value = state.sessionsPresent;
+    c.stagesPresent.checked = !!state.stagesPresent;
+    c.hrPresent.checked = !!state.hrPresent;
+    c.overnightSpan.checked = !!state.overnightSpan;
+    c.truSleepEnrichPresent.checked = !!state.truSleepEnrichPresent;
+    c.detailMode.value = state.detailMode;
+    c.detailMode.disabled = !state.truSleepEnrichPresent;
+    c.surveyShouldShow.checked = !!state.surveyShouldShow;
+    c.surveyAnswered.checked = !!state.surveyAnswered;
+    c.historyMonth.value = state.historyMonth;
+    c.showAdvancedLocked.checked = !!state.showAdvancedLocked;
+
+    els.presetGrid.querySelectorAll("button").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.preset === state.activePreset);
+    });
+  }
+
+  function applyPreset(key) {
+    const p = PRESETS[key];
+    if (!p) return;
+    Object.assign(state, p, { activePreset: key, showQualityScore: false });
+    render();
+  }
+
+  function setTheme(next) {
+    document.documentElement.setAttribute("data-theme", next);
+    const label = next === "dark" ? "Light" : "Dark";
+    const phoneBtn = document.getElementById("themeToggle");
+    if (phoneBtn) phoneBtn.textContent = label;
+    if (els.railToggle) els.railToggle.textContent = `Theme · ${next === "dark" ? "Dark" : "Light"}`;
+  }
+
+  function toggleTheme() {
+    const cur = document.documentElement.getAttribute("data-theme") || "light";
+    setTheme(cur === "light" ? "dark" : "light");
+  }
+
+  function renderHeader() {
+    const showBack = state.screen === "detail" || state.screen === "history";
+    els.header.innerHTML = `
+      ${showBack
+        ? `<button class="icon-round" type="button" data-action="back" aria-label="Back">←</button>`
+        : `<button class="icon-round" type="button" aria-label="Menu">☰</button>`}
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">F</span>
+        <div>
+          <p class="brand-title">Fathom</p>
+          <p class="brand-sub mono">${brandSub()}</p>
+        </div>
+      </div>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">Dark</button>
+    `;
+    document.getElementById("themeToggle")?.addEventListener("click", toggleTheme);
+    setTheme(document.documentElement.getAttribute("data-theme") || "light");
+  }
+
+  function render() {
+    // Honesty: enrich mode meaningless without enrich
+    if (!state.truSleepEnrichPresent && state.detailMode === "trusleep_enrich") {
+      state.detailMode = "continuous_hr";
+    }
+    // Hard lock quality
+    state.showQualityScore = false;
+    // Vitals stub has no detail/history — keep rail in sync
+    if (state.recoverySubtab === "vitals") {
+      state.screen = "list";
+    }
+
+    renderHeader();
+
+    if (state.screen === "detail" && state.recoverySubtab === "sleep") {
+      els.main.innerHTML = detailHtml();
+    } else if (state.screen === "history" && state.recoverySubtab === "sleep") {
+      els.main.innerHTML = historyHtml();
+    } else {
+      els.main.innerHTML = listHtml();
+    }
+
+    syncRailFromState();
+  }
+
+  function onMainClick(e) {
+    const t = e.target.closest("[data-action]");
+    if (!t) return;
+    const action = t.dataset.action;
+    state.activePreset = null;
+
+    if (action === "open-detail") {
+      if (!hasAnySession()) return;
+      state.screen = "detail";
+      state.recoverySubtab = "sleep";
+    } else if (action === "open-history") {
+      state.screen = "history";
+      state.recoverySubtab = "sleep";
+    } else if (action === "back") {
+      state.screen = "list";
+    } else if (action === "subtab") {
+      state.recoverySubtab = t.dataset.sub;
+      state.screen = "list";
+    } else if (action === "mode") {
+      if (!state.truSleepEnrichPresent) return;
+      state.detailMode = t.dataset.mode;
+    } else if (action === "survey") {
+      state.surveyPick = Number(t.dataset.idx);
+      state.surveyAnswered = true;
+      state.surveyShouldShow = false;
+    } else if (action === "month-prev") {
+      const i = Math.max(0, MONTH_CYCLE.indexOf(state.historyMonth) - 1);
+      state.historyMonth = MONTH_CYCLE[i];
+    } else if (action === "month-next") {
+      const i = Math.min(MONTH_CYCLE.length - 1, MONTH_CYCLE.indexOf(state.historyMonth) + 1);
+      state.historyMonth = MONTH_CYCLE[i];
+    }
+    render();
+  }
+
+  function bindRail() {
+    const mapSelect = {
+      ctrlScreen: "screen",
+      ctrlSubtab: "recoverySubtab",
+      ctrlSync: "syncStatus",
+      ctrlSessions: "sessionsPresent",
+      ctrlDetailMode: "detailMode",
+      ctrlHistMonth: "historyMonth",
+    };
+    Object.entries(mapSelect).forEach(([id, key]) => {
+      document.getElementById(id)?.addEventListener("change", (e) => {
+        state[key] = e.target.value;
+        state.activePreset = null;
+        if (key === "truSleepEnrichPresent") return;
+        render();
+      });
+    });
+
+    const mapCheck = {
+      ctrlStages: "stagesPresent",
+      ctrlHr: "hrPresent",
+      ctrlOvernight: "overnightSpan",
+      ctrlEnrich: "truSleepEnrichPresent",
+      ctrlSurveyShow: "surveyShouldShow",
+      ctrlSurveyAnswered: "surveyAnswered",
+      ctrlAdvanced: "showAdvancedLocked",
+    };
+    Object.entries(mapCheck).forEach(([id, key]) => {
+      document.getElementById(id)?.addEventListener("change", (e) => {
+        state[key] = e.target.checked;
+        state.activePreset = null;
+        if (key === "truSleepEnrichPresent" && !e.target.checked) {
+          state.detailMode = "continuous_hr";
+        }
+        if (key === "surveyAnswered" && e.target.checked) {
+          state.surveyShouldShow = false;
+        }
+        if (key === "surveyShouldShow" && e.target.checked) {
+          state.surveyAnswered = false;
+        }
+        render();
+      });
+    });
+
+    els.presetGrid.querySelectorAll("button").forEach((btn) => {
+      btn.addEventListener("click", () => applyPreset(btn.dataset.preset));
+    });
+    document.getElementById("resetHappy")?.addEventListener("click", () => applyPreset("happy"));
+    els.railToggle?.addEventListener("click", toggleTheme);
+  }
+
+  els.main.addEventListener("click", onMainClick);
+  els.header.addEventListener("click", onMainClick);
+  bindRail();
+  applyPreset("happy");
+})();
+  </script>
+</body>
+</html>
