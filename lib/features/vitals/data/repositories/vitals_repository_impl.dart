@@ -507,8 +507,18 @@ class VitalsRepositoryImpl implements VitalsRepository {
       GateAPrefs.sleepSessionsJson,
       jsonEncode(merged.map((s) => s.toJson()).toList()),
     );
-    await _deleteStageFiles(replaced);
-    await _persistSleepStages(valid);
+    // Preserve prior stage side-files when re-sync sends empty stages for the
+    // same merge key (partial sibling / parse drop). Delete only when the
+    // overlapping session identity is gone.
+    for (final old in replaced) {
+      final stillSameKey = valid.any((i) => i.mergeKey == old.mergeKey);
+      if (!stillSameKey) {
+        await _deleteStageFiles([old]);
+      }
+    }
+    await _persistSleepStages(
+      valid.where((s) => s.stages.isNotEmpty).toList(),
+    );
   }
 
   String _sleepKey(SleepSessionSummary s) => s.mergeKey;

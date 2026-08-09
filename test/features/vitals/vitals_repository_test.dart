@@ -450,6 +450,63 @@ void main() {
       expect(await repo.loadSleepSessions(), isEmpty);
     });
 
+    test('re-sync with empty stages preserves prior stage side-file', () async {
+      final tempRoot = Directory.systemTemp.createTempSync('fos_sleep_keep_');
+      addTearDown(() {
+        if (tempRoot.existsSync()) {
+          tempRoot.deleteSync(recursive: true);
+        }
+      });
+
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      const begin = 1_700_000_000;
+      const end = begin + 3 * 3600;
+      final withStages = SleepSessionSummary(
+        beginUnix: begin,
+        endUnix: end,
+        stages: const [
+          SleepStageSummary(timestampUnix: begin, durationMin: 60, wireType: 1),
+          SleepStageSummary(
+            timestampUnix: begin + 3600,
+            durationMin: 60,
+            wireType: 3,
+          ),
+        ],
+      );
+      final repo = VitalsRepositoryImpl(
+        link: _StubLink(
+          result: ActivitySyncResult(
+            status: ActivitySyncStatus.ok,
+            sleepSessions: [withStages],
+            completedContainers: {'sleep'},
+          ),
+        ),
+        prefs: prefs,
+        sideFileRootOverride: () => tempRoot,
+      );
+      await repo.syncFromWatch();
+      expect(await repo.loadSleepStages(withStages), hasLength(2));
+
+      final emptyStages = SleepSessionSummary(beginUnix: begin, endUnix: end);
+      final repo2 = VitalsRepositoryImpl(
+        link: _StubLink(
+          result: ActivitySyncResult(
+            status: ActivitySyncStatus.ok,
+            sleepSessions: [emptyStages],
+            completedContainers: {'sleep'},
+          ),
+        ),
+        prefs: prefs,
+        sideFileRootOverride: () => tempRoot,
+      );
+      await repo2.syncFromWatch();
+      expect(await repo2.loadSleepSessions(), hasLength(1));
+      expect(await repo2.loadSleepStages(emptyStages), hasLength(2));
+    });
+
     test('overnight sleep HR window loads both dayKeys', () async {
       final tempRoot = Directory.systemTemp.createTempSync('fos_sleep_hr_');
       addTearDown(() {

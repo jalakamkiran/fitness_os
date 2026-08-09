@@ -1,7 +1,7 @@
 ---
 title: "feat: Recovery Sleep detail — stages, windowed HR, FileDownload probe"
 type: feat
-status: active
+status: completed
 date: 2026-08-09
 origin: docs/brainstorms/2026-08-09-vitals-sleep-detail-stages-hr-requirements.md
 ---
@@ -276,10 +276,124 @@ sequenceDiagram
 
 ## Documentation / Experiment Plan
 
-- Visual SoT: `docs/brainstorms/Sleep metrics.excalidraw` (locked callouts)
+- Visual flow SoT: `docs/brainstorms/Sleep metrics.excalidraw` (locked callouts)
+- **Interactive UI SoT (Flutter craft):** `docs/design/recovery-sleep.html` + `docs/design/recovery-sleep.css` — linked from `docs/design/index.html`
 - Origin: `docs/brainstorms/2026-08-09-vitals-sleep-detail-stages-hr-requirements.md`
 - Tonight: TruSleep + auto-HR armed wear
 - Tomorrow evening: compare Health vs companion (sessions, HR window, FileDownload present|absent) → update sleep-files stub + probe matrix
+
+---
+
+## Design Prototype Spec
+
+*Appended 2026-08-09 from the HTML owner-review prototype. Prefer this + Excalidraw over inventing Flutter layout. Reuse existing phone chrome (`tokens.css`, `home-prototype/styles.css` patterns → Flutter theme / shell).*
+
+### Prototype files
+
+| Path | Role |
+|------|------|
+| `docs/design/recovery-sleep.html` | Single-file phone + left state rail; vanilla JS `state` + `render()` |
+| `docs/design/recovery-sleep.css` | Screen-specific only (subtabs, hypnogram, mix bars, HR chart, survey, rail) |
+| `docs/design/tokens.css` | `--bg`, `--ink`, `--accent`, `--amber`, `--hot`, `--up`, fonts, radii |
+| `docs/design/home-prototype/styles.css` | `.phone` (~390×844), `.app-header`, `.card`, `.tabbar`, `.seg`, `.btn` |
+| `docs/design/index.html` | Hub card **01b · Recovery · Sleep** |
+
+Fonts: Manrope 400–800 + IBM Plex Mono 400/500. Theme: `html[data-theme=light|dark]` via same toggle pattern as vitals-tab / home-states.
+
+### Brand & IA (locked in chrome)
+
+- Product: **Fathom** — calm instrument / analyst tone. Not coach theater, not Huawei Health clone, not medical alarm UI.
+- Lettermark **F** only in chrome (never Discobolus athlete).
+- Bottom tabs: **Home | Recovery | Workouts** (Recovery replaces Vitals label); Recovery selected on this surface.
+- Recovery hosts top segmented switcher: **Vitals | Sleep** (mirror Workouts `sport_tabs` / vitals period seg).
+- Graphs live on Sleep detail / history only — never on Home.
+- Avoid AI-slop: no purple gradients, glow, emoji-heavy chrome (emoji OK only inside feel-on-wake), no stacked multi-shadow cards, no rounded-full pill spam.
+
+### Screen inventory
+
+| ID | Route intent | Contents |
+|----|--------------|----------|
+| **S0** | Recovery · Sleep list | Sync pill; today’s sleep card (date, duration, window — **no Quality number**); optional provisional stage chips if stages present; CTA **View more details**; feel-on-wake survey when `surveyShouldShow && !surveyAnswered`; row **View historic sleep data**; locked chrome **Advanced sleep metrics — unlock soon** (no fake metrics). Empty / syncing / failed variants. |
+| **S0b** | Recovery · Vitals stub | Thin stub: Enable / Sync / whole-day HR — existing vitals surface; selectable but secondary in prototype. |
+| **S1** | Sleep detail (session) | App-header back; date + local window + duration (+ overnight caption); **both** hypnogram + stage mix when stages present; continuous HR min/avg/max + BPM line when `hrPresent`; honesty empties when absent; TruSleep↔Continuous HR toggle **only if** `truSleepEnrichPresent` (hide entirely otherwise — never disabled-grey fake toggle). Prefer display both; toggle is emphasis/mode. TruSleep mode: honest placeholder, not invented PPG BPM. |
+| **S2** | History (month) | Month label + prev/next arrows (no custom calendar); scrollable session cards (same card shape as today); empty month; mono **Charts later · list first**. |
+| **S3** | Feel-on-wake | Inline on S0 (not a separate modal in prototype): “How do you feel waking up?” + 5 emoji options; answering sets answered and never re-shows for that session. |
+
+### Copy honesty (required strings / tone)
+
+| Situation | Copy |
+|-----------|------|
+| Empty sleep / empty month | `No sleep sessions stored yet. Wear overnight (prefer night 2 after pairing), then Sync.` |
+| Empty HR with stages | `Stages synced. Overnight HR needs auto-HR armed and wear — Sync again after.` |
+| Empty HR guidance meta | `wear → Enable auto-HR → Sync` (mono) |
+| Stages absent | `No stage blocks for this session. Message-path stages absent — not invented.` |
+| FileDownload absent | Do **not** mention PPG. Toggle hidden. |
+| FileDownload present (TruSleep mode) | `TruSleep file on device · enrich preview` + mono `PPG decode deferred · not a BPM claim` |
+| Advanced locked | `Advanced sleep metrics — unlock soon` + mono `no fake metrics · quality score deferred` |
+| Stage chips / mix caption | `stage labels provisional · message path` / `provisional stage mapping · message path SoT` |
+| Overnight HR caption | `window crossed midnight · both dayKeys` |
+| Instrument meta | Short, factual, mono — e.g. `GT5 · synced… · 7h 12m`, `23:18 → 06:30 · overnight` |
+
+**Hard lock:** never render a Quality score number (not even as demo).
+
+### Visual / chart craft
+
+- **Hypnogram:** horizontal stage blocks; calm colors from tokens — Light=`--ink-dim`, Deep=`--accent`, REM=`--amber`, Awake=`--hot` (sparingly). Mono legend.
+- **Stage mix:** simple horizontal bars + duration + % — not a rainbow dashboard.
+- **HR line:** single accent stroke + optional area fill (same approach as `vitals-tab.html` HR chart); min/avg/max as one metric row, not three competing cards.
+- **Cards:** existing `.card` patterns; fewer cards; no nested card-in-card clutter.
+- **One job per section:** list vs detail vs history clearly separated.
+
+### Interaction (prototype ↔ Flutter)
+
+- Tap **View more details** → push Sleep detail (named route + session args).
+- Tap **View historic sleep data** → history month list.
+- Back on detail/history → Sleep list.
+- Theme toggle in header (light/dark tokens).
+- Survey pick → persist once per session key; hide survey thereafter.
+- Month prev/next → adjacent calendar months (prototype cycles empty → prior-with-rows → current for demos).
+
+### State matrix (UI must support all combinations)
+
+**Navigation:** `screen`: list | detail | history · `recoverySubtab`: vitals | sleep  
+
+**Sync / data:** `syncStatus`: never_synced | syncing | ok | failed · `sessionsPresent`: none | today_only | today_plus_history · `stagesPresent` · `hrPresent` · `overnightSpan` · `truSleepEnrichPresent` · `detailMode`: continuous_hr | trusleep_enrich (meaningful only if enrich present)  
+
+**Survey:** `surveyShouldShow` · `surveyAnswered` (if answered, never show again)  
+
+**History:** `historyMonth`: current | empty_month | prior_with_rows  
+
+**IA:** `showAdvancedLocked` default true · `showQualityScore` **false hard lock**
+
+**Honesty when combining:** if `sessionsPresent=none`, detail/history must not invent a session — show empty copy. Vitals subtab forces list (no detail chrome). Toggle never appears unless enrich present.
+
+### Named review presets (owner click-through)
+
+1. Happy path — stages+HR, no enrich, no survey  
+2. First open survey  
+3. Stages only (HR absent)  
+4. HR only (stages absent) — rare honesty  
+5. TruSleep enrich present (toggle on)  
+6. Never synced empty  
+7. Sync failed keep prior  
+8. History empty month  
+
+### Flutter mapping notes
+
+- **U3** → S0 shell + Recovery tab label + Vitals|Sleep seg (Vitals stub / existing vitals body).  
+- **U4** → S1 hypnogram + mix + HR + conditional toggle + honesty empties.  
+- **U5** → S0 survey + S2 history.  
+- Match sibling surfaces: `docs/design/vitals-tab.html`, `docs/design/swim-analytics.html`, Workouts sport tabs.  
+- Excalidraw + this section win if older vitals HTML still says bottom tab “Vitals”.
+
+### Out of scope for design (do not ship in UI)
+
+- Live underwater SpO2 / swim hypoxic  
+- Real PPG waveform decode art  
+- Sleep Quality score  
+- Stress / HRV / PAI / emotions under Sleep  
+- Food under Recovery  
+- Changing Home contents  
 
 ---
 
@@ -287,6 +401,8 @@ sequenceDiagram
 
 - Origin requirements: `docs/brainstorms/2026-08-09-vitals-sleep-detail-stages-hr-requirements.md`
 - Visual flow: `docs/brainstorms/Sleep metrics.excalidraw`
+- **UI prototype:** `docs/design/recovery-sleep.html`, `docs/design/recovery-sleep.css`
+- Sibling craft: `docs/design/vitals-tab.html`, `docs/design/swim-analytics.html`, `docs/design/home-prototype/styles.css`, `docs/design/tokens.css`
 - Prior vitals plan: `docs/plans/2026-07-18-004-feat-vitals-sleep-hr-tab-plan.md`
 - Wire: `docs/wire-specs/huawei-br-gt5-fitness-data.md`, `docs/wire-specs/huawei-br-gt5-sleep-files.md`
 - Catalog: `docs/catalogs/gt5-a07-full-metrics.md`

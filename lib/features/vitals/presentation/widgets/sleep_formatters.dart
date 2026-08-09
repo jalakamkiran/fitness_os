@@ -79,20 +79,31 @@ bool sleepCrossesLocalMidnight(SleepSessionSummary session) {
       begin.day != end.day;
 }
 
-/// Most recent session whose local end falls on [now]'s calendar day.
+/// Today's primary sleep session for the Sleep list hero card.
+///
+/// Prefers an overnight (midnight-crossing) session ending today; otherwise the
+/// longest session ending today. Naps must not beat overnight when both end today.
 SleepSessionSummary? todaysSleepSession(
   List<SleepSessionSummary> sessions, {
   DateTime? now,
 }) {
   final n = now ?? DateTime.now();
   final today = DateTime(n.year, n.month, n.day);
+  final endingToday = <SleepSessionSummary>[];
   for (final s in sessions) {
     if (s.beginUnix <= 0 || s.endUnix <= s.beginUnix) continue;
     final end = sleepLocalFromUnix(s.endUnix);
     final endDay = DateTime(end.year, end.month, end.day);
-    if (endDay == today) return s;
+    if (endDay == today) endingToday.add(s);
   }
-  return null;
+  if (endingToday.isEmpty) return null;
+  final overnight = endingToday.where(sleepCrossesLocalMidnight).toList();
+  if (overnight.isNotEmpty) {
+    overnight.sort((a, b) => b.durationSec.compareTo(a.durationSec));
+    return overnight.first;
+  }
+  endingToday.sort((a, b) => b.durationSec.compareTo(a.durationSec));
+  return endingToday.first;
 }
 
 String sleepMonthLabel(int year, int month) {
