@@ -6,7 +6,7 @@ import 'package:fitness_os/app/shell/app_shell.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('three tabs labeled Home, Vitals, Workouts', (tester) async {
+  testWidgets('three tabs labeled Home, Recovery, Workouts', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: AppShell(
@@ -20,14 +20,15 @@ void main() {
 
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('Home'), findsOneWidget);
-    expect(find.text('Vitals'), findsOneWidget);
+    expect(find.text('Recovery'), findsOneWidget);
+    expect(find.text('Vitals'), findsNothing);
     expect(find.text('Workouts'), findsOneWidget);
 
     final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
     expect(bar.destinations, hasLength(3));
     expect(find.text('HOME_BODY'), findsOneWidget);
 
-    await tester.tap(find.text('Vitals'));
+    await tester.tap(find.text('Recovery'));
     await tester.pumpAndSettle();
     expect(find.text('VITALS_BODY'), findsOneWidget);
 

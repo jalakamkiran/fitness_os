@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:fitness_os/features/home/presentation/view/home_screen.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_screen.dart';
 
-/// Bottom-nav host: Home | Vitals | Workouts. Owns `/`.
+/// Bottom-nav host: Home | Recovery | Workouts. Owns `/`.
 class AppShell extends StatefulWidget {
   const AppShell({
     super.key,
@@ -36,7 +36,7 @@ class AppShellState extends State<AppShell> {
         index: _index,
         children: [
           widget.homeBody ?? const HomeScreen(),
-          widget.vitalsBody ?? const _VitalsPlaceholder(),
+          widget.vitalsBody ?? const _RecoveryPlaceholder(),
           widget.workoutsBody ?? const WorkoutHistoryScreen(),
         ],
       ),
@@ -52,7 +52,7 @@ class AppShellState extends State<AppShell> {
           NavigationDestination(
             icon: Icon(Icons.favorite_outline),
             selectedIcon: Icon(Icons.favorite),
-            label: 'Vitals',
+            label: 'Recovery',
           ),
           NavigationDestination(
             icon: Icon(Icons.list_alt_outlined),
@@ -65,13 +65,13 @@ class AppShellState extends State<AppShell> {
   }
 }
 
-class _VitalsPlaceholder extends StatelessWidget {
-  const _VitalsPlaceholder();
+class _RecoveryPlaceholder extends StatelessWidget {
+  const _RecoveryPlaceholder();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Vitals')),
+      appBar: AppBar(title: const Text('Recovery')),
       body: const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
