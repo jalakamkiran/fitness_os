@@ -620,32 +620,88 @@ enum ActivitySyncStatus {
   busy,
 }
 
+/// One message-path sleep stage block (timestamp + duration + wire type).
+class SleepStageSummary {
+  const SleepStageSummary({
+    required this.timestampUnix,
+    required this.durationMin,
+    this.wireType,
+  });
+
+  final int timestampUnix;
+  final int durationMin;
+  final int? wireType;
+
+  factory SleepStageSummary.fromMap(Map<String, dynamic> map) {
+    int? asInt(Object? v) => v == null ? null : (v as num).toInt();
+    return SleepStageSummary(
+      timestampUnix: asInt(map['timestampUnix']) ?? 0,
+      durationMin: asInt(map['durationMin']) ?? 0,
+      wireType: asInt(map['wireType']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'timestampUnix': timestampUnix,
+        'durationMin': durationMin,
+        if (wireType != null) 'wireType': wireType,
+      };
+}
+
 class SleepSessionSummary {
   const SleepSessionSummary({
     required this.beginUnix,
     required this.endUnix,
     this.wireType,
+    this.stages = const [],
   });
 
   final int beginUnix;
   final int endUnix;
   final int? wireType;
 
+  /// Ordered stage blocks from Sync channel. Prefs store lean begin/end only;
+  /// stages live in side-files under `vitals/sleep_stages`.
+  final List<SleepStageSummary> stages;
+
   int get durationSec => (endUnix - beginUnix).clamp(0, 1 << 31);
+
+  /// Stable merge / side-file key (begin:end:wireType).
+  String get mergeKey => '$beginUnix:$endUnix:${wireType ?? ''}';
 
   factory SleepSessionSummary.fromMap(Map<String, dynamic> map) {
     int? asInt(Object? v) => v == null ? null : (v as num).toInt();
+    final rawStages = map['stages'];
+    final stages = <SleepStageSummary>[];
+    if (rawStages is List) {
+      for (final item in rawStages) {
+        if (item is Map) {
+          final stage =
+              SleepStageSummary.fromMap(Map<String, dynamic>.from(item));
+          if (stage.timestampUnix > 0 && stage.durationMin > 0) {
+            stages.add(stage);
+          }
+        }
+      }
+    }
     return SleepSessionSummary(
       beginUnix: asInt(map['beginUnix']) ?? 0,
       endUnix: asInt(map['endUnix']) ?? 0,
       wireType: asInt(map['wireType']),
+      stages: stages,
     );
   }
 
+  /// Lean prefs payload — stages persist via side-files, not prefs JSON.
   Map<String, dynamic> toJson() => {
         'beginUnix': beginUnix,
         'endUnix': endUnix,
         if (wireType != null) 'wireType': wireType,
+      };
+
+  Map<String, dynamic> toJsonWithStages() => {
+        ...toJson(),
+        'stages': stages.map((s) => s.toJson()).toList(),
       };
 }
 

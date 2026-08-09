@@ -187,11 +187,13 @@ class HuaweiFitnessDataSync(
         val beginUnix: Long,
         val endUnix: Long,
         val wireType: Int? = null,
+        val stages: List<SleepStage> = emptyList(),
     ) {
         fun toMap(): Map<String, Any?> = mapOf(
             "beginUnix" to beginUnix,
             "endUnix" to endUnix,
             "wireType" to wireType,
+            "stages" to stages.map { it.toMap() },
         )
     }
 
@@ -793,7 +795,13 @@ class HuaweiFitnessDataSync(
         val timestampUnix: Long,
         val durationMin: Int,
         val wireType: Int?,
-    )
+    ) {
+        fun toMap(): Map<String, Any?> = mapOf(
+            "timestampUnix" to timestampUnix,
+            "durationMin" to durationMin,
+            "wireType" to wireType,
+        )
+    }
 
     data class SleepStageParse(val stages: List<SleepStage>, val unknownTags: Int)
 
@@ -866,19 +874,24 @@ class HuaweiFitnessDataSync(
         var begin = ordered[0].timestampUnix
         var end = stageEndUnix(ordered[0])
         var type = ordered[0].wireType
+        val bucket = ArrayList<SleepStage>()
+        bucket.add(ordered[0])
         for (i in 1 until ordered.size) {
             val s = ordered[i]
             val gap = s.timestampUnix - end
             if (gap > gapSplitSec) {
-                if (end > begin) out.add(SleepSession(begin, end, type))
+                if (end > begin) out.add(SleepSession(begin, end, type, bucket.toList()))
                 begin = s.timestampUnix
                 end = stageEndUnix(s)
                 type = s.wireType
+                bucket.clear()
+                bucket.add(s)
             } else {
                 end = maxOf(end, stageEndUnix(s))
+                bucket.add(s)
             }
         }
-        if (end > begin) out.add(SleepSession(begin, end, type))
+        if (end > begin) out.add(SleepSession(begin, end, type, bucket.toList()))
         return out
     }
 

@@ -20,6 +20,12 @@ abstract final class GateAPrefs {
   static const fitnessTotalsDayJson = 'fitness_totals_day_json';
   /// Side-file subdir under application support for per-day HR minute series.
   static const dailyHrSeriesDir = 'vitals/hr_series';
+  /// Side-file subdir for per-session sleep stage lists (message-path SoT).
+  static const sleepStagesDir = 'vitals/sleep_stages';
+  /// Side-file subdir for TruSleep FileDownload enrich refs (present|absent).
+  static const sleepEnrichDir = 'vitals/sleep_enrich';
+  /// JSON map of feel-on-wake survey answers keyed by sleep merge key.
+  static const sleepFeelOnWakeJson = 'sleep_feel_on_wake_json';
   /// Side-file subdir for canonical swim sessions (one JSON per workout #).
   static const canonicalSwimDir = 'workouts/canonical_swim';
   /// Gemini API key for W4 coach (device-local; never commit).

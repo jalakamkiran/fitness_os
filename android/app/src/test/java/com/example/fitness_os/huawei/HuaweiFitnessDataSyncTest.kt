@@ -25,6 +25,10 @@ class HuaweiFitnessDataSyncTest {
         assertEquals(begin, parsed.sessions[0].beginUnix)
         // last stage ends at begin+25m + 20m
         assertEquals(begin + 45 * 60, parsed.sessions[0].endUnix)
+        assertEquals(3, parsed.sessions[0].stages.size)
+        assertEquals(begin, parsed.sessions[0].stages[0].timestampUnix)
+        assertEquals(20, parsed.sessions[0].stages[2].durationMin)
+        assertEquals(3, parsed.sessions[0].stages[2].wireType)
     }
 
     @Test
@@ -43,6 +47,9 @@ class HuaweiFitnessDataSyncTest {
         assertEquals(2, parsed.sessions.size)
         assertEquals(30 * 60L, parsed.sessions[0].endUnix - parsed.sessions[0].beginUnix)
         assertEquals(40 * 60L, parsed.sessions[1].endUnix - parsed.sessions[1].beginUnix)
+        assertEquals(1, parsed.sessions[0].stages.size)
+        assertEquals(1, parsed.sessions[1].stages.size)
+        assertEquals(begin + 3 * 3600, parsed.sessions[1].stages[0].timestampUnix)
     }
 
     @Test
@@ -70,6 +77,11 @@ class HuaweiFitnessDataSyncTest {
         assertEquals(1, sleeps.size)
         assertEquals(begin, sleeps[0]["beginUnix"])
         assertEquals(begin + 114 * 60L, sleeps[0]["endUnix"])
+        @Suppress("UNCHECKED_CAST")
+        val stages = sleeps[0]["stages"] as List<Map<String, Any?>>
+        assertEquals(4, stages.size)
+        assertEquals(begin, stages[0]["timestampUnix"])
+        assertEquals(14, stages[3]["durationMin"])
     }
 
     @Test

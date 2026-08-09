@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -375,6 +376,163 @@ void main() {
       await repo.clearLocal();
       expect(await repo.loadDailyHrSeries(dayKey), isEmpty);
       expect(await repo.loadDailyHr(), isEmpty);
+    });
+
+    test('sleep stages round-trip via side-file; prefs stay lean', () async {
+      final tempRoot = Directory.systemTemp.createTempSync('fos_sleep_stages_');
+      addTearDown(() {
+        if (tempRoot.existsSync()) {
+          tempRoot.deleteSync(recursive: true);
+        }
+      });
+
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      const begin = 1_700_000_000;
+      const end = begin + 3 * 3600;
+      final session = SleepSessionSummary(
+        beginUnix: begin,
+        endUnix: end,
+        wireType: 1,
+        stages: const [
+          SleepStageSummary(timestampUnix: begin, durationMin: 60, wireType: 1),
+          SleepStageSummary(
+            timestampUnix: begin + 3600,
+            durationMin: 60,
+            wireType: 3,
+          ),
+          SleepStageSummary(
+            timestampUnix: begin + 7200,
+            durationMin: 60,
+            wireType: 2,
+          ),
+        ],
+      );
+      final link = _StubLink(
+        result: ActivitySyncResult(
+          status: ActivitySyncStatus.ok,
+          sleepSessions: [session],
+          completedContainers: {'sleep'},
+        ),
+      );
+      final repo = VitalsRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        sideFileRootOverride: () => tempRoot,
+      );
+
+      await repo.syncFromWatch();
+      final stored = await repo.loadSleepSessions();
+      expect(stored, hasLength(1));
+      expect(stored.first.stages, isEmpty); // lean prefs
+      final prefsRaw = prefs.getString(GateAPrefs.sleepSessionsJson)!;
+      expect(prefsRaw.contains('stages'), isFalse);
+
+      final stages = await repo.loadSleepStages(stored.first);
+      expect(stages, hasLength(3));
+      expect(stages.map((s) => s.wireType).toList(), [1, 3, 2]);
+
+      // Corrupt stage file fail-closed without wiping begin/end prefs.
+      final stageFiles =
+          Directory('${tempRoot.path}/${GateAPrefs.sleepStagesDir}')
+              .listSync()
+              .whereType<File>()
+              .toList();
+      expect(stageFiles, hasLength(1));
+      stageFiles.first.writeAsStringSync('{not-json');
+      expect(await repo.loadSleepStages(stored.first), isEmpty);
+      expect(await repo.loadSleepSessions(), hasLength(1));
+
+      await repo.clearLocal();
+      expect(await repo.loadSleepStages(session), isEmpty);
+      expect(await repo.loadSleepSessions(), isEmpty);
+    });
+
+    test('overnight sleep HR window loads both dayKeys', () async {
+      final tempRoot = Directory.systemTemp.createTempSync('fos_sleep_hr_');
+      addTearDown(() {
+        if (tempRoot.existsSync()) {
+          tempRoot.deleteSync(recursive: true);
+        }
+      });
+
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final midnight =
+          DateTime(2024, 6, 2).millisecondsSinceEpoch ~/ 1000;
+      final before = midnight - 30 * 60;
+      final after = midnight + 30 * 60;
+      final outside = midnight - 3 * 3600;
+      final link = _StubLink(
+        result: ActivitySyncResult(
+          status: ActivitySyncStatus.ok,
+          dailyHrSamples: [
+            DailyHrSample(timestampUnix: outside, bpm: 55),
+            DailyHrSample(timestampUnix: before, bpm: 58),
+            DailyHrSample(timestampUnix: after, bpm: 62),
+            DailyHrSample(timestampUnix: midnight + 3 * 3600, bpm: 70),
+          ],
+          completedContainers: {'daily_hr'},
+        ),
+      );
+      final repo = VitalsRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        sideFileRootOverride: () => tempRoot,
+      );
+      await repo.syncFromWatch();
+
+      final window = await repo.loadSleepHrWindow(
+        beginUnix: before - 60,
+        endUnix: after + 60,
+      );
+      expect(window.map((s) => s.bpm).toList(), [58, 62]);
+
+      expect(
+        await repo.loadSleepHrWindow(beginUnix: before, endUnix: before),
+        isEmpty,
+      );
+      expect(
+        await repo.loadSleepHrWindow(beginUnix: after, endUnix: before),
+        isEmpty,
+      );
+    });
+
+    test('feel-on-wake once per session key + month filter', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.sleepSessionsJson: jsonEncode([
+          {
+            'beginUnix': DateTime(2024, 5, 10, 23).millisecondsSinceEpoch ~/ 1000,
+            'endUnix': DateTime(2024, 5, 11, 6).millisecondsSinceEpoch ~/ 1000,
+          },
+          {
+            'beginUnix': DateTime(2024, 6, 1, 23).millisecondsSinceEpoch ~/ 1000,
+            'endUnix': DateTime(2024, 6, 2, 6).millisecondsSinceEpoch ~/ 1000,
+          },
+        ]),
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final repo = VitalsRepositoryImpl(link: _StubLink(), prefs: prefs);
+      final june = await repo.loadSleepSessionsForMonth(year: 2024, month: 6);
+      expect(june, hasLength(1));
+      final may = await repo.loadSleepSessionsForMonth(year: 2024, month: 5);
+      expect(may, hasLength(1));
+      expect(
+        await repo.loadSleepSessionsForMonth(year: 2024, month: 4),
+        isEmpty,
+      );
+
+      final session = june.first;
+      expect(await repo.loadFeelOnWake(session), isNull);
+      await repo.saveFeelOnWake(session, 'good');
+      expect(await repo.loadFeelOnWake(session), 'good');
+      await repo.saveFeelOnWake(session, 'great'); // once-per-key
+      expect(await repo.loadFeelOnWake(session), 'good');
     });
 
     test('fitness totals merge persists today row including zeros', () async {
