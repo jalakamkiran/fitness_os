@@ -233,8 +233,9 @@ class HuaweiSession(
     }
 
     /**
-     * Activity Sync: FitnessData sleep + daily HR (message path).
-     * FileSleep deferred. Caller must hold the shared Sync lock.
+     * Activity Sync: FitnessData sleep + daily HR (message path), then
+     * non-blocking TruSleep FileDownload probe (soft-fail).
+     * Caller must hold the shared Sync lock.
      */
     fun syncActivity(
         startUnix: Long,

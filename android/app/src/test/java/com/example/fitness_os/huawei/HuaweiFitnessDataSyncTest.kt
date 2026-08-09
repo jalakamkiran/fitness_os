@@ -96,6 +96,78 @@ class HuaweiFitnessDataSyncTest {
     }
 
     @Test
+    fun sync_fileDownloadAbsent_keepsSleepSessions() {
+        val begin = 1_700_000_000L
+        val queue = ArrayDeque(
+            listOf(
+                null,
+                null,
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1),
+                sleepDataFrame(1, listOf(Stage(begin, 60, 1), Stage(begin + 60 * 60, 60, 1))),
+                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 0),
+                null,
+            ),
+        )
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
+            sleepFileDownloadProbe = {
+                HuaweiFileDownload.ProbeOutcome(
+                    status = "absent",
+                    serviceId = HuaweiFileDownload.SVC_NEW,
+                    reason = "timeout:sleep_state",
+                )
+            },
+        )
+        val result = sync.sync(begin - 100, begin + 20_000)
+        @Suppress("UNCHECKED_CAST")
+        val sleeps = result["sleepSessions"] as List<Map<String, Any?>>
+        assertEquals(1, sleeps.size)
+        assertEquals(begin, sleeps[0]["beginUnix"])
+        @Suppress("UNCHECKED_CAST")
+        val enrich = result["sleepEnrich"] as List<*>
+        assertTrue(enrich.isEmpty())
+        assertEquals("ok", result["status"])
+    }
+
+    @Test
+    fun sync_fileDownloadPresent_emitsEnrichRefs() {
+        val begin = 1_700_000_000L
+        val queue = ArrayDeque(
+            listOf(
+                null,
+                null,
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1),
+                sleepDataFrame(1, listOf(Stage(begin, 90, 1))),
+                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 0),
+                null,
+            ),
+        )
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
+            sleepFileDownloadProbe = {
+                HuaweiFileDownload.ProbeOutcome(
+                    status = "present",
+                    serviceId = HuaweiFileDownload.SVC_NEW,
+                    files = listOf(
+                        HuaweiFileDownload.FileRef("sleep_state", 128),
+                        HuaweiFileDownload.FileRef("sleep_data", 4096),
+                    ),
+                )
+            },
+        )
+        val result = sync.sync(begin - 100, begin + 20_000)
+        @Suppress("UNCHECKED_CAST")
+        val enrich = result["sleepEnrich"] as List<Map<String, Any?>>
+        assertEquals(1, enrich.size)
+        assertEquals(true, enrich[0]["present"])
+        @Suppress("UNCHECKED_CAST")
+        val refs = enrich[0]["refs"] as List<Map<String, Any?>>
+        assertEquals(2, refs.size)
+        assertEquals("sleep_state", refs[0]["id"])
+        assertEquals(128, refs[0]["len"])
+    }
+
+    @Test
     fun sync_happyPath_overnightNapAndHr() {
         val overnightBegin = 1_700_000_000L
         val napBegin = overnightBegin + 12 * 3600

@@ -1,10 +1,17 @@
 # Huawei BR / LPv2 wire-spec — GT5-A07 TruSleep FileDownload
 
-**Status: DEFERRED**
+**Status: DEFERRED (probe API landed; wire not normative)**
 
-No Fitness OS observation of `sleep_state.bin` / `sleep_data.bin` on GT5-A07 yet. Night budget not started (`docs/experiments/gt5-a07-full-metrics-probe-matrix.md`).
+Companion activity Sync now calls a **non-blocking** FileDownload probe after
+message-path sleep+HR (`HuaweiFileDownload`). Default path **soft-skips**
+(`pending_capture`) so Sync never depends on files. Live consult exchanges stay
+off until a night capture or documented-absence id is cited below.
 
-**Do not** implement FileDownload parsers from this stub. **Do not** mint catalog score **4** for sleep file rows until a capture or documented-absence id is cited below.
+No Fitness OS observation of `sleep_state.bin` / `sleep_data.bin` on GT5-A07 yet.
+Night budget not started (`docs/experiments/gt5-a07-full-metrics-probe-matrix.md`).
+
+**Do not** implement FileDownload parsers from this stub. **Do not** mint catalog
+score **4** for sleep file rows until a capture or documented-absence id is cited.
 
 ---
 
@@ -17,8 +24,18 @@ No Fitness OS observation of `sleep_state.bin` / `sleep_data.bin` on GT5-A07 yet
 | vs FeatureUpload | Distinct SM — FeatureUpload is `0x28` pair-finalize only |
 | ACC | ~1/min activity bytes (TAG_ACC) — **not** high-rate IMU (R11) |
 | PPG | Compressed TAG_PPG — limited-rate; not raw dump |
-| Ownership (R9b) | If U4 never saw GPS, U6 owns FileDownload collaborator skeleton |
+| Ownership (R9b) | Sleep owns FileDownload collaborator skeleton |
 | Privacy | Never commit PPG/ACC blobs; lengths + presence only |
+| Sync order | Messages+stages → HR window → FileDownload last, non-blocking |
+
+---
+
+## Probe outcome (companion)
+
+| Outcome | Channel `sleepEnrich` | UI toggle |
+|---------|----------------------|-----------|
+| `skipped` / `absent` | empty list | hidden |
+| `present` | per-session `{present:true, refs:[{id,len}]}` | shown when side-file ref set |
 
 ---
 
@@ -38,3 +55,4 @@ Until then: catalog S4 file rows stay score **3** / observation `unobserved`.
 - Catalog S4: `docs/catalogs/gt5-a07-full-metrics.md`
 - FitnessData messages: `docs/wire-specs/huawei-br-gt5-fitness-data.md`
 - Gate A base: `docs/wire-specs/huawei-br-gt5-gate-a.md`
+- Plan: `docs/plans/2026-08-09-002-feat-recovery-sleep-detail-plan.md`

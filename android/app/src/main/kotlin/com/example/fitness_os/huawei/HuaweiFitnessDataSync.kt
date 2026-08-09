@@ -13,7 +13,7 @@ import java.util.TimeZone
  * Pre-promotion parsers: synthetic fixtures + owned wire-spec shapes only.
  * Do not treat as normative until `huawei-br-gt5-fitness-data.md` cites capture/ABSENT.
  *
- * FileSleep / TruSleep FileDownload deferred (separate plan).
+ * FileSleep / TruSleep FileDownload: non-blocking probe after messages (soft-fail).
  */
 class HuaweiFitnessDataSync(
     private val exchangeEncrypted: (
@@ -24,6 +24,11 @@ class HuaweiFitnessDataSync(
     ) -> HuaweiFraming.Frame?,
     private val fetchBattery: (() -> Unit)? = null,
     private val isConnected: () -> Boolean = { true },
+    /**
+     * Optional probe override for tests. Default builds [HuaweiFileDownload]
+     * soft-skip collaborator (pending capture).
+     */
+    private val sleepFileDownloadProbe: (() -> HuaweiFileDownload.ProbeOutcome)? = null,
 ) {
     companion object {
         private const val TAG = "FOS_HUAWEI"
@@ -517,9 +522,9 @@ class HuaweiFitnessDataSync(
             completed.add("fitness_totals")
         }
         if (fetchBatteryAfter) {
-            // FileSleep hook deferred.
             fetchBattery?.invoke()
         }
+        val sleepEnrich = attemptSleepFileDownload(sleep)
         if (unknownTlvCount > 0) {
             Log.i(TAG, "activity-sync unknownTlvCount=$unknownTlvCount")
         }
@@ -539,7 +544,8 @@ class HuaweiFitnessDataSync(
             TAG,
             "activity-sync done status=$resolvedStatus sleep=${sleep.size} " +
                 "hrSamples=${hr.size} fitnessTotalsDays=${totals.size} " +
-                "completed=$completed enableSkipped=$enableSkipped",
+                "sleepEnrich=${sleepEnrich.size} completed=$completed " +
+                "enableSkipped=$enableSkipped",
         )
         return resultMap(
             status = resolvedStatus,
@@ -549,7 +555,47 @@ class HuaweiFitnessDataSync(
             fitnessTotals = totals,
             completed = completed,
             enableSkipped = enableSkipped,
+            sleepEnrich = sleepEnrich,
         )
+    }
+
+    /**
+     * Non-blocking TruSleep FileDownload probe. Never clears [sleep] on failure.
+     * Soft-skipped until capture promotes wire-spec (default collaborator).
+     */
+    private fun attemptSleepFileDownload(
+        sleep: List<Map<String, Any?>>,
+    ): List<Map<String, Any?>> {
+        return try {
+            val outcome = sleepFileDownloadProbe?.invoke()
+                ?: HuaweiFileDownload(
+                    exchangeEncrypted = exchangeEncrypted,
+                    isConnected = isConnected,
+                    liveProbeEnabled = false,
+                ).probeSleepFiles(preferNewSync = true)
+            Log.i(
+                TAG,
+                "activity-sync file-download status=${outcome.status} " +
+                    "svc=0x${outcome.serviceId.toString(16)} " +
+                    "files=${outcome.files.size} reason=${outcome.reason}",
+            )
+            if (outcome.status != "present" || sleep.isEmpty()) {
+                return emptyList()
+            }
+            val refs = outcome.files.map { it.toMap() }
+            sleep.map { session ->
+                mapOf(
+                    "beginUnix" to session["beginUnix"],
+                    "endUnix" to session["endUnix"],
+                    "wireType" to session["wireType"],
+                    "present" to true,
+                    "refs" to refs,
+                )
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "activity-sync file-download fail-closed: ${t.message}")
+            emptyList()
+        }
     }
 
     /**
@@ -999,6 +1045,7 @@ class HuaweiFitnessDataSync(
         fitnessTotals: List<Map<String, Any?>>,
         completed: List<String>,
         enableSkipped: Boolean,
+        sleepEnrich: List<Map<String, Any?>> = emptyList(),
     ): Map<String, Any?> = buildMap {
         put("status", status)
         if (message != null) put("message", message)
@@ -1007,5 +1054,6 @@ class HuaweiFitnessDataSync(
         put("fitnessTotals", fitnessTotals)
         put("completedContainers", completed)
         put("enableSkipped", enableSkipped)
+        put("sleepEnrich", sleepEnrich)
     }
 }

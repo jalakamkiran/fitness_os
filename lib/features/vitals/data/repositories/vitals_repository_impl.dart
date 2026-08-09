@@ -458,6 +458,27 @@ class VitalsRepositoryImpl implements VitalsRepository {
     if (completed.contains('fitness_totals') && !_fitnessTotalsLoadFailed) {
       await _mergeFitnessTotals(result.fitnessTotals);
     }
+    if (!_gateStillPassed()) return;
+    // FileDownload enrich is best-effort and must never wipe message-path sleep.
+    await _mergeSleepEnrich(result.sleepEnrich);
+  }
+
+  Future<void> _mergeSleepEnrich(List<SleepEnrichOutcome> outcomes) async {
+    if (!_gateStillPassed() || outcomes.isEmpty) return;
+    for (final outcome in outcomes) {
+      if (!_gateStillPassed()) return;
+      if (!outcome.present) continue;
+      if (outcome.beginUnix <= 0 || outcome.endUnix <= outcome.beginUnix) {
+        continue;
+      }
+      await persistSleepEnrich(
+        session: outcome.asSession,
+        present: true,
+        refs: {
+          'files': outcome.refs.map((r) => r.toJson()).toList(),
+        },
+      );
+    }
   }
 
   Future<void> _mergeSleep(List<SleepSessionSummary> incoming) async {

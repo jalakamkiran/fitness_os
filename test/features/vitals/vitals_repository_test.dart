@@ -502,6 +502,65 @@ void main() {
       );
     });
 
+    test('fileDownload enrich absent keeps sleep; present sets enrich flag', () async {
+      final tempRoot = Directory.systemTemp.createTempSync('fos_sleep_enrich_');
+      addTearDown(() {
+        if (tempRoot.existsSync()) {
+          tempRoot.deleteSync(recursive: true);
+        }
+      });
+
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      const begin = 1_700_000_000;
+      const end = begin + 3 * 3600;
+      final session = SleepSessionSummary(beginUnix: begin, endUnix: end);
+      final absentLink = _StubLink(
+        result: ActivitySyncResult(
+          status: ActivitySyncStatus.ok,
+          sleepSessions: [session],
+          completedContainers: {'sleep'},
+          sleepEnrich: const [],
+        ),
+      );
+      final repo = VitalsRepositoryImpl(
+        link: absentLink,
+        prefs: prefs,
+        sideFileRootOverride: () => tempRoot,
+      );
+      await repo.syncFromWatch();
+      expect(await repo.loadSleepSessions(), hasLength(1));
+      expect(await repo.isSleepEnrichPresent(session), isFalse);
+
+      final presentLink = _StubLink(
+        result: ActivitySyncResult(
+          status: ActivitySyncStatus.ok,
+          sleepSessions: [session],
+          completedContainers: {'sleep'},
+          sleepEnrich: [
+            SleepEnrichOutcome(
+              beginUnix: begin,
+              endUnix: end,
+              present: true,
+              refs: const [
+                SleepFileRef(id: 'sleep_state', len: 128),
+              ],
+            ),
+          ],
+        ),
+      );
+      final repo2 = VitalsRepositoryImpl(
+        link: presentLink,
+        prefs: prefs,
+        sideFileRootOverride: () => tempRoot,
+      );
+      await repo2.syncFromWatch();
+      expect(await repo2.loadSleepSessions(), hasLength(1));
+      expect(await repo2.isSleepEnrichPresent(session), isTrue);
+    });
+
     test('feel-on-wake once per session key + month filter', () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,

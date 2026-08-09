@@ -959,6 +959,67 @@ class AutoTrackingEnableResult {
   }
 }
 
+class SleepFileRef {
+  const SleepFileRef({required this.id, required this.len});
+
+  /// Filename id (`sleep_state` / `sleep_data`) — length only, never payload.
+  final String id;
+  final int len;
+
+  factory SleepFileRef.fromMap(Map<String, dynamic> map) {
+    int asInt(Object? v) => v == null ? 0 : (v as num).toInt();
+    return SleepFileRef(
+      id: map['id']?.toString() ?? '',
+      len: asInt(map['len']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {'id': id, 'len': len};
+}
+
+class SleepEnrichOutcome {
+  const SleepEnrichOutcome({
+    required this.beginUnix,
+    required this.endUnix,
+    required this.present,
+    this.wireType,
+    this.refs = const [],
+  });
+
+  final int beginUnix;
+  final int endUnix;
+  final int? wireType;
+  final bool present;
+  final List<SleepFileRef> refs;
+
+  SleepSessionSummary get asSession => SleepSessionSummary(
+        beginUnix: beginUnix,
+        endUnix: endUnix,
+        wireType: wireType,
+      );
+
+  factory SleepEnrichOutcome.fromMap(Map<String, dynamic> map) {
+    int? asInt(Object? v) => v == null ? null : (v as num).toInt();
+    final refs = <SleepFileRef>[];
+    final rawRefs = map['refs'];
+    if (rawRefs is List) {
+      for (final item in rawRefs) {
+        if (item is Map) {
+          final ref = SleepFileRef.fromMap(Map<String, dynamic>.from(item));
+          if (ref.id.isNotEmpty) refs.add(ref);
+        }
+      }
+    }
+    return SleepEnrichOutcome(
+      beginUnix: asInt(map['beginUnix']) ?? 0,
+      endUnix: asInt(map['endUnix']) ?? 0,
+      wireType: asInt(map['wireType']),
+      present: map['present'] == true,
+      refs: refs,
+    );
+  }
+}
+
 class ActivitySyncResult {
   const ActivitySyncResult({
     required this.status,
@@ -968,6 +1029,7 @@ class ActivitySyncResult {
     this.fitnessTotals = const [],
     this.completedContainers = const {},
     this.enableSkipped = false,
+    this.sleepEnrich = const [],
   });
 
   final ActivitySyncStatus status;
@@ -977,6 +1039,9 @@ class ActivitySyncResult {
   final List<FitnessTotalsDay> fitnessTotals;
   final Set<String> completedContainers;
   final bool enableSkipped;
+
+  /// TruSleep FileDownload outcomes (present only). Empty when absent/skipped.
+  final List<SleepEnrichOutcome> sleepEnrich;
 
   factory ActivitySyncResult.fromMap(Map<String, dynamic> map) {
     final statusStr = map['status'] as String? ?? 'error';
@@ -1026,6 +1091,17 @@ class ActivitySyncResult {
         if (item is String) completed.add(item);
       }
     }
+    final enrich = <SleepEnrichOutcome>[];
+    final rawEnrich = map['sleepEnrich'];
+    if (rawEnrich is List) {
+      for (final item in rawEnrich) {
+        if (item is Map) {
+          enrich.add(
+            SleepEnrichOutcome.fromMap(Map<String, dynamic>.from(item)),
+          );
+        }
+      }
+    }
     return ActivitySyncResult(
       status: status,
       message: map['message'] as String?,
@@ -1034,6 +1110,7 @@ class ActivitySyncResult {
       fitnessTotals: totals,
       completedContainers: completed,
       enableSkipped: map['enableSkipped'] as bool? ?? false,
+      sleepEnrich: enrich,
     );
   }
 }
