@@ -70,5 +70,30 @@ void main() {
       expect(scrubbed?['zone_id'], 'Asia/Kolkata');
       expect(scrubbed?['tails'], isNotEmpty);
     });
+
+    test('display_* fields prefer persisted displayedSessions', () {
+      const i1 = SleepStateInterval(beginUnix: 1000, endUnix: 2000);
+      const displayed = SleepSessionSummary(beginUnix: 1000, endUnix: 2000);
+      const msg = SleepSessionSummary(beginUnix: 700, endUnix: 2500);
+      final payload = TruSleepTimestampObserve.buildPayload(
+        messageSessions: const [msg],
+        enrich: [
+          SleepEnrichOutcome(
+            beginUnix: msg.beginUnix,
+            endUnix: msg.endUnix,
+            present: true,
+            stateIntervals: const [i1],
+            refs: const [SleepFileRef(id: 'sleep_state', len: 128)],
+          ),
+        ],
+        displayedSessions: const [displayed],
+        nowUnix: 5000,
+      );
+
+      expect(payload['display_begin'], displayed.beginUnix);
+      expect(payload['display_end'], displayed.endUnix);
+      expect(payload['display_dur_min'], 17);
+      expect(payload['delta_start_min'], 5);
+    });
   });
 }

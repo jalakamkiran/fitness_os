@@ -13,9 +13,13 @@ abstract final class TruSleepTimestampObserve {
   static const mergeGapSec = TruSleepSleepSot.mergeGapSec;
 
   /// Build allowlisted compare fields from one Sync result.
+  ///
+  /// [displayedSessions] are persisted UI SoT windows after merge (preferred
+  /// for display_* fields). Message + file interval fields remain for deltas.
   static Map<String, Object?> buildPayload({
     required List<SleepSessionSummary> messageSessions,
     required List<SleepEnrichOutcome> enrich,
+    List<SleepSessionSummary> displayedSessions = const [],
     WatchClockSnapshot? watchClock,
     int? nowUnix,
   }) {
@@ -41,16 +45,17 @@ abstract final class TruSleepTimestampObserve {
 
     final now = nowUnix ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final msg = pickRecentOvernight(messageSessions, nowUnix: now);
+    final displayed = pickRecentOvernight(displayedSessions, nowUnix: now);
 
-    final fileBegin = merged?.beginUnix ?? latest?.beginUnix;
-    final fileEnd = merged?.endUnix ?? latest?.endUnix;
+    final displayBegin = displayed?.beginUnix ?? merged?.beginUnix ?? latest?.beginUnix;
+    final displayEnd = displayed?.endUnix ?? merged?.endUnix ?? latest?.endUnix;
     int? deltaStart;
     int? deltaEnd;
-    if (fileBegin != null && msg != null) {
-      deltaStart = ((fileBegin - msg.beginUnix) / 60).round();
+    if (displayBegin != null && msg != null) {
+      deltaStart = ((displayBegin - msg.beginUnix) / 60).round();
     }
-    if (fileEnd != null && msg != null) {
-      deltaEnd = ((fileEnd - msg.endUnix) / 60).round();
+    if (displayEnd != null && msg != null) {
+      deltaEnd = ((displayEnd - msg.endUnix) / 60).round();
     }
 
     return {
@@ -74,6 +79,12 @@ abstract final class TruSleepTimestampObserve {
         'file_merged_end': merged.endUnix,
         'file_merged_dur_min':
             ((merged.endUnix - merged.beginUnix) / 60).round(),
+      },
+      if (displayed != null) ...{
+        'display_begin': displayed.beginUnix,
+        'display_end': displayed.endUnix,
+        'display_dur_min':
+            ((displayed.endUnix - displayed.beginUnix) / 60).round(),
       },
       'msg_session_count': messageSessions.length,
       if (msg != null) ...{
@@ -121,22 +132,25 @@ abstract final class TruSleepTimestampObserve {
   static Future<void> report({
     required List<SleepSessionSummary> messageSessions,
     required List<SleepEnrichOutcome> enrich,
+    List<SleepSessionSummary> displayedSessions = const [],
     WatchClockSnapshot? watchClock,
   }) async {
     if (!Sentry.isEnabled) return;
-    // Nothing useful yet (no file intervals and no message sessions).
     final hasFile = enrich.any((e) => e.present && e.stateIntervals.isNotEmpty);
-    if (!hasFile && messageSessions.isEmpty) return;
+    if (!hasFile && messageSessions.isEmpty && displayedSessions.isEmpty) {
+      return;
+    }
 
     final data = buildPayload(
       messageSessions: messageSessions,
       enrich: enrich,
+      displayedSessions: displayedSessions,
       watchClock: watchClock,
     );
     final delta = data['delta_start_min'];
     final msg =
         'trusleep.observe Δstart=${delta ?? 'n/a'}m '
-        'file=${data['file_merged_dur_min'] ?? data['file_latest_dur_min'] ?? 0}m '
+        'display=${data['display_dur_min'] ?? data['file_merged_dur_min'] ?? data['file_latest_dur_min'] ?? 0}m '
         'msg=${data['msg_dur_min'] ?? 0}m';
 
     await Sentry.addBreadcrumb(

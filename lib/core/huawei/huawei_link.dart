@@ -335,7 +335,8 @@ class HuaweiLink {
     }
   }
 
-  /// Activity Sync (sleep + whole-day HR). Shares single-flight with workouts.
+  /// Activity Sync (sleep + FitnessTotals + TruSleep FileDownload).
+  /// Shares single-flight with workouts. Does not pull continuous / daily HR.
   Future<ActivitySyncResult> syncActivity({
     int? startUnix,
     int? endUnix,
@@ -376,8 +377,9 @@ class HuaweiLink {
       SentrySyncInstrumentation.nameVitals,
     );
     span?.setTag('window', window);
+    final spanDays = ((end - start) / 86400).ceil().clamp(1, activityWindowDays);
     FosHuaweiLog.i(
-      'syncActivity window=[$start,$end] (${activityWindowDays}d)',
+      'syncActivity window=[$start,$end] (~${spanDays}d class=$window)',
       op: 'sync',
     );
     try {
@@ -960,21 +962,81 @@ class AutoTrackingEnableResult {
 }
 
 class SleepFileRef {
-  const SleepFileRef({required this.id, required this.len});
+  const SleepFileRef({required this.id, required this.len, this.path});
 
   /// Filename id (`sleep_state` / `sleep_data`) — length only, never payload.
   final String id;
   final int len;
 
+  /// App-private relative path when native persisted the blob.
+  final String? path;
+
   factory SleepFileRef.fromMap(Map<String, dynamic> map) {
     int asInt(Object? v) => v == null ? 0 : (v as num).toInt();
+    final path = map['path']?.toString();
     return SleepFileRef(
       id: map['id']?.toString() ?? '',
       len: asInt(map['len']),
+      path: (path == null || path.isEmpty) ? null : path,
     );
   }
 
-  Map<String, dynamic> toJson() => {'id': id, 'len': len};
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'len': len,
+        if (path != null) 'path': path,
+      };
+}
+
+/// Privacy-safe watch zone/clock from native activity Sync (Sentry observe).
+class WatchClockSnapshot {
+  const WatchClockSnapshot({
+    required this.zoneId,
+    required this.offsetSec,
+    required this.offsetLabel,
+    this.skewSec,
+    this.phoneUnix,
+    this.deviceUnix,
+  });
+
+  final String zoneId;
+  final int offsetSec;
+  final String offsetLabel;
+  final int? skewSec;
+  final int? phoneUnix;
+  final int? deviceUnix;
+
+  factory WatchClockSnapshot.fromMap(Map<String, dynamic> map) {
+    int? asInt(Object? v) => v == null ? null : (v as num).toInt();
+    return WatchClockSnapshot(
+      zoneId: map['zoneId'] as String? ?? '',
+      offsetSec: asInt(map['offsetSec']) ?? 0,
+      offsetLabel: map['offsetLabel'] as String? ?? '',
+      skewSec: asInt(map['skewSec']),
+      phoneUnix: asInt(map['phoneUnix']),
+      deviceUnix: asInt(map['deviceUnix']),
+    );
+  }
+}
+
+class SleepStateInterval {
+  const SleepStateInterval({required this.beginUnix, required this.endUnix});
+
+  final int beginUnix;
+  final int endUnix;
+
+  factory SleepStateInterval.fromMap(Map<String, dynamic> map) {
+    int asInt(Object? v) => v == null ? 0 : (v as num).toInt();
+    return SleepStateInterval(
+      beginUnix: asInt(map['beginUnix']),
+      endUnix: asInt(map['endUnix']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'beginUnix': beginUnix,
+        'endUnix': endUnix,
+      };
 }
 
 class SleepEnrichOutcome {
@@ -984,6 +1046,7 @@ class SleepEnrichOutcome {
     required this.present,
     this.wireType,
     this.refs = const [],
+    this.stateIntervals = const [],
   });
 
   final int beginUnix;
@@ -991,6 +1054,7 @@ class SleepEnrichOutcome {
   final int? wireType;
   final bool present;
   final List<SleepFileRef> refs;
+  final List<SleepStateInterval> stateIntervals;
 
   SleepSessionSummary get asSession => SleepSessionSummary(
         beginUnix: beginUnix,
@@ -1010,12 +1074,26 @@ class SleepEnrichOutcome {
         }
       }
     }
+    final intervals = <SleepStateInterval>[];
+    final rawIntervals = map['stateIntervals'];
+    if (rawIntervals is List) {
+      for (final item in rawIntervals) {
+        if (item is Map) {
+          final iv =
+              SleepStateInterval.fromMap(Map<String, dynamic>.from(item));
+          if (iv.beginUnix > 0 && iv.endUnix > iv.beginUnix) {
+            intervals.add(iv);
+          }
+        }
+      }
+    }
     return SleepEnrichOutcome(
       beginUnix: asInt(map['beginUnix']) ?? 0,
       endUnix: asInt(map['endUnix']) ?? 0,
       wireType: asInt(map['wireType']),
       present: map['present'] == true,
       refs: refs,
+      stateIntervals: intervals,
     );
   }
 }
@@ -1030,6 +1108,7 @@ class ActivitySyncResult {
     this.completedContainers = const {},
     this.enableSkipped = false,
     this.sleepEnrich = const [],
+    this.watchClock,
   });
 
   final ActivitySyncStatus status;
@@ -1042,6 +1121,9 @@ class ActivitySyncResult {
 
   /// TruSleep FileDownload outcomes (present only). Empty when absent/skipped.
   final List<SleepEnrichOutcome> sleepEnrich;
+
+  /// Privacy-safe watch zone/clock from native (for Sentry observe).
+  final WatchClockSnapshot? watchClock;
 
   factory ActivitySyncResult.fromMap(Map<String, dynamic> map) {
     final statusStr = map['status'] as String? ?? 'error';
@@ -1102,6 +1184,13 @@ class ActivitySyncResult {
         }
       }
     }
+    WatchClockSnapshot? watchClock;
+    final rawClock = map['watchClock'];
+    if (rawClock is Map) {
+      final snap =
+          WatchClockSnapshot.fromMap(Map<String, dynamic>.from(rawClock));
+      if (snap.zoneId.isNotEmpty) watchClock = snap;
+    }
     return ActivitySyncResult(
       status: status,
       message: map['message'] as String?,
@@ -1111,6 +1200,7 @@ class ActivitySyncResult {
       completedContainers: completed,
       enableSkipped: map['enableSkipped'] as bool? ?? false,
       sleepEnrich: enrich,
+      watchClock: watchClock,
     );
   }
 }
