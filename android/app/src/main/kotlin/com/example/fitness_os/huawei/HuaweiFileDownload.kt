@@ -433,8 +433,7 @@ class HuaweiFileDownload(
         val zone = watchZoneLabel()
         Log.i(
             TAG,
-            "file-download sleep_state rawLen=${raw.size} zone=$zone " +
-                "hex=${raw.toHexLower()}",
+            "file-download sleep_state rawLen=${raw.size} zone=$zone",
         )
         if (intervals.isEmpty()) {
             Log.i(TAG, "file-download sleep_state intervals=0")
@@ -468,14 +467,6 @@ class HuaweiFileDownload(
                     "${formatUnix(latest.beginUnix)}→${formatUnix(latest.endUnix)}",
             )
         }
-    }
-
-    private fun ByteArray.toHexLower(): String {
-        val sb = StringBuilder(size * 2)
-        for (b in this) {
-            sb.append(String.format(Locale.US, "%02x", b.toInt() and 0xFF))
-        }
-        return sb.toString()
     }
 
     private fun asByte(frame: HuaweiFraming.Frame, tag: Int): Byte? =

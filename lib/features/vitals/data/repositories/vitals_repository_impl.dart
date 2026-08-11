@@ -410,10 +410,8 @@ class VitalsRepositoryImpl implements VitalsRepository {
     );
   }
 
-  bool _hasFileSleepSotFlip() {
-    final cursor = _prefs.getInt(GateAPrefs.lastActivitySyncCursor);
-    return cursor != null && cursor > 0;
-  }
+  bool _hasFileSleepSotFlip() =>
+      _prefs.getBool(GateAPrefs.fileSleepSotActive) ?? false;
 
   Future<void> _clearDailyHrResidue() async {
     await _prefs.remove(GateAPrefs.dailyHrJson);
@@ -604,6 +602,9 @@ class VitalsRepositoryImpl implements VitalsRepository {
     final retained = existing
         .where((e) => !built.any((b) => _sleepOverlaps(e, b)))
         .toList();
+    final replaced = existing
+        .where((e) => built.any((b) => _sleepOverlaps(e, b)))
+        .toList();
 
     final withStages = <SleepSessionSummary>[];
     for (final file in built) {
@@ -619,7 +620,7 @@ class VitalsRepositoryImpl implements VitalsRepository {
     }
 
     await _migrateFeelOnWake(
-      fromSessions: existing,
+      fromSessions: replaced,
       toSessions: withStages,
     );
     if (!_gateStillPassed()) return const _SleepMergeResult();
@@ -631,11 +632,10 @@ class VitalsRepositoryImpl implements VitalsRepository {
       GateAPrefs.sleepSessionsJson,
       jsonEncode(merged.map((s) => s.toJson()).toList()),
     );
+    // Flip marker independent of cursor — R2 holds even when partial skips cursor.
+    await _prefs.setBool(GateAPrefs.fileSleepSotActive, true);
 
     // Rewrite stages under file mergeKeys; remove overlapping priors' files.
-    final replaced = existing
-        .where((e) => built.any((b) => _sleepOverlaps(e, b)))
-        .toList();
     await _deleteStageFiles(replaced);
     await _persistSleepStages(
       withStages.where((s) => s.stages.isNotEmpty).toList(),
@@ -712,6 +712,7 @@ class VitalsRepositoryImpl implements VitalsRepository {
     final map = _feelOnWakeMap();
     if (map.isEmpty) return;
     final next = Map<String, dynamic>.from(map);
+    var changed = false;
     for (final old in fromSessions) {
       final feel = map[old.mergeKey];
       if (feel == null) continue;
@@ -724,12 +725,14 @@ class VitalsRepositoryImpl implements VitalsRepository {
           best = n;
         }
       }
+      // No overlap → leave prior feel key untouched (retained nights).
+      if (best == null || bestOverlap <= 0) continue;
+      if (best.mergeKey == old.mergeKey) continue;
       next.remove(old.mergeKey);
-      if (best != null && bestOverlap > 0) {
-        next[best.mergeKey] = feel;
-      }
+      next[best.mergeKey] = feel;
+      changed = true;
     }
-    if (!_gateStillPassed()) return;
+    if (!changed || !_gateStillPassed()) return;
     await _prefs.setString(GateAPrefs.sleepFeelOnWakeJson, jsonEncode(next));
   }
 
@@ -850,6 +853,7 @@ class VitalsRepositoryImpl implements VitalsRepository {
     await _prefs.remove(GateAPrefs.sleepFeelOnWakeJson);
     await _prefs.remove(GateAPrefs.lastActivitySyncCursor);
     await _prefs.remove(GateAPrefs.activitySyncImplVersion);
+    await _prefs.remove(GateAPrefs.fileSleepSotActive);
     _sleepLoadFailed = false;
     _hrLoadFailed = false;
     _fitnessTotalsLoadFailed = false;

@@ -160,6 +160,7 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
       await _prefs.remove(GateAPrefs.lastSyncCursor);
       await _prefs.remove(GateAPrefs.lastActivitySyncCursor);
       await _prefs.remove(GateAPrefs.activitySyncImplVersion);
+      await _prefs.remove(GateAPrefs.fileSleepSotActive);
       await _prefs.remove(GateAPrefs.swimSegmentParserVersion);
       await _prefs.remove(GateAPrefs.workoutsJson);
       await _onForgetWipeExtras?.call();
@@ -174,12 +175,14 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
             _prefs.containsKey(GateAPrefs.lastActivitySyncCursor);
         final activityVerLeft =
             _prefs.containsKey(GateAPrefs.activitySyncImplVersion);
+        final fileSotLeft = _prefs.containsKey(GateAPrefs.fileSleepSotActive);
         if (sleepLeft ||
             hrLeft ||
             totalsLeft ||
             enableLeft ||
             activityCursorLeft ||
-            activityVerLeft) {
+            activityVerLeft ||
+            fileSotLeft) {
           return const Left(
             ValidationFailure('Forget verify failed — vitals residue remains'),
           );

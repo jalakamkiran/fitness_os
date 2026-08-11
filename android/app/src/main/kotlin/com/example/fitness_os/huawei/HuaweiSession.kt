@@ -449,10 +449,23 @@ class HuaweiSession(
             Log.w(TAG, "file-download mkdir failed ${dir.absolutePath}")
             return null
         }
-        val file = java.io.File(dir, "$id.bin")
+        val safeId = id.replace(Regex("[^0-9A-Za-z._-]"), "_")
+        if (safeId.isEmpty() || safeId != id) {
+            Log.w(TAG, "file-download persist rejected id=$id")
+            return null
+        }
+        val file = java.io.File(dir, "$safeId.bin")
+        val canonicalDir = dir.canonicalFile
+        val canonicalFile = file.canonicalFile
+        if (!canonicalFile.path.startsWith(canonicalDir.path + java.io.File.separator) &&
+            canonicalFile.path != canonicalDir.path
+        ) {
+            Log.w(TAG, "file-download persist path escape id=$safeId")
+            return null
+        }
         file.writeBytes(bytes)
-        val rel = "vitals/sleep_files/$id.bin"
-        Log.i(TAG, "file-download persisted id=$id len=${bytes.size} path=$rel")
+        val rel = "vitals/sleep_files/$safeId.bin"
+        Log.i(TAG, "file-download persisted id=$safeId len=${bytes.size} path=$rel")
         return rel
     }
 

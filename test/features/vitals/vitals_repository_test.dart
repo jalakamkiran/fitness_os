@@ -66,10 +66,12 @@ class _StubLink extends HuaweiLink {
 const _implV1 = VitalsRepositoryImpl.currentActivitySyncImplVersion;
 const _overlapSec = VitalsRepositoryImpl.activityCursorOverlapSec;
 
-Map<String, Object> _gateOpen({int? implVersion, int? cursor}) => {
+Map<String, Object> _gateOpen({int? implVersion, int? cursor, bool? fileSot}) => {
       GateAPrefs.gateAPassed: true,
       if (implVersion != null) GateAPrefs.activitySyncImplVersion: implVersion,
       if (cursor != null) GateAPrefs.lastActivitySyncCursor: cursor,
+      if (fileSot == true || (fileSot == null && cursor != null))
+        GateAPrefs.fileSleepSotActive: true,
     };
 
 SleepEnrichOutcome _fileEnrich(List<SleepStateInterval> intervals) {
@@ -985,6 +987,7 @@ void main() {
         expect(sleep.any((s) => s.beginUnix == 1000 && s.endUnix == 3000), isTrue);
         expect(sleep.any((s) => s.beginUnix == 5000 && s.endUnix == 6000), isTrue);
         expect(prefs.getInt(GateAPrefs.lastActivitySyncCursor), 6001);
+        expect(prefs.getBool(GateAPrefs.fileSleepSotActive), isTrue);
         expect(link.lastStartUnix, isNotNull);
         expect(link.lastEndUnix, isNotNull);
       });
@@ -1205,6 +1208,39 @@ void main() {
         expect(snap.partial, isTrue);
         expect(await repo.loadSleepSessions(), hasLength(1));
         expect(prefs.getInt(GateAPrefs.lastActivitySyncCursor), 2001);
+        expect(prefs.getBool(GateAPrefs.fileSleepSotActive), isTrue);
+      });
+
+      test('partial upsert flips SoT; later messages-only cannot replace windows',
+          () async {
+        SharedPreferences.setMockInitialValues(_gateOpen(implVersion: _implV1));
+        final prefs = await SharedPreferences.getInstance();
+        const i1 = SleepStateInterval(beginUnix: 1000, endUnix: 4000);
+        final link = _StubLink(
+          result: _fileSync(
+            intervals: const [i1],
+            status: ActivitySyncStatus.partialBatch,
+          ),
+        );
+        final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+        await repo.syncFromWatch();
+        expect(prefs.getBool(GateAPrefs.fileSleepSotActive), isTrue);
+        expect(prefs.getInt(GateAPrefs.lastActivitySyncCursor), isNull);
+
+        link.result = const ActivitySyncResult(
+          status: ActivitySyncStatus.ok,
+          sleepSessions: [
+            SleepSessionSummary(beginUnix: 900, endUnix: 5000),
+          ],
+          sleepEnrich: [],
+          completedContainers: {'sleep'},
+        );
+        await repo.syncFromWatch();
+        final sleep = await repo.loadSleepSessions();
+        expect(sleep, hasLength(1));
+        expect(sleep.first.beginUnix, 1000);
+        expect(sleep.first.endUnix, 4000);
       });
 
       test('~30m shift attaches message stages onto file window', () async {
@@ -1264,9 +1300,11 @@ void main() {
         SharedPreferences.setMockInitialValues({
           ..._gateOpen(implVersion: _implV1),
           GateAPrefs.sleepSessionsJson: jsonEncode([
+            {'beginUnix': 100, 'endUnix': 500},
             {'beginUnix': 9000, 'endUnix': 19_000},
           ]),
           GateAPrefs.sleepFeelOnWakeJson: jsonEncode({
+            '100:500:': 'ok_nap',
             '9000:19000:': 'good',
           }),
         });
@@ -1284,14 +1322,15 @@ void main() {
 
         await repo.syncFromWatch();
         final sleep = await repo.loadSleepSessions();
-        expect(sleep, hasLength(1));
-        expect(await repo.loadFeelOnWake(sleep.first), 'good');
-        expect(
-          (jsonDecode(prefs.getString(GateAPrefs.sleepFeelOnWakeJson)!)
-              as Map)
-              .containsKey('9000:19000:'),
-          isFalse,
-        );
+        expect(sleep, hasLength(2));
+        final overnight =
+            sleep.firstWhere((s) => s.beginUnix == 10_000);
+        expect(await repo.loadFeelOnWake(overnight), 'good');
+        final feelMap = jsonDecode(
+          prefs.getString(GateAPrefs.sleepFeelOnWakeJson)!,
+        ) as Map<String, dynamic>;
+        expect(feelMap['100:500:'], 'ok_nap');
+        expect(feelMap.containsKey('9000:19000:'), isFalse);
       });
 
       test('pickHeroSession prefers recent overnight (builder smoke)',

@@ -30,6 +30,8 @@ abstract final class GateAPrefs {
   static const sleepEnrichDir = 'vitals/sleep_enrich';
   /// Native-persisted TruSleep blobs (len/path only in enrich JSON; never commit).
   static const sleepFilesDir = 'vitals/sleep_files';
+  /// True after any file-interval display SoT upsert (messages never own begin/end).
+  static const fileSleepSotActive = 'file_sleep_sot_active';
   /// JSON map of feel-on-wake survey answers keyed by sleep merge key.
   static const sleepFeelOnWakeJson = 'sleep_feel_on_wake_json';
   /// Side-file subdir for canonical swim sessions (one JSON per workout #).
