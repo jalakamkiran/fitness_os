@@ -1,15 +1,19 @@
 package com.example.fitness_os.huawei
 
 import android.util.Log
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.Locale
 
 /**
- * TruSleep FileDownload collaborator skeleton (service `0x2c` / `0x0a`).
+ * TruSleep FileDownload collaborator (service `0x2c` new-sync / `0x0a` legacy).
  *
- * Distinct from FeatureUpload (`0x28`). Soft-fails closed until a night capture
- * promotes `docs/wire-specs/huawei-br-gt5-sleep-files.md`. Never throws into
+ * Distinct from FeatureUpload (`0x28`). Clean-room SM from public LPv2 /
+ * community wire shapes (init → info → block×N → complete). Never throws into
  * activity Sync; callers treat absent/skipped as enrich-not-present.
  *
- * Privacy: log filename + byte length only — never PPG/ACC payloads.
+ * Privacy: log filename + byte length + sleep_state interval unix ranges only —
+ * never PPG/ACC payloads.
  */
 class HuaweiFileDownload(
     private val exchangeEncrypted: (
@@ -18,66 +22,149 @@ class HuaweiFileDownload(
         expectCmd: Int,
         timeoutMs: Long,
     ) -> HuaweiFraming.Frame?,
+    /** Fire-and-forget encrypted TLV frame (block request). */
+    private val sendEncrypted: (HuaweiFraming.Frame) -> Unit = {},
+    /** Fire-and-forget plaintext TLV frame (block request when noEncrypt). */
+    private val sendPlain: (HuaweiFraming.Frame) -> Unit = {},
+    /**
+     * Await next FileDownload block push (`cmd=0x05`) raw body
+     * (fileId + offset + unk + data), already decrypted.
+     */
+    private val awaitRawBlock: (serviceId: Int, timeoutMs: Long) -> ByteArray? = { _, _ -> null },
     private val isConnected: () -> Boolean = { true },
     /**
      * Soft-skip live exchanges until caps/capture promote the wire.
-     * Tests may force an exchange attempt by setting true.
+     * Product Sync enables live download.
      */
-    private val liveProbeEnabled: Boolean = false,
+    private val liveDownloadEnabled: Boolean = false,
+    /** Persist downloaded bytes under app-private storage; return relative path or null. */
+    private val persistFile: ((id: String, bytes: ByteArray) -> String?)? = null,
+    /** Format unix with last synced watch zone (falls back to phone default). */
+    private val formatUnix: (unixSec: Int) -> String = { unix ->
+        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+            .apply { timeZone = java.util.TimeZone.getDefault() }
+            .format(java.util.Date(unix.toLong() * 1000L))
+    },
+    private val watchZoneLabel: () -> String = {
+        val tz = java.util.TimeZone.getDefault()
+        val off = tz.rawOffset + tz.dstSavings
+        val sign = if (off >= 0) "+" else "-"
+        val abs = kotlin.math.abs(off) / 1000
+        val h = abs / 3600
+        val m = (abs / 60) % 60
+        "${tz.id} UTC$sign${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}"
+    },
 ) {
     companion object {
         private const val TAG = "FOS_HUAWEI"
         const val SVC_LEGACY = 0x0a
         const val SVC_NEW = 0x2c
-        /** Placeholder consult cmd — not normative until capture cites SS/CC. */
-        const val CMD_FILE_CONSULT = 0x01
-        private const val PROBE_TIMEOUT_MS = 3_000L
-        const val FILE_SLEEP_STATE = "sleep_state"
-        const val FILE_SLEEP_DATA = "sleep_data"
+        const val CMD_INIT = 0x01
+        const val CMD_INFO = 0x03
+        const val CMD_REQUEST_BLOCK = 0x04
+        const val CMD_BLOCK = 0x05
+        const val CMD_COMPLETE = 0x06
+        private const val STEP_TIMEOUT_MS = 8_000L
+        private const val BLOCK_TIMEOUT_MS = 20_000L
+        private const val PROGRESS_EVERY_BYTES = 64 * 1024
+        const val FILE_SLEEP_STATE = "sleep_state.bin"
+        const val FILE_SLEEP_DATA = "sleep_data.bin"
+        const val TYPE_SLEEP_STATE: Byte = 0x0e
+        const val TYPE_SLEEP_DATA: Byte = 0x0f
+        private const val BLOCK_HEADER_LEN = 6 // fileId + offset + unk
+        private const val STATE_RECORD_LEN = 16
+
+        /**
+         * Parse sleep_state.bin LE records (start u32, end u32, 8 B pad).
+         * Privacy-safe — returns unix pairs only.
+         */
+        fun parseSleepStateIntervals(stateData: ByteArray): List<StateInterval> {
+            if (stateData.size < STATE_RECORD_LEN) return emptyList()
+            val buf = ByteBuffer.wrap(stateData).order(ByteOrder.LITTLE_ENDIAN)
+            val out = ArrayList<StateInterval>()
+            while (stateData.size - buf.position() >= STATE_RECORD_LEN) {
+                val start = buf.int
+                val end = buf.int
+                buf.position(buf.position() + 8)
+                if (end > start && start > 0) {
+                    out.add(StateInterval(beginUnix = start, endUnix = end))
+                }
+            }
+            return out
+        }
+    }
+
+    data class StateInterval(
+        val beginUnix: Int,
+        val endUnix: Int,
+    ) {
+        fun toMap(): Map<String, Any?> = mapOf(
+            "beginUnix" to beginUnix,
+            "endUnix" to endUnix,
+        )
     }
 
     data class FileRef(
         val id: String,
         val len: Int,
+        val path: String? = null,
     ) {
-        fun toMap(): Map<String, Any?> = mapOf("id" to id, "len" to len)
+        fun toMap(): Map<String, Any?> = buildMap {
+            put("id", id)
+            put("len", len)
+            if (path != null) put("path", path)
+        }
     }
 
     data class ProbeOutcome(
         val status: String, // present | absent | skipped
         val serviceId: Int,
         val files: List<FileRef> = emptyList(),
+        val stateIntervals: List<StateInterval> = emptyList(),
         val reason: String? = null,
     ) {
         fun toMap(): Map<String, Any?> = buildMap {
             put("status", status)
             put("serviceId", serviceId)
             put("files", files.map { it.toMap() })
+            if (stateIntervals.isNotEmpty()) {
+                put("stateIntervals", stateIntervals.map { it.toMap() })
+            }
             if (reason != null) put("reason", reason)
         }
     }
 
+    private data class SleepFileSpec(
+        val fileName: String,
+        val fileType: Byte,
+        val shortId: String,
+    )
+
     /**
-     * Probe `sleep_state` then `sleep_data`. Soft-skip by default (no caps dump /
-     * capture yet). When [liveProbeEnabled], attempt a short consult and treat
-     * timeout/null as absent — never throws.
+     * Download `sleep_state.bin` over FileDownload new-sync (`0x2c`).
+     * This cut skips unused `sleep_data.bin` until a stage-parse cut resumes it.
+     * Legacy (`0x0a`) list path remains soft-absent until owned.
      */
-    fun probeSleepFiles(preferNewSync: Boolean = true): ProbeOutcome {
+    fun downloadSleepFiles(
+        preferNewSync: Boolean = true,
+        startUnix: Int = 0,
+        endUnix: Int = (System.currentTimeMillis() / 1000L).toInt(),
+    ): ProbeOutcome {
         val serviceId = if (preferNewSync) SVC_NEW else SVC_LEGACY
         if (!isConnected()) {
-            Log.i(TAG, "file-download probe skipped (disconnected) svc=0x${serviceId.toString(16)}")
+            Log.i(TAG, "file-download skipped (disconnected) svc=0x${serviceId.toString(16)}")
             return ProbeOutcome(
                 status = "skipped",
                 serviceId = serviceId,
                 reason = "disconnected",
             )
         }
-        if (!liveProbeEnabled) {
+        if (!liveDownloadEnabled) {
             Log.i(
                 TAG,
-                "file-download probe soft-skip pending capture " +
+                "file-download soft-skip pending capture " +
                     "svc=0x${serviceId.toString(16)} " +
-                    "files=$FILE_SLEEP_STATE,$FILE_SLEEP_DATA",
+                    "files=$FILE_SLEEP_STATE",
             )
             return ProbeOutcome(
                 status = "skipped",
@@ -85,32 +172,68 @@ class HuaweiFileDownload(
                 reason = "pending_capture",
             )
         }
+        if (!preferNewSync) {
+            Log.i(TAG, "file-download legacy svc=0x0a not implemented — absent")
+            return ProbeOutcome(
+                status = "absent",
+                serviceId = serviceId,
+                reason = "legacy_unimplemented",
+            )
+        }
         return try {
+            val specs = listOf(
+                SleepFileSpec(FILE_SLEEP_STATE, TYPE_SLEEP_STATE, "sleep_state"),
+            )
             val present = ArrayList<FileRef>()
-            for (name in listOf(FILE_SLEEP_STATE, FILE_SLEEP_DATA)) {
-                val frame = exchangeEncrypted(
-                    consultFrame(serviceId, name),
-                    serviceId,
-                    CMD_FILE_CONSULT,
-                    PROBE_TIMEOUT_MS,
-                )
-                if (frame == null) {
-                    Log.i(TAG, "file-download probe timeout name=$name len=?")
-                    return ProbeOutcome(
-                        status = "absent",
-                        serviceId = serviceId,
-                        reason = "timeout:$name",
-                    )
+            var stateIntervals: List<StateInterval> = emptyList()
+            var lastReason: String? = null
+            for (spec in specs) {
+                val result = downloadOneNewSync(serviceId, spec, startUnix, endUnix)
+                when {
+                    result == null -> {
+                        lastReason = "fail:${spec.shortId}"
+                        Log.i(TAG, "file-download miss name=${spec.fileName}")
+                    }
+                    result.isEmpty() -> {
+                        Log.i(TAG, "file-download empty name=${spec.fileName} len=0")
+                    }
+                    else -> {
+                        Log.i(
+                            TAG,
+                            "file-download ok name=${spec.fileName} len=${result.size}",
+                        )
+                        if (spec.fileType == TYPE_SLEEP_STATE) {
+                            stateIntervals = parseSleepStateIntervals(result)
+                            logSleepStateIntervals(stateIntervals, raw = result)
+                        }
+                        val path = try {
+                            persistFile?.invoke(spec.shortId, result)
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "file-download persist fail id=${spec.shortId}: ${t.message}")
+                            null
+                        }
+                        present.add(
+                            FileRef(id = spec.shortId, len = result.size, path = path),
+                        )
+                    }
                 }
-                val len = HuaweiFraming.encodeTlvs(frame.tlvs).size
-                Log.i(TAG, "file-download probe rx name=$name len=$len")
-                // Until wire-spec is promoted, any response is recorded as present
-                // with length only — no PPG decode.
-                present.add(FileRef(id = name, len = len))
             }
-            ProbeOutcome(status = "present", serviceId = serviceId, files = present)
+            if (present.isEmpty()) {
+                ProbeOutcome(
+                    status = "absent",
+                    serviceId = serviceId,
+                    reason = lastReason ?: "empty",
+                )
+            } else {
+                ProbeOutcome(
+                    status = "present",
+                    serviceId = serviceId,
+                    files = present,
+                    stateIntervals = stateIntervals,
+                )
+            }
         } catch (t: Throwable) {
-            Log.w(TAG, "file-download probe fail-closed: ${t.message}")
+            Log.w(TAG, "file-download fail-closed: ${t.message}")
             ProbeOutcome(
                 status = "absent",
                 serviceId = serviceId,
@@ -119,14 +242,248 @@ class HuaweiFileDownload(
         }
     }
 
-    private fun consultFrame(serviceId: Int, fileName: String): HuaweiFraming.Frame {
-        val nameBytes = fileName.toByteArray(Charsets.UTF_8)
-        return HuaweiFraming.Frame(
+    /** @deprecated Use [downloadSleepFiles]. Kept for older call sites/tests. */
+    fun probeSleepFiles(preferNewSync: Boolean = true): ProbeOutcome =
+        downloadSleepFiles(preferNewSync = preferNewSync)
+
+    private fun downloadOneNewSync(
+        serviceId: Int,
+        spec: SleepFileSpec,
+        startUnix: Int,
+        endUnix: Int,
+    ): ByteArray? {
+        val init = exchangeEncrypted(
+            initFrame(serviceId, spec.fileName, spec.fileType, startUnix, endUnix),
+            serviceId,
+            CMD_INIT,
+            STEP_TIMEOUT_MS,
+        ) ?: run {
+            Log.i(TAG, "file-download init timeout name=${spec.fileName}")
+            return null
+        }
+        val fileId = asByte(init, 0x03) ?: 0
+        val fileSize = asInt(init, 0x04) ?: 0
+        Log.i(
+            TAG,
+            "file-download init name=${spec.fileName} id=${fileId.toInt() and 0xFF} size=$fileSize",
+        )
+        if (fileSize <= 0) {
+            sendComplete(serviceId, fileId)
+            return ByteArray(0)
+        }
+
+        val info = exchangeEncrypted(
+            infoFrame(serviceId, fileId),
+            serviceId,
+            CMD_INFO,
+            STEP_TIMEOUT_MS,
+        ) ?: run {
+            Log.i(TAG, "file-download info timeout name=${spec.fileName}")
+            return null
+        }
+        val timeoutSec = (asByte(info, 0x02)?.toInt()?.and(0xFF) ?: 20).coerceIn(5, 120)
+        val maxBlockSize = (asInt(info, 0x04) ?: 1024).coerceAtLeast(64)
+        val noEncrypt = (asByte(info, 0x05)?.toInt()?.and(0xFF) ?: 0) != 0
+        Log.i(
+            TAG,
+            "file-download info name=${spec.fileName} " +
+                "maxBlock=$maxBlockSize timeoutSec=$timeoutSec noEncrypt=$noEncrypt",
+        )
+
+        val buffer = ByteArray(fileSize)
+        var offset = 0
+        var nextProgress = PROGRESS_EVERY_BYTES
+        val chunkTimeoutMs = (timeoutSec * 1000L).coerceAtLeast(BLOCK_TIMEOUT_MS)
+        while (offset < fileSize) {
+            val blockSize = minOf(fileSize - offset, maxBlockSize)
+            val blockReq = blockRequestFrame(serviceId, fileId, offset, blockSize)
+            synchronizedQueueClearThenSend(blockReq, noEncrypt)
+            var blockGot = 0
+            while (blockGot < blockSize && offset + blockGot < fileSize) {
+                val raw = awaitRawBlock(serviceId, chunkTimeoutMs)
+                    ?: run {
+                        Log.w(
+                            TAG,
+                            "file-download block timeout/null name=${spec.fileName} " +
+                                "at=${offset + blockGot}/$fileSize",
+                        )
+                        return null
+                    }
+                val chunk = parseBlockChunk(raw, fileId) ?: continue
+                if (chunk.offset != offset + blockGot) {
+                    Log.w(
+                        TAG,
+                        "file-download offset mismatch want=${offset + blockGot} got=${chunk.offset}",
+                    )
+                    return null
+                }
+                if (offset + blockGot + chunk.data.size > fileSize) {
+                    Log.w(TAG, "file-download overrun name=${spec.fileName}")
+                    return null
+                }
+                System.arraycopy(chunk.data, 0, buffer, offset + blockGot, chunk.data.size)
+                blockGot += chunk.data.size
+                val got = offset + blockGot
+                if (got >= nextProgress || got >= fileSize) {
+                    Log.i(
+                        TAG,
+                        "file-download progress name=${spec.fileName} $got/$fileSize",
+                    )
+                    nextProgress = got + PROGRESS_EVERY_BYTES
+                }
+            }
+            offset += blockGot
+        }
+
+        sendComplete(serviceId, fileId)
+        return buffer
+    }
+
+    private fun synchronizedQueueClearThenSend(frame: HuaweiFraming.Frame, noEncrypt: Boolean) {
+        if (noEncrypt) sendPlain(frame) else sendEncrypted(frame)
+    }
+
+    private fun sendComplete(serviceId: Int, fileId: Byte) {
+        val frame = HuaweiFraming.Frame(
             serviceId = serviceId,
-            commandId = CMD_FILE_CONSULT,
+            commandId = CMD_COMPLETE,
             tlvs = listOf(
-                HuaweiFraming.Tlv(0x01, nameBytes),
+                HuaweiFraming.Tlv(0x01, byteArrayOf(fileId)),
+                HuaweiFraming.Tlv(0x02, byteArrayOf(0x01)),
             ),
         )
+        sendEncrypted(frame)
+    }
+
+    private fun initFrame(
+        serviceId: Int,
+        fileName: String,
+        fileType: Byte,
+        startUnix: Int,
+        endUnix: Int,
+    ): HuaweiFraming.Frame =
+        HuaweiFraming.Frame(
+            serviceId = serviceId,
+            commandId = CMD_INIT,
+            tlvs = listOf(
+                HuaweiFraming.Tlv(0x01, fileName.toByteArray(Charsets.UTF_8)),
+                HuaweiFraming.Tlv(0x02, byteArrayOf(fileType)),
+                HuaweiFraming.Tlv(0x05, HuaweiPacketCrypto.intBe(startUnix)),
+                HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.intBe(endUnix)),
+            ),
+        )
+
+    private fun infoFrame(serviceId: Int, fileId: Byte): HuaweiFraming.Frame =
+        HuaweiFraming.Frame(
+            serviceId = serviceId,
+            commandId = CMD_INFO,
+            tlvs = listOf(
+                HuaweiFraming.Tlv(0x01, byteArrayOf(fileId)),
+                HuaweiFraming.Tlv(0x02, byteArrayOf()),
+                HuaweiFraming.Tlv(0x03, byteArrayOf()),
+                HuaweiFraming.Tlv(0x04, byteArrayOf()),
+                HuaweiFraming.Tlv(0x05, byteArrayOf()),
+            ),
+        )
+
+    private fun blockRequestFrame(
+        serviceId: Int,
+        fileId: Byte,
+        offset: Int,
+        size: Int,
+    ): HuaweiFraming.Frame =
+        HuaweiFraming.Frame(
+            serviceId = serviceId,
+            commandId = CMD_REQUEST_BLOCK,
+            tlvs = listOf(
+                HuaweiFraming.Tlv(0x01, byteArrayOf(fileId)),
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.intBe(offset)),
+                HuaweiFraming.Tlv(0x03, HuaweiPacketCrypto.intBe(size)),
+            ),
+        )
+
+    private data class BlockChunk(val offset: Int, val data: ByteArray)
+
+    private fun parseBlockChunk(raw: ByteArray, expectFileId: Byte): BlockChunk? {
+        if (raw.size < BLOCK_HEADER_LEN) {
+            Log.w(TAG, "file-download block too short len=${raw.size}")
+            return null
+        }
+        val buf = ByteBuffer.wrap(raw).order(ByteOrder.BIG_ENDIAN)
+        val fileId = buf.get()
+        if (fileId != expectFileId) {
+            Log.w(
+                TAG,
+                "file-download fileId mismatch want=${expectFileId.toInt() and 0xFF} " +
+                    "got=${fileId.toInt() and 0xFF}",
+            )
+            return null
+        }
+        val offset = buf.int
+        buf.get() // unknown
+        val data = ByteArray(buf.remaining())
+        buf.get(data)
+        return BlockChunk(offset = offset, data = data)
+    }
+
+    private fun logSleepStateIntervals(
+        intervals: List<StateInterval>,
+        raw: ByteArray,
+    ) {
+        val zone = watchZoneLabel()
+        Log.i(
+            TAG,
+            "file-download sleep_state rawLen=${raw.size} zone=$zone " +
+                "hex=${raw.toHexLower()}",
+        )
+        if (intervals.isEmpty()) {
+            Log.i(TAG, "file-download sleep_state intervals=0")
+            return
+        }
+        Log.i(TAG, "file-download sleep_state intervals=${intervals.size} (file order) zone=$zone")
+        intervals.forEachIndexed { i, iv ->
+            val durMin = (iv.endUnix - iv.beginUnix) / 60
+            Log.i(
+                TAG,
+                "file-download sleep_state[$i] " +
+                    "${iv.beginUnix}-${iv.endUnix} " +
+                    "${formatUnix(iv.beginUnix)}→${formatUnix(iv.endUnix)} (${durMin}m)",
+            )
+        }
+        val longest = intervals.maxByOrNull { it.endUnix - it.beginUnix }
+        if (longest != null) {
+            val durMin = (longest.endUnix - longest.beginUnix) / 60
+            Log.i(
+                TAG,
+                "file-download sleep_state longest=" +
+                    "${formatUnix(longest.beginUnix)}→${formatUnix(longest.endUnix)} (${durMin}m)",
+            )
+        }
+        // Most recent calendar night fragment (by endUnix) — better than longest for "last night".
+        val latest = intervals.maxByOrNull { it.endUnix }
+        if (latest != null) {
+            Log.i(
+                TAG,
+                "file-download sleep_state latestEnd=" +
+                    "${formatUnix(latest.beginUnix)}→${formatUnix(latest.endUnix)}",
+            )
+        }
+    }
+
+    private fun ByteArray.toHexLower(): String {
+        val sb = StringBuilder(size * 2)
+        for (b in this) {
+            sb.append(String.format(Locale.US, "%02x", b.toInt() and 0xFF))
+        }
+        return sb.toString()
+    }
+
+    private fun asByte(frame: HuaweiFraming.Frame, tag: Int): Byte? =
+        frame.tlvs.firstOrNull { it.tag == tag }?.value?.firstOrNull()
+
+    private fun asInt(frame: HuaweiFraming.Frame, tag: Int): Int? {
+        val v = frame.tlvs.firstOrNull { it.tag == tag }?.value ?: return null
+        if (v.size < 4) return null
+        return ByteBuffer.wrap(v).order(ByteOrder.BIG_ENDIAN).int
     }
 }

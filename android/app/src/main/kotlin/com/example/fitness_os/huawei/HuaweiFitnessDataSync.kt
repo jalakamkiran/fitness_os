@@ -7,13 +7,15 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * Clean-room FitnessData (`0x07`) activity Sync — sleep messages + daily HR +
- * FitnessTotals day rollup.
+ * Clean-room FitnessData (`0x07`) activity Sync — sleep messages +
+ * FitnessTotals day rollup + TruSleep FileDownload (`sleep_state` only).
  *
- * Pre-promotion parsers: synthetic fixtures + owned wire-spec shapes only.
- * Do not treat as normative until `huawei-br-gt5-fitness-data.md` cites capture/ABSENT.
+ * Continuous / daily HR is **not** pulled or soft-armed on Sync (Enable may
+ * still arm auto-HR separately). Pre-promotion parsers: synthetic fixtures +
+ * owned wire-spec shapes only.
  *
- * FileSleep / TruSleep FileDownload: non-blocking probe after messages (soft-fail).
+ * FileSleep / TruSleep FileDownload: non-blocking after messages (soft-fail);
+ * intervals alone are mergeable success when messages are empty.
  */
 class HuaweiFitnessDataSync(
     private val exchangeEncrypted: (
@@ -25,10 +27,14 @@ class HuaweiFitnessDataSync(
     private val fetchBattery: (() -> Unit)? = null,
     private val isConnected: () -> Boolean = { true },
     /**
-     * Optional probe override for tests. Default builds [HuaweiFileDownload]
-     * soft-skip collaborator (pending capture).
+     * Optional override for tests. Default builds a soft-skip [HuaweiFileDownload].
+     * Session injects a live-download collaborator.
      */
+    private val sleepFileDownload: (() -> HuaweiFileDownload)? = null,
+    /** @deprecated Prefer [sleepFileDownload]. */
     private val sleepFileDownloadProbe: (() -> HuaweiFileDownload.ProbeOutcome)? = null,
+    /** Privacy-safe watch clock/zone scalars for Flutter → Sentry observe. */
+    private val watchClockSnapshot: (() -> Map<String, Any?>)? = null,
 ) {
     companion object {
         private const val TAG = "FOS_HUAWEI"
@@ -47,6 +53,8 @@ class HuaweiFitnessDataSync(
         const val BITMAP_HR = 0x40
         /** Drop sub-15m fragments (paging noise / empty tails). */
         private const val MIN_SESSION_SEC = 15 * 60L
+        /** Match Flutter [TruSleepSleepSot.mergeGapSec] — near-adjacent file fragments. */
+        private const val FILE_INTERVAL_MERGE_GAP_SEC = 180
 
         private data class FeatureEnable(val id: String, val cmd: Int)
 
@@ -305,13 +313,16 @@ class HuaweiFitnessDataSync(
     }
 
     /**
-     * @return status + sleepSessions + dailyHrSamples + fitnessTotals + completedContainers + flags
+     * @return status + sleepSessions + dailyHrSamples (always empty) + fitnessTotals +
+     * completedContainers + sleepEnrich + flags
+     *
+     * [skipAutoHrSoft] is ignored — Sync never soft-arms auto-HR (kept for channel compat).
      */
     fun sync(
         startUnix: Long,
         endUnix: Long,
         skipTruSleepSoft: Boolean = false,
-        skipAutoHrSoft: Boolean = false,
+        @Suppress("UNUSED_PARAMETER") skipAutoHrSoft: Boolean = false,
     ): Map<String, Any?> {
         val start = startUnix.coerceAtLeast(0)
         val end = endUnix.coerceAtLeast(start)
@@ -323,16 +334,9 @@ class HuaweiFitnessDataSync(
         var enableSkipped = false
         var unknownTlvCount = 0
 
-        // Soft enables — distinct from durable empty. Skip when explicit Enable already armed.
+        // Soft-enable TruSleep only. Auto-HR is Enable-path only (not Sync).
         if (!skipTruSleepSoft) {
             when (requestEnable(CMD_TRUSLEEP_ENABLE)) {
-                EnableResult.Skipped -> enableSkipped = true
-                EnableResult.Failed -> enableSkipped = true
-                EnableResult.Ok -> Unit
-            }
-        }
-        if (!skipAutoHrSoft) {
-            when (requestEnable(CMD_AUTO_HR_ENABLE)) {
                 EnableResult.Skipped -> enableSkipped = true
                 EnableResult.Failed -> enableSkipped = true
                 EnableResult.Ok -> Unit
@@ -414,73 +418,14 @@ class HuaweiFitnessDataSync(
                 TAG,
                 "activity-sync sleep begin=${s.beginUnix} end=${s.endUnix} " +
                     "durMin=${(s.endUnix - s.beginUnix) / 60} " +
+                    "stages=${s.stages.size} wire0=${s.wireType} " +
                     "local=$beginLabel → $endLabel",
             )
         }
+        logSleepStageDebugDump(aggregated, fmt)
 
-        // stepCount → stepData (HR extract only; drop steps/SpO2)
-        val stepCountFrame = exchangeEncrypted(
-            buildWindowRequest(CMD_STEP_COUNT, start, end),
-            SVC,
-            CMD_STEP_COUNT,
-            TIMEOUT_MS,
-        )
-        if (stepCountFrame == null) {
-            Log.w(TAG, "activity-sync stepCount timeout")
-            return attemptFitnessTotalsAndFinalize(
-                startUnix = start,
-                endUnix = end,
-                status = "partial_batch",
-                message = "Step count timed out after sleep",
-                sleep = sleepSessions,
-                hr = hrSamples,
-                completed = completed,
-                enableSkipped = enableSkipped,
-            )
-        }
-        val stepRefs = parseCountIndices(stepCountFrame)
-        Log.i(TAG, "activity-sync stepCount=${stepRefs.size}")
-
-        var hrContainerCompleted = false
-        for (index in stepRefs) {
-            val dataFrame = exchangeEncrypted(
-                buildIndexRequest(CMD_STEP_DATA, index),
-                SVC,
-                CMD_STEP_DATA,
-                TIMEOUT_MS,
-            )
-            if (dataFrame == null) {
-                Log.w(TAG, "activity-sync stepData timeout index=$index")
-                if (hrContainerCompleted) completed.add("daily_hr")
-                return attemptFitnessTotalsAndFinalize(
-                    startUnix = start,
-                    endUnix = end,
-                    status = "partial_batch",
-                    message = "Step data timed out after partial progress",
-                    sleep = sleepSessions,
-                    hr = hrSamples,
-                    completed = completed,
-                    enableSkipped = enableSkipped,
-                )
-            }
-            val parsed = parseStepDataHr(dataFrame)
-            unknownTlvCount += parsed.unknownTags
-            for (s in parsed.samples) {
-                hrSamples.add(s.toMap())
-            }
-            // Only mark completed when we extracted usable BPM (bitmap alone can be noise).
-            if (parsed.samples.isNotEmpty()) {
-                hrContainerCompleted = true
-            }
-        }
-        if (hrContainerCompleted) {
-            completed.add("daily_hr")
-        }
-        Log.i(
-            TAG,
-            "activity-sync hrSamples=${hrSamples.size} hrCompleted=$hrContainerCompleted",
-        )
-        // Absent HR bitmap ⇒ HR not completed — not partial_batch.
+        // Continuous / daily HR stripped from activity Sync — no stepCount HR pull.
+        Log.i(TAG, "activity-sync skip daily_hr pull (continuous HR stripped)")
 
         return attemptFitnessTotalsAndFinalize(
             startUnix = start,
@@ -524,13 +469,19 @@ class HuaweiFitnessDataSync(
         if (fetchBatteryAfter) {
             fetchBattery?.invoke()
         }
-        val sleepEnrich = attemptSleepFileDownload(sleep)
+        val sleepEnrich = attemptSleepFileDownload(sleep, startUnix, endUnix)
         if (unknownTlvCount > 0) {
             Log.i(TAG, "activity-sync unknownTlvCount=$unknownTlvCount")
         }
         val resolvedStatus = if (recomputeStatusFromMergeable) {
+            val hasFileIntervals = sleepEnrich.any { row ->
+                (row["stateIntervals"] as? List<*>)?.isNotEmpty() == true
+            }
             val hasMergeable =
-                sleep.isNotEmpty() || hr.isNotEmpty() || totals.isNotEmpty()
+                sleep.isNotEmpty() ||
+                    hr.isNotEmpty() ||
+                    totals.isNotEmpty() ||
+                    hasFileIntervals
             if (hasMergeable) "ok" else "empty"
         } else {
             status
@@ -560,42 +511,95 @@ class HuaweiFitnessDataSync(
     }
 
     /**
-     * Non-blocking TruSleep FileDownload probe. Never clears [sleep] on failure.
-     * Soft-skipped until capture promotes wire-spec (default collaborator).
+     * Non-blocking TruSleep FileDownload. Never clears [sleep] on failure.
+     * Downloads `sleep_state.bin` only (this cut); emits enrich even when
+     * message-path sleep is empty if intervals are present.
      */
     private fun attemptSleepFileDownload(
         sleep: List<Map<String, Any?>>,
+        windowStartUnix: Long,
+        windowEndUnix: Long,
     ): List<Map<String, Any?>> {
         return try {
+            // Prefer activity Sync window — message min(begin) must not starve files.
+            val startUnix = windowStartUnix.toInt().coerceAtLeast(0)
+            val endUnix = windowEndUnix.toInt().coerceAtLeast(startUnix)
             val outcome = sleepFileDownloadProbe?.invoke()
-                ?: HuaweiFileDownload(
+                ?: (sleepFileDownload?.invoke() ?: HuaweiFileDownload(
                     exchangeEncrypted = exchangeEncrypted,
                     isConnected = isConnected,
-                    liveProbeEnabled = false,
-                ).probeSleepFiles(preferNewSync = true)
+                    liveDownloadEnabled = false,
+                )).downloadSleepFiles(
+                    preferNewSync = true,
+                    startUnix = startUnix,
+                    endUnix = endUnix,
+                )
             Log.i(
                 TAG,
                 "activity-sync file-download status=${outcome.status} " +
                     "svc=0x${outcome.serviceId.toString(16)} " +
-                    "files=${outcome.files.size} reason=${outcome.reason}",
+                    "files=${outcome.files.size} intervals=${outcome.stateIntervals.size} " +
+                    "reason=${outcome.reason}",
             )
-            if (outcome.status != "present" || sleep.isEmpty()) {
+            if (outcome.status != "present") {
                 return emptyList()
             }
             val refs = outcome.files.map { it.toMap() }
-            sleep.map { session ->
-                mapOf(
-                    "beginUnix" to session["beginUnix"],
-                    "endUnix" to session["endUnix"],
-                    "wireType" to session["wireType"],
-                    "present" to true,
-                    "refs" to refs,
-                )
+            val intervals = outcome.stateIntervals
+            if (intervals.isEmpty()) {
+                // Present files but no SoT intervals — attach refs onto messages only.
+                if (sleep.isEmpty()) return emptyList()
+                return sleep.map { session ->
+                    buildMap {
+                        put("beginUnix", session["beginUnix"])
+                        put("endUnix", session["endUnix"])
+                        put("wireType", session["wireType"])
+                        put("present", true)
+                        put("refs", refs)
+                    }
+                }
+            }
+            // One enrich row per ≤3m gap-merged chain (avoid mega-span migrate).
+            val chains = gapMergeFileIntervals(intervals)
+            val intervalMaps = intervals.map { it.toMap() }
+            chains.mapIndexed { index, chain ->
+                buildMap {
+                    put("beginUnix", chain.beginUnix)
+                    put("endUnix", chain.endUnix)
+                    put("present", true)
+                    put("refs", refs)
+                    // Attach full interval list once (first row) for Flutter SoT build.
+                    if (index == 0) put("stateIntervals", intervalMaps)
+                }
             }
         } catch (t: Throwable) {
             Log.w(TAG, "activity-sync file-download fail-closed: ${t.message}")
             emptyList()
         }
+    }
+
+    /** Contiguous file-interval chains with gap ≤ [FILE_INTERVAL_MERGE_GAP_SEC]. */
+    private fun gapMergeFileIntervals(
+        intervals: List<HuaweiFileDownload.StateInterval>,
+    ): List<HuaweiFileDownload.StateInterval> {
+        if (intervals.isEmpty()) return emptyList()
+        val sorted = intervals.sortedBy { it.beginUnix }
+        val chains = ArrayList<HuaweiFileDownload.StateInterval>()
+        var begin = sorted.first().beginUnix
+        var end = sorted.first().endUnix
+        for (i in 1 until sorted.size) {
+            val next = sorted[i]
+            if (next.beginUnix - end > FILE_INTERVAL_MERGE_GAP_SEC) {
+                chains.add(HuaweiFileDownload.StateInterval(begin, end))
+                begin = next.beginUnix
+                end = next.endUnix
+            } else {
+                if (next.endUnix > end) end = next.endUnix
+                if (next.beginUnix < begin) begin = next.beginUnix
+            }
+        }
+        chains.add(HuaweiFileDownload.StateInterval(begin, end))
+        return chains
     }
 
     /**
@@ -841,6 +845,8 @@ class HuaweiFitnessDataSync(
         val timestampUnix: Long,
         val durationMin: Int,
         val wireType: Int?,
+        /** Debug-only raw `0x05` payload hex (never sent on channel). */
+        val raw05Hex: String? = null,
     ) {
         fun toMap(): Map<String, Any?> = mapOf(
             "timestampUnix" to timestampUnix,
@@ -892,10 +898,14 @@ class HuaweiFitnessDataSync(
         var type: Int? = null
         var timestamp = 0L
         var durationMin = 0
+        var raw05Hex: String? = null
         for (child in inner) {
             when (child.tag) {
                 0x04 -> if (child.value.isNotEmpty()) type = u8(child.value)
                 0x05 -> if (child.value.size >= 4) {
+                    raw05Hex = child.value.joinToString("") { b ->
+                        "%02X".format(b.toInt() and 0xFF)
+                    }
                     timestamp = u32(child.value)
                     if (child.value.size >= 6) {
                         durationMin = u16(child.value, 4).coerceAtLeast(0)
@@ -906,7 +916,57 @@ class HuaweiFitnessDataSync(
             }
         }
         if (timestamp <= 0L) return null
-        return SleepStage(timestamp, durationMin, type)
+        // Owner debug: keep last raw 0x05 hex on the stage via side channel log only
+        // when dumping recent sessions (see logSleepStageDebugDump).
+        return SleepStage(timestamp, durationMin, type, raw05Hex)
+    }
+
+    /**
+     * Owner debug dump: per-stage type/ts/dur (+ raw 0x05 hex) for sessions
+     * ending in the last 48h, plus a global wireType histogram. Privacy: no PPG.
+     */
+    private fun logSleepStageDebugDump(
+        sessions: List<SleepSession>,
+        fmt: java.text.SimpleDateFormat,
+    ) {
+        val nowSec = System.currentTimeMillis() / 1000L
+        val cutoff = nowSec - 48 * 3600L
+        val typeHist = linkedMapOf<Int, Int>()
+        var totalStages = 0
+        for (session in sessions) {
+            for (stage in session.stages) {
+                totalStages++
+                val t = stage.wireType ?: -1
+                typeHist[t] = (typeHist[t] ?: 0) + 1
+            }
+        }
+        val histStr = typeHist.entries
+            .sortedBy { it.key }
+            .joinToString(",") { "t=${it.key}:${it.value}" }
+        Log.i(TAG, "activity-sync sleep-type-hist n=$totalStages [$histStr]")
+
+        val recent = sessions.filter { it.endUnix >= cutoff }
+        Log.i(
+            TAG,
+            "activity-sync sleep-stage-dump sessions=${recent.size} " +
+                "(ending last 48h; force-pull debug)",
+        )
+        for (session in recent) {
+            Log.i(
+                TAG,
+                "activity-sync sleep-stage-session begin=${session.beginUnix} " +
+                    "end=${session.endUnix} stages=${session.stages.size}",
+            )
+            session.stages.forEachIndexed { i, stage ->
+                val local = fmt.format(java.util.Date(stage.timestampUnix * 1000L))
+                Log.i(
+                    TAG,
+                    "activity-sync sleep-stage i=$i type=${stage.wireType} " +
+                        "ts=${stage.timestampUnix} durMin=${stage.durationMin} " +
+                        "local=$local raw05=${stage.raw05Hex ?: "-"}",
+                )
+            }
+        }
     }
 
     /** Gap > 45 minutes starts a new session within one sleepData container. */
@@ -1055,5 +1115,7 @@ class HuaweiFitnessDataSync(
         put("completedContainers", completed)
         put("enableSkipped", enableSkipped)
         put("sleepEnrich", sleepEnrich)
+        val clock = watchClockSnapshot?.invoke()
+        if (clock != null && clock.isNotEmpty()) put("watchClock", clock)
     }
 }
