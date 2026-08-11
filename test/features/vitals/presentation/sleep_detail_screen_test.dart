@@ -11,13 +11,9 @@ import 'package:fitness_os/features/vitals/presentation/view/sleep_detail_screen
 class _FakeRepo implements VitalsRepository {
   _FakeRepo({
     this.stages = const [],
-    this.hr = const [],
-    this.enrichPresent = false,
   });
 
   final List<SleepStageSummary> stages;
-  final List<DailyHrSample> hr;
-  final bool enrichPresent;
 
   @override
   Future<bool> isGateAPassed() async => true;
@@ -49,11 +45,11 @@ class _FakeRepo implements VitalsRepository {
     required int beginUnix,
     required int endUnix,
   }) async =>
-      hr;
+      const [];
 
   @override
   Future<bool> isSleepEnrichPresent(SleepSessionSummary session) async =>
-      enrichPresent;
+      false;
 
   @override
   Future<String?> loadFeelOnWake(SleepSessionSummary session) async => null;
@@ -100,9 +96,8 @@ class _FakeRepo implements VitalsRepository {
 }
 
 SleepSessionSummary _overnight() {
-  // Local overnight approx: previous 23:00 → 06:30 next day (UTC-ish fixture).
-  final begin = DateTime.utc(2026, 8, 8, 17, 48); // ~23:18 IST
-  final end = DateTime.utc(2026, 8, 9, 1, 0); // ~06:30 IST
+  final begin = DateTime.utc(2026, 8, 8, 17, 48);
+  final end = DateTime.utc(2026, 8, 9, 1, 0);
   return SleepSessionSummary(
     beginUnix: begin.millisecondsSinceEpoch ~/ 1000,
     endUnix: end.millisecondsSinceEpoch ~/ 1000,
@@ -135,21 +130,14 @@ void main() {
       wireType: 4,
     ),
   ];
-  final hr = [
-    for (var i = 0; i < 12; i++)
-      DailyHrSample(
-        timestampUnix: session.beginUnix + i * 600,
-        bpm: 50 + i,
-      ),
-  ];
 
-  testWidgets('stages + HR render; no Quality score', (tester) async {
+  testWidgets('stages render without continuous-HR mode', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: BpTheme.light(),
         home: SleepDetailScreen(
           session: session,
-          repository: _FakeRepo(stages: stages, hr: hr),
+          repository: _FakeRepo(stages: stages),
         ),
       ),
     );
@@ -158,64 +146,34 @@ void main() {
 
     expect(find.text('Stage structure'), findsOneWidget);
     expect(find.text('Stage mix'), findsOneWidget);
-    expect(find.text('Continuous HR'), findsOneWidget);
     expect(find.text('Light'), findsWidgets);
     expect(find.text('Deep'), findsWidgets);
     expect(find.textContaining('Quality'), findsNothing);
-    expect(find.text('Continuous HR'), findsOneWidget);
+    expect(find.text('Continuous HR'), findsNothing);
+    expect(find.byKey(const ValueKey('sleep_mode_continuous_hr')), findsNothing);
     expect(find.text('TruSleep enrich'), findsNothing);
   });
 
-  testWidgets('no enrich → no TruSleep toggle', (tester) async {
+  testWidgets('enrich present no longer introduces TruSleep↔HR toggle',
+      (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: BpTheme.light(),
         home: SleepDetailScreen(
           session: session,
-          repository: _FakeRepo(stages: stages, hr: hr, enrichPresent: false),
+          repository: _FakeRepo(stages: stages),
         ),
       ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(find.text('TruSleep enrich'), findsNothing);
-    expect(find.text('Continuous HR'), findsOneWidget);
+    expect(find.byKey(const ValueKey('sleep_mode_trusleep')), findsNothing);
+    expect(find.byKey(const ValueKey('sleep_mode_continuous_hr')), findsNothing);
+    expect(find.text('Continuous HR'), findsNothing);
   });
 
-  testWidgets('enrich present → toggle; TruSleep mode honesty', (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: BpTheme.light(),
-        home: SleepDetailScreen(
-          session: session,
-          repository: _FakeRepo(stages: stages, hr: hr, enrichPresent: true),
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-
-    expect(find.byKey(const ValueKey('sleep_mode_trusleep')), findsOneWidget);
-    expect(find.text('Continuous HR'), findsWidgets);
-
-    final truSleepTab = find.byKey(const ValueKey('sleep_mode_trusleep'));
-    await tester.ensureVisible(truSleepTab);
-    await tester.tap(truSleepTab);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-
-    expect(
-      find.text('TruSleep file on device · enrich preview'),
-      findsOneWidget,
-    );
-    expect(
-      find.text('PPG decode deferred · not a BPM claim'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('empty stages + empty HR honesty copy', (tester) async {
+  testWidgets('empty stages honesty without HR refill copy', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: BpTheme.light(),
@@ -232,33 +190,8 @@ void main() {
       find.textContaining('No stage blocks for this session'),
       findsOneWidget,
     );
-    expect(
-      find.textContaining('Overnight HR needs auto-HR armed and wear'),
-      findsOneWidget,
-    );
-    expect(find.text('wear → Enable auto-HR → Sync'), findsOneWidget);
-  });
-
-  testWidgets('stages only shows HR guidance with stages-synced copy',
-      (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: BpTheme.light(),
-        home: SleepDetailScreen(
-          session: session,
-          repository: _FakeRepo(stages: stages),
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-
-    expect(
-      find.text(
-        'Stages synced. Overnight HR needs auto-HR armed and wear — '
-        'Sync again after.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Overnight HR'), findsNothing);
+    expect(find.text('wear → Enable auto-HR → Sync'), findsNothing);
+    expect(find.text('Continuous HR'), findsNothing);
   });
 }

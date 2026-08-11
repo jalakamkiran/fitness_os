@@ -184,7 +184,7 @@ void main() {
 
     expect(repo.enableCalls, 1);
     expect(bloc.state.lastEnable?.overall, AutoTrackingOverall.allArmed);
-    expect(bloc.state.enableNextStep, contains('Wear several hours'));
+    expect(bloc.state.enableNextStep, contains('does not refill whole-day HR'));
     expect(bloc.state.phase, VitalsPhase.idle);
     expect(bloc.state.sleepSessions, isEmpty);
     await bloc.close();

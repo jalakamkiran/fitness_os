@@ -7,7 +7,7 @@ import 'package:fitness_os/features/vitals/presentation/bloc/vitals_event.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_state.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/hr_sparkline.dart';
 
-/// Vitals surface: Enable / Sync / whole-day HR.
+/// Vitals surface: Enable / Sync / sleep; whole-day HR is Enable-only (not Sync).
 ///
 /// When [embedded] under Recovery, omits AppBar (host owns Recovery chrome)
 /// and reuses the parent [VitalsBloc] — no second bottom nav / provider.
@@ -171,9 +171,9 @@ class _VitalsBody extends StatelessWidget {
       return 'Sync stuck — switch to Home, disconnect and reconnect, then return and Sync.';
     }
     if (!state.everSynced) {
-      return 'Enable auto-tracking on the watch, wear several hours, then Sync.';
+      return 'Enable auto-tracking on the watch if needed, then Sync for sleep.';
     }
-    return 'Gate A unlocked — Enable arms tracking; Sync refreshes sleep and HR.';
+    return 'Gate A unlocked — Enable arms tracking; Sync refreshes sleep.';
   }
 }
 
@@ -288,29 +288,27 @@ class _HrEmptyCopy extends StatelessWidget {
     final hrOutcome = lastEnable?.outcomeFor('auto_hr');
     if (hrOutcome == 'armed') {
       return const Text(
-        'No whole-day heart rate for a recent day.\n'
-        'Wear the watch for several hours, then Sync — '
-        'fresh auto-HR may not backfill older minutes.',
+        'No whole-day heart rate stored.\n'
+        'Sync does not pull continuous HR — Enable arms auto-HR on the watch only.',
       );
     }
     if (hrOutcome == 'skipped' ||
         hrOutcome == 'failed' ||
         hrOutcome == 'timed_out') {
       return Text(
-        'No whole-day heart rate for a recent day.\n'
-        'Auto-HR last Enable was $hrOutcome — tap Enable auto-tracking, '
-        'then wear and Sync.',
+        'No whole-day heart rate stored.\n'
+        'Auto-HR last Enable was $hrOutcome — tap Enable auto-tracking if needed.',
       );
     }
     if (lastEnable == null) {
       return const Text(
-        'No whole-day heart rate for a recent day.\n'
-        'Tap Enable auto-tracking, wear several hours, then Sync.',
+        'No whole-day heart rate stored.\n'
+        'Tap Enable auto-tracking to arm auto-HR on the watch (Sync will not refill it).',
       );
     }
     return const Text(
-      'No whole-day heart rate for a recent day.\n'
-      'Wear the watch for several hours with auto-HR on, then Sync.',
+      'No whole-day heart rate stored.\n'
+      'Sync does not pull continuous HR.',
     );
   }
 }
