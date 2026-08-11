@@ -89,6 +89,61 @@ object HuaweiPacketCrypto {
     }
 
     /**
+     * Decrypt 7C/7D/7E to raw bytes without TLV-decoding the plaintext.
+     * Used for FileDownload block payloads (fileId+offset+unk+data).
+     */
+    fun decryptToBytes(
+        frame: HuaweiFraming.Frame,
+        key: ByteArray,
+        useGcm: Boolean,
+    ): ByteArray {
+        val enc = frame.tlvs.firstOrNull { it.tag == TAG_ENCRYPTION }?.value?.firstOrNull()?.toInt()?.and(0xFF)
+        if (enc != 0x01) {
+            return frame.rawBody ?: ByteArray(0)
+        }
+        val iv = frame.tlvs.firstOrNull { it.tag == TAG_IV }?.value
+            ?: throw IllegalArgumentException("encrypted frame missing IV")
+        val cipher = frame.tlvs.firstOrNull { it.tag == TAG_CIPHERTEXT }?.value
+            ?: throw IllegalArgumentException("encrypted frame missing ciphertext")
+        return decrypt(cipher, key, iv, useGcm)
+    }
+
+    /** Same fallbacks as [decryptWithFallbacks], but returns raw plaintext bytes. */
+    fun decryptToBytesWithFallbacks(
+        frame: HuaweiFraming.Frame,
+        key: ByteArray,
+        preferGcm: Boolean,
+    ): Pair<ByteArray, String>? {
+        val iv = frame.tlvs.firstOrNull { it.tag == TAG_IV }?.value ?: return null
+        val cipher = frame.tlvs.firstOrNull { it.tag == TAG_CIPHERTEXT }?.value ?: return null
+        val variants = ArrayList<Triple<ByteArray, ByteArray, String>>()
+        fun add(k: ByteArray, ct: ByteArray, label: String) {
+            variants.add(Triple(k, ct, label))
+        }
+        add(key, cipher, if (preferGcm) "gcm" else "cbc")
+        if (cipher.isNotEmpty() && cipher.last() == 0.toByte()) {
+            add(key, cipher.copyOf(cipher.size - 1), "trim-null")
+        }
+        if (key.size >= 16) {
+            add(key.copyOf(16), cipher, "aes128")
+            if (cipher.isNotEmpty() && cipher.last() == 0.toByte()) {
+                add(key.copyOf(16), cipher.copyOf(cipher.size - 1), "aes128+trim")
+            }
+        }
+        for ((k, ct, label) in variants) {
+            for (gcm in listOf(preferGcm, !preferGcm)) {
+                try {
+                    val plain = decrypt(ct, k, iv, gcm)
+                    val mode = if (gcm) "gcm" else "cbc"
+                    return plain to "$label/$mode"
+                } catch (_: Exception) {
+                }
+            }
+        }
+        return null
+    }
+
+    /**
      * Fallbacks when primary GCM/CBC decrypt fails:
      * - strip a trailing 0x00 on ciphertext (seen in GB TLV notes)
      * - AES-128 using first 16 bytes of the 32-byte session key
@@ -138,6 +193,60 @@ object HuaweiPacketCrypto {
     fun shortBe(value: Int): ByteArray = ByteBuffer.allocate(2).putShort(value.toShort()).array()
 
     /**
+     * Zone we push to the watch (phone calendar). Used to format sleep unix
+     * consistently with the last set-time / timezone-id sync — not ad-hoc
+     * [java.util.TimeZone.getDefault] at log time if those diverge later.
+     */
+    data class WatchZone(
+        val zoneId: String,
+        /** Raw offset including DST, seconds east of UTC. */
+        val offsetSec: Int,
+        val unixAtSync: Int,
+    ) {
+        val offsetHours: Int get() = offsetSec / 3600
+        val offsetMinutesPart: Int get() = (kotlin.math.abs(offsetSec) / 60) % 60
+
+        fun resolveTimeZone(): java.util.TimeZone {
+            val byId = java.util.TimeZone.getTimeZone(zoneId)
+            if (byId.id == zoneId) return byId
+            val hours = offsetSec / 3600
+            val mins = (kotlin.math.abs(offsetSec) / 60) % 60
+            val sign = if (offsetSec >= 0) "+" else "-"
+            val gmt = "GMT$sign${kotlin.math.abs(hours)}:${mins.toString().padStart(2, '0')}"
+            return java.util.TimeZone.getTimeZone(gmt)
+        }
+
+        fun formatOffsetLabel(): String {
+            val sign = if (offsetSec >= 0) "+" else "-"
+            val abs = kotlin.math.abs(offsetSec)
+            val h = abs / 3600
+            val m = (abs / 60) % 60
+            return String.format(java.util.Locale.US, "UTC%s%02d:%02d", sign, h, m)
+        }
+
+        fun formatUnix(unixSec: Int, pattern: String = "yyyy-MM-dd HH:mm"): String {
+            val fmt = java.text.SimpleDateFormat(pattern, java.util.Locale.US)
+            fmt.timeZone = resolveTimeZone()
+            return fmt.format(java.util.Date(unixSec.toLong() * 1000L))
+        }
+
+        companion object {
+            fun fromPhone(nowMillis: Long = System.currentTimeMillis()): WatchZone {
+                val cal = java.util.Calendar.getInstance()
+                cal.timeInMillis = nowMillis
+                val offsetSec =
+                    (cal.get(java.util.Calendar.ZONE_OFFSET) +
+                        cal.get(java.util.Calendar.DST_OFFSET)) / 1000
+                return WatchZone(
+                    zoneId = cal.timeZone.id,
+                    offsetSec = offsetSec,
+                    unixAtSync = (nowMillis / 1000L).toInt(),
+                )
+            }
+        }
+    }
+
+    /**
      * Set-time TLV payload: unix seconds + timezone offset encoding.
      * Zone byte0 = hours (bit7 set if negative UTC offset), byte1 = minutes.
      */
@@ -166,6 +275,21 @@ object HuaweiPacketCrypto {
             HuaweiFraming.Tlv(0x03, zoneId),
         )
     }
+
+    fun parseUnixTag(frame: HuaweiFraming.Frame, tag: Int = 0x01): Int? {
+        val v = frame.tlvs.firstOrNull { it.tag == tag }?.value ?: return null
+        if (v.size < 4) return null
+        return ByteBuffer.wrap(v).order(java.nio.ByteOrder.BIG_ENDIAN).int
+    }
+
+    /** Compact tag dump for set-time / timezone probes (values hex, no secrets). */
+    fun tlvTagDump(frame: HuaweiFraming.Frame): String =
+        frame.tlvs.joinToString(" ") { tlv ->
+            val hex = tlv.value.joinToString("") { b ->
+                String.format(java.util.Locale.US, "%02x", b.toInt() and 0xFF)
+            }
+            "t=${tlv.tag.toString(16)}:${hex}"
+        }
 
     private fun unixAndZoneShort(cal: java.util.Calendar): Pair<Int, Int> {
         val zoneRawOffsetSec =
