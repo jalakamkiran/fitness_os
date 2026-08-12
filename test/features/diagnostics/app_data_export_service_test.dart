@@ -80,6 +80,8 @@ void main() {
               '[{"dayKey":"2026-08-01","minBpm":50,"avgBpm":60,"maxBpm":70,"sampleCount":1}]',
           GateAPrefs.swimSegmentParserVersion: 2,
           GateAPrefs.lastSyncCursor: 1700000000,
+          GateAPrefs.lastActivitySyncCursor: 1_700_010_001,
+          GateAPrefs.activitySyncImplVersion: 1,
           GateAPrefs.gateAPassed: true,
           GateAPrefs.rememberedName: 'GT5',
           GateAPrefs.homeLastSyncStatus: 'ok',
@@ -115,6 +117,8 @@ void main() {
       final meta = envelope['meta'] as Map<String, dynamic>;
       expect(meta['swimSegmentParserVersion'], 2);
       expect(meta['lastSyncCursor'], 1700000000);
+      expect(meta['lastActivitySyncCursor'], 1_700_010_001);
+      expect(meta['activitySyncImplVersion'], 1);
       expect(meta['gateAPassed'], isTrue);
       expect(meta['rememberedName'], 'GT5');
       expect(meta['qwenInstalled'], isTrue);

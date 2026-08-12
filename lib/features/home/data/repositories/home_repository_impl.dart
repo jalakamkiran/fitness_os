@@ -56,6 +56,8 @@ class HomeRepositoryImpl implements HomeRepository {
     final hrDays = await _vitals.loadDailyHr();
     final fitnessTotals = await _vitals.loadFitnessTotals();
     final everSynced = _prefs.containsKey(GateAPrefs.lastSyncCursor) ||
+        _prefs.containsKey(GateAPrefs.lastActivitySyncCursor) ||
+        _prefs.containsKey(GateAPrefs.sleepSessionsJson) ||
         workouts.isNotEmpty ||
         hrDays.isNotEmpty ||
         fitnessTotals.isNotEmpty ||

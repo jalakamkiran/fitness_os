@@ -73,10 +73,43 @@ class _EmptyVitals implements VitalsRepository {
   Future<List<SleepSessionSummary>> loadSleepSessions() async => const [];
 
   @override
+  Future<List<SleepStageSummary>> loadSleepStages(
+    SleepSessionSummary session,
+  ) async =>
+      const [];
+
+  @override
   Future<List<DailyHrDaySummary>> loadDailyHr() async => const [];
 
   @override
   Future<List<DailyHrSample>> loadDailyHrSeries(String dayKey) async =>
+      const [];
+
+  @override
+  Future<List<DailyHrSample>> loadSleepHrWindow({
+    required int beginUnix,
+    required int endUnix,
+  }) async =>
+      const [];
+
+  @override
+  Future<bool> isSleepEnrichPresent(SleepSessionSummary session) async =>
+      false;
+
+  @override
+  Future<String?> loadFeelOnWake(SleepSessionSummary session) async => null;
+
+  @override
+  Future<void> saveFeelOnWake(
+    SleepSessionSummary session,
+    String answer,
+  ) async {}
+
+  @override
+  Future<List<SleepSessionSummary>> loadSleepSessionsForMonth({
+    required int year,
+    required int month,
+  }) async =>
       const [];
 
   @override

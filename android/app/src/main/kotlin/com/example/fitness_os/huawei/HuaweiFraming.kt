@@ -43,6 +43,11 @@ object HuaweiFraming {
         /** When true, [serviceId]/[commandId]/[tlvs] are unset; [slicePayload] holds raw slice bytes. */
         val isSliceFragment: Boolean = false,
         val slicePayload: ByteArray? = null,
+        /**
+         * Non-TLV body for FileDownload block responses (`0x2c`/`0x0a` cmd `0x05`).
+         * When set, [tlvs] is typically empty (or only the encrypted wrapper before decrypt).
+         */
+        val rawBody: ByteArray? = null,
     ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -53,7 +58,8 @@ object HuaweiFraming {
                 flags == other.flags &&
                 sliceIndex == other.sliceIndex &&
                 isSliceFragment == other.isSliceFragment &&
-                slicePayload.contentEquals(other.slicePayload)
+                slicePayload.contentEquals(other.slicePayload) &&
+                rawBody.contentEquals(other.rawBody)
         }
 
         override fun hashCode(): Int {
@@ -64,9 +70,14 @@ object HuaweiFraming {
             r = 31 * r + (sliceIndex ?: 0)
             r = 31 * r + isSliceFragment.hashCode()
             r = 31 * r + (slicePayload?.contentHashCode() ?: 0)
+            r = 31 * r + (rawBody?.contentHashCode() ?: 0)
             return r
         }
     }
+
+    /** FileDownload block push — body is raw (fileId+offset+unk+data), not TLV. */
+    fun isFileDownloadBlock(serviceId: Int, commandId: Int): Boolean =
+        commandId == 0x05 && (serviceId == 0x2c || serviceId == 0x0a)
 
     sealed class ParseResult {
         data class Ok(val frame: Frame, val bytesConsumed: Int) : ParseResult()
@@ -361,8 +372,23 @@ object HuaweiFraming {
         }
         val serviceId = body[0].toInt() and 0xFF
         val commandId = body[1].toInt() and 0xFF
+        val payload = body.copyOfRange(2, body.size)
+        // FileDownload blocks: raw body unless wrapped as encrypted 7C/7D/7E TLVs.
+        if (isFileDownloadBlock(serviceId, commandId) && !isEncryptedTlvPrefix(payload)) {
+            return ParseResult.Ok(
+                Frame(
+                    serviceId = serviceId,
+                    commandId = commandId,
+                    tlvs = emptyList(),
+                    flags = flags,
+                    sliceIndex = sliceIndex,
+                    rawBody = payload,
+                ),
+                bytesConsumed = bytesConsumed,
+            )
+        }
         val tlvs = try {
-            decodeTlvs(body.copyOfRange(2, body.size))
+            decodeTlvs(payload)
         } catch (e: Exception) {
             return ParseResult.Error("TLV decode failed: ${e.message}")
         }
@@ -377,6 +403,13 @@ object HuaweiFraming {
             bytesConsumed = bytesConsumed,
         )
     }
+
+    /** Encrypted TLV prefix: tag 0x7C, len 0x01, value 0x01. */
+    private fun isEncryptedTlvPrefix(payload: ByteArray): Boolean =
+        payload.size >= 3 &&
+            (payload[0].toInt() and 0xFF) == 0x7C &&
+            (payload[1].toInt() and 0xFF) == 0x01 &&
+            (payload[2].toInt() and 0xFF) == 0x01
 
     private fun decodeTlvAt(data: ByteArray, offset: Int): Pair<Tlv, Int> {
         if (offset >= data.size) throw IllegalArgumentException("truncated TLV")

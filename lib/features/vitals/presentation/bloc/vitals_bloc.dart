@@ -146,7 +146,7 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
             latestHrSeries: hrSeries,
             message: value.message ??
                 (value.sleepSessions.isEmpty && value.dailyHr.isEmpty
-                    ? 'No sleep or whole-day heart rate in range'
+                    ? 'No sleep data in range'
                     : 'Vitals updated'),
             partial: value.partial,
             enableSkipped: value.enableSkipped,
@@ -197,7 +197,8 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
             lastEnable: value,
             message: _overallCopy(value),
             enableNextStep:
-                'Wear several hours, then Sync. Fresh auto-HR may not backfill older minutes.',
+                'Auto-HR is armed on the watch. Sync refreshes sleep only — '
+                'it does not refill whole-day HR.',
           ),
         );
     }

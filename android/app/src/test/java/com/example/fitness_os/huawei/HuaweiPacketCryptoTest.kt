@@ -46,4 +46,34 @@ class HuaweiPacketCryptoTest {
             ((tlvs[0].value[2].toInt() and 0xFF) shl 8) or
             (tlvs[0].value[3].toInt() and 0xFF))
     }
+
+    @Test
+    fun watchZone_formatUnix_usesSyncedOffset() {
+        // Aug 11 file segment start — IST vs UTC+5 differ by 30m (Health compare).
+        val unix = 1_786_400_940
+        val ist = HuaweiPacketCrypto.WatchZone(
+            zoneId = "Asia/Kolkata",
+            offsetSec = 5 * 3600 + 30 * 60,
+            unixAtSync = unix,
+        )
+        val utc5 = HuaweiPacketCrypto.WatchZone(
+            zoneId = "GMT+5:00",
+            offsetSec = 5 * 3600,
+            unixAtSync = unix,
+        )
+        assertEquals("2026-08-11 03:59", ist.formatUnix(unix))
+        assertEquals("2026-08-11 03:29", utc5.formatUnix(unix))
+        assertEquals("UTC+05:30", ist.formatOffsetLabel())
+        assertEquals("UTC+05:00", utc5.formatOffsetLabel())
+    }
+
+    @Test
+    fun parseUnixTag_readsBeInt() {
+        val frame = HuaweiFraming.Frame(
+            0x01,
+            0x05,
+            listOf(HuaweiFraming.Tlv(0x01, HuaweiPacketCrypto.intBe(1_700_000_000))),
+        )
+        assertEquals(1_700_000_000, HuaweiPacketCrypto.parseUnixTag(frame))
+    }
 }

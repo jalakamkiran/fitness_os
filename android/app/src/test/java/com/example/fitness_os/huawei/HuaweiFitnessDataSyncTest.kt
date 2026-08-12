@@ -25,6 +25,10 @@ class HuaweiFitnessDataSyncTest {
         assertEquals(begin, parsed.sessions[0].beginUnix)
         // last stage ends at begin+25m + 20m
         assertEquals(begin + 45 * 60, parsed.sessions[0].endUnix)
+        assertEquals(3, parsed.sessions[0].stages.size)
+        assertEquals(begin, parsed.sessions[0].stages[0].timestampUnix)
+        assertEquals(20, parsed.sessions[0].stages[2].durationMin)
+        assertEquals(3, parsed.sessions[0].stages[2].wireType)
     }
 
     @Test
@@ -43,6 +47,9 @@ class HuaweiFitnessDataSyncTest {
         assertEquals(2, parsed.sessions.size)
         assertEquals(30 * 60L, parsed.sessions[0].endUnix - parsed.sessions[0].beginUnix)
         assertEquals(40 * 60L, parsed.sessions[1].endUnix - parsed.sessions[1].beginUnix)
+        assertEquals(1, parsed.sessions[0].stages.size)
+        assertEquals(1, parsed.sessions[1].stages.size)
+        assertEquals(begin + 3 * 3600, parsed.sessions[1].stages[0].timestampUnix)
     }
 
     @Test
@@ -52,12 +59,10 @@ class HuaweiFitnessDataSyncTest {
         val queue = ArrayDeque(
             listOf(
                 null,
-                null,
                 countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 3),
                 sleepDataFrame(1, listOf(Stage(begin, 30, 1), Stage(begin + 30 * 60, 20, 1))),
                 sleepDataFrame(2, listOf(Stage(begin + 55 * 60, 40, 3))),
                 sleepDataFrame(3, listOf(Stage(begin + 100 * 60, 14, 1))),
-                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 0),
                 null,
             ),
         )
@@ -70,6 +75,11 @@ class HuaweiFitnessDataSyncTest {
         assertEquals(1, sleeps.size)
         assertEquals(begin, sleeps[0]["beginUnix"])
         assertEquals(begin + 114 * 60L, sleeps[0]["endUnix"])
+        @Suppress("UNCHECKED_CAST")
+        val stages = sleeps[0]["stages"] as List<Map<String, Any?>>
+        assertEquals(4, stages.size)
+        assertEquals(begin, stages[0]["timestampUnix"])
+        assertEquals(14, stages[3]["durationMin"])
     }
 
     @Test
@@ -84,7 +94,87 @@ class HuaweiFitnessDataSyncTest {
     }
 
     @Test
-    fun sync_happyPath_overnightNapAndHr() {
+    fun sync_fileDownloadAbsent_keepsSleepSessions() {
+        val begin = 1_700_000_000L
+        val queue = ArrayDeque(
+            listOf(
+                null,
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1),
+                sleepDataFrame(1, listOf(Stage(begin, 60, 1), Stage(begin + 60 * 60, 60, 1))),
+                null,
+            ),
+        )
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
+            sleepFileDownloadProbe = {
+                HuaweiFileDownload.ProbeOutcome(
+                    status = "absent",
+                    serviceId = HuaweiFileDownload.SVC_NEW,
+                    reason = "timeout:sleep_state",
+                )
+            },
+        )
+        val result = sync.sync(begin - 100, begin + 20_000)
+        @Suppress("UNCHECKED_CAST")
+        val sleeps = result["sleepSessions"] as List<Map<String, Any?>>
+        assertEquals(1, sleeps.size)
+        assertEquals(begin, sleeps[0]["beginUnix"])
+        @Suppress("UNCHECKED_CAST")
+        val enrich = result["sleepEnrich"] as List<*>
+        assertTrue(enrich.isEmpty())
+        assertEquals("ok", result["status"])
+    }
+
+    @Test
+    fun sync_fileDownloadPresent_withMessages_stillEmitsEnrich() {
+        val begin = 1_700_000_000L
+        val intervalBegin = 1_700_000_000
+        val intervalEnd = 1_700_014_400
+        val queue = ArrayDeque(
+            listOf(
+                null,
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1),
+                sleepDataFrame(1, listOf(Stage(begin, 90, 1))),
+                null,
+            ),
+        )
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
+            sleepFileDownloadProbe = {
+                HuaweiFileDownload.ProbeOutcome(
+                    status = "present",
+                    serviceId = HuaweiFileDownload.SVC_NEW,
+                    files = listOf(
+                        HuaweiFileDownload.FileRef("sleep_state", 128),
+                    ),
+                    stateIntervals = listOf(
+                        HuaweiFileDownload.StateInterval(intervalBegin, intervalEnd),
+                    ),
+                )
+            },
+        )
+        val result = sync.sync(begin - 100, begin + 20_000)
+        @Suppress("UNCHECKED_CAST")
+        val sleeps = result["sleepSessions"] as List<Map<String, Any?>>
+        assertEquals(1, sleeps.size)
+        @Suppress("UNCHECKED_CAST")
+        val enrich = result["sleepEnrich"] as List<Map<String, Any?>>
+        assertEquals(1, enrich.size)
+        assertEquals(true, enrich[0]["present"])
+        assertEquals(intervalBegin, enrich[0]["beginUnix"])
+        assertEquals(intervalEnd, enrich[0]["endUnix"])
+        @Suppress("UNCHECKED_CAST")
+        val intervals = enrich[0]["stateIntervals"] as List<Map<String, Any?>>
+        assertEquals(1, intervals.size)
+        @Suppress("UNCHECKED_CAST")
+        val refs = enrich[0]["refs"] as List<Map<String, Any?>>
+        assertEquals(1, refs.size)
+        assertEquals("sleep_state", refs[0]["id"])
+        assertEquals("ok", result["status"])
+    }
+
+    @Test
+    fun sync_happyPath_overnightNapWithoutHr() {
         val overnightBegin = 1_700_000_000L
         val napBegin = overnightBegin + 12 * 3600
 
@@ -101,16 +191,6 @@ class HuaweiFitnessDataSyncTest {
             2,
             listOf(Stage(napBegin, 45, 1)),
         )
-        val stepCount = countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 1)
-        val stepData = stepHrFrame(
-            index = 1,
-            dayStart = overnightBegin,
-            samples = listOf(
-                MinuteSample(0, bitmap = 0x00, payloadAfterBitmap = byteArrayOf()),
-                MinuteSample(12, bitmap = HuaweiFitnessDataSync.BITMAP_HR, payloadAfterBitmap = byteArrayOf(72)),
-                MinuteSample(13, bitmap = HuaweiFitnessDataSync.BITMAP_HR, payloadAfterBitmap = byteArrayOf(75)),
-            ),
-        )
         val enableOk = HuaweiFraming.Frame(
             HuaweiFitnessDataSync.SVC,
             0,
@@ -120,18 +200,17 @@ class HuaweiFitnessDataSyncTest {
         val queue = ArrayDeque(
             listOf(
                 enableOk.copy(commandId = HuaweiFitnessDataSync.CMD_TRUSLEEP_ENABLE),
-                enableOk.copy(commandId = HuaweiFitnessDataSync.CMD_AUTO_HR_ENABLE),
                 sleepCount,
                 sleep1,
                 sleep2,
-                stepCount,
-                stepData,
                 enableOk.copy(commandId = HuaweiFitnessDataSync.CMD_FITNESS_TOTALS),
             ),
         )
 
+        val cmds = mutableListOf<Int>()
         val sync = HuaweiFitnessDataSync(
             exchangeEncrypted = { _, _, cmd, _ ->
+                cmds.add(cmd)
                 val next = queue.removeFirstOrNull()
                 assertEquals("unexpected cmd 0x${cmd.toString(16)}", cmd, next?.commandId ?: cmd)
                 next
@@ -145,45 +224,123 @@ class HuaweiFitnessDataSyncTest {
         assertEquals(2, sleeps.size)
         @Suppress("UNCHECKED_CAST")
         val hr = result["dailyHrSamples"] as List<Map<String, Any?>>
-        assertEquals(2, hr.size)
+        assertTrue(hr.isEmpty())
         @Suppress("UNCHECKED_CAST")
         val completed = result["completedContainers"] as List<String>
         assertTrue(completed.contains("sleep"))
-        assertTrue(completed.contains("daily_hr"))
+        assertFalse(completed.contains("daily_hr"))
+        assertFalse(cmds.contains(HuaweiFitnessDataSync.CMD_AUTO_HR_ENABLE))
+        assertFalse(cmds.contains(HuaweiFitnessDataSync.CMD_STEP_COUNT))
+        assertFalse(cmds.contains(HuaweiFitnessDataSync.CMD_STEP_DATA))
     }
 
     @Test
-    fun sync_sleepPresentHrBitmapAbsent_notPartialBatch() {
+    fun sync_skipsAutoHrSoftAndDailyHr() {
         val begin = 1_700_000_000L
+        val enableOk = HuaweiFraming.Frame(
+            HuaweiFitnessDataSync.SVC,
+            0,
+            listOf(HuaweiFraming.Tlv(0x7F, HuaweiPacketCrypto.intBe(HuaweiPacketCrypto.RESULT_OK))),
+        )
+        val queue = ArrayDeque(
+            listOf(
+                enableOk.copy(commandId = HuaweiFitnessDataSync.CMD_TRUSLEEP_ENABLE),
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1),
+                sleepDataFrame(1, listOf(Stage(begin, 90, 1))),
+                null,
+            ),
+        )
+        val cmds = mutableListOf<Int>()
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, cmd, _ ->
+                cmds.add(cmd)
+                queue.removeFirstOrNull()
+            },
+        )
+        val result = sync.sync(begin - 100, begin + 10_000)
+        assertEquals("ok", result["status"])
+        assertTrue(cmds.contains(HuaweiFitnessDataSync.CMD_TRUSLEEP_ENABLE))
+        assertFalse(cmds.contains(HuaweiFitnessDataSync.CMD_AUTO_HR_ENABLE))
+        assertFalse(cmds.contains(HuaweiFitnessDataSync.CMD_STEP_COUNT))
+        assertFalse(cmds.contains(HuaweiFitnessDataSync.CMD_STEP_DATA))
+        @Suppress("UNCHECKED_CAST")
+        val hr = result["dailyHrSamples"] as List<*>
+        assertTrue(hr.isEmpty())
+        @Suppress("UNCHECKED_CAST")
+        val completed = result["completedContainers"] as List<String>
+        assertTrue(completed.contains("sleep"))
+        assertFalse(completed.contains("daily_hr"))
+    }
+
+    @Test
+    fun sync_messagesEmpty_fileIntervalsPresent_emitsEnrichAndOk() {
+        val begin = 1_700_000_000L
+        val intervalBegin = 1_700_000_000
+        val intervalEnd = 1_700_014_400
         val queue = ArrayDeque(
             listOf(
                 null,
-                null,
-                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1),
-                sleepDataFrame(1, listOf(Stage(begin, 90, 1))),
-                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 1),
-                stepHrFrame(
-                    index = 1,
-                    dayStart = begin,
-                    samples = listOf(
-                        MinuteSample(0, bitmap = 0x0E, payloadAfterBitmap = byteArrayOf(0, 31, 3, 0xC0.toByte(), 0, 0x15)),
-                    ),
-                ),
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 0),
                 null,
             ),
         )
         val sync = HuaweiFitnessDataSync(
             exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
+            sleepFileDownloadProbe = {
+                HuaweiFileDownload.ProbeOutcome(
+                    status = "present",
+                    serviceId = HuaweiFileDownload.SVC_NEW,
+                    files = listOf(HuaweiFileDownload.FileRef("sleep_state", 128)),
+                    stateIntervals = listOf(
+                        HuaweiFileDownload.StateInterval(intervalBegin, intervalEnd),
+                    ),
+                )
+            },
         )
-        val result = sync.sync(begin - 100, begin + 10_000)
+        val result = sync.sync(begin - 100, begin + 20_000)
+        @Suppress("UNCHECKED_CAST")
+        val sleeps = result["sleepSessions"] as List<*>
+        assertTrue(sleeps.isEmpty())
+        @Suppress("UNCHECKED_CAST")
+        val enrich = result["sleepEnrich"] as List<Map<String, Any?>>
+        assertEquals(1, enrich.size)
+        assertEquals(true, enrich[0]["present"])
+        @Suppress("UNCHECKED_CAST")
+        val intervals = enrich[0]["stateIntervals"] as List<Map<String, Any?>>
+        assertEquals(1, intervals.size)
+        assertEquals(intervalBegin, intervals[0]["beginUnix"])
         assertEquals("ok", result["status"])
+    }
+
+    @Test
+    fun sync_fileDownloadPresent_zeroIntervals_emptyMessages_noSoTFromFiles() {
+        val begin = 1_700_000_000L
+        val queue = ArrayDeque(
+            listOf(
+                null,
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 0),
+                null,
+            ),
+        )
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
+            sleepFileDownloadProbe = {
+                HuaweiFileDownload.ProbeOutcome(
+                    status = "present",
+                    serviceId = HuaweiFileDownload.SVC_NEW,
+                    files = listOf(HuaweiFileDownload.FileRef("sleep_state", 128)),
+                    stateIntervals = emptyList(),
+                )
+            },
+        )
+        val result = sync.sync(begin - 100, begin + 20_000)
         @Suppress("UNCHECKED_CAST")
-        val sleeps = result["sleepSessions"] as List<Map<String, Any?>>
-        assertEquals(1, sleeps.size)
+        val sleeps = result["sleepSessions"] as List<*>
+        assertTrue(sleeps.isEmpty())
         @Suppress("UNCHECKED_CAST")
-        val completed = result["completedContainers"] as List<String>
-        assertTrue(completed.contains("sleep"))
-        assertFalse(completed.contains("daily_hr"))
+        val enrich = result["sleepEnrich"] as List<*>
+        assertTrue(enrich.isEmpty())
+        assertEquals("empty", result["status"])
     }
 
     @Test
@@ -192,10 +349,8 @@ class HuaweiFitnessDataSyncTest {
         val queue = ArrayDeque(
             listOf(
                 null,
-                null,
                 countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1),
                 sleepDataFrame(1, listOf(Stage(begin, 40, 1))),
-                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 0),
                 null,
             ),
         )
@@ -215,7 +370,6 @@ class HuaweiFitnessDataSyncTest {
         val begin = 1_700_000_000L
         val queue = ArrayDeque(
             listOf(
-                null,
                 null,
                 countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 2),
                 sleepDataFrame(1, listOf(Stage(begin, 60, 1))),
@@ -287,7 +441,6 @@ class HuaweiFitnessDataSyncTest {
         val queue = ArrayDeque(
             listOf(
                 null, // soft TruSleep enable
-                null, // soft auto-HR enable
                 null, // sleepCount timeout
                 HuaweiFraming.Frame(
                     HuaweiFitnessDataSync.SVC,
@@ -389,7 +542,6 @@ class HuaweiFitnessDataSyncTest {
         val end = overnightBegin + 86400
         val sleepCount = countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1)
         val sleep1 = sleepDataFrame(1, listOf(Stage(overnightBegin, 90, 1)))
-        val stepCount = countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 0)
         val totals = fitnessTotalsFrame(
             slots = listOf(
                 FitnessSlot(slotTag = 1, steps = 8500, calories = 966, durationSec = 7620),
@@ -403,10 +555,8 @@ class HuaweiFitnessDataSyncTest {
         val queue = ArrayDeque(
             listOf(
                 enableOk.copy(commandId = HuaweiFitnessDataSync.CMD_TRUSLEEP_ENABLE),
-                enableOk.copy(commandId = HuaweiFitnessDataSync.CMD_AUTO_HR_ENABLE),
                 sleepCount,
                 sleep1,
-                stepCount,
                 totals,
             ),
         )
@@ -438,10 +588,8 @@ class HuaweiFitnessDataSyncTest {
         val queue = ArrayDeque(
             listOf(
                 null,
-                null,
                 countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1),
                 sleepDataFrame(1, listOf(Stage(begin, 90, 1))),
-                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 0),
                 null, // FitnessTotals timeout
             ),
         )
@@ -460,7 +608,7 @@ class HuaweiFitnessDataSyncTest {
     }
 
     @Test
-    fun sync_stepDataTimeout_stillIssuesFitnessTotalsThenPartialBatch() {
+    fun sync_sleepDataTimeout_stillIssuesFitnessTotalsThenPartialBatch() {
         val begin = 1_700_000_000L
         val cmds = mutableListOf<Int>()
         val totals = fitnessTotalsFrame(
@@ -471,11 +619,9 @@ class HuaweiFitnessDataSyncTest {
         val queue = ArrayDeque(
             listOf(
                 null,
-                null,
-                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 1),
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 2),
                 sleepDataFrame(1, listOf(Stage(begin, 90, 1))),
-                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 1),
-                null, // stepData timeout
+                null, // sleepData timeout for index 2
                 totals,
             ),
         )
@@ -488,6 +634,7 @@ class HuaweiFitnessDataSyncTest {
         val result = sync.sync(begin - 100, begin + 10_000)
         assertEquals("partial_batch", result["status"])
         assertTrue(cmds.contains(HuaweiFitnessDataSync.CMD_FITNESS_TOTALS))
+        assertFalse(cmds.contains(HuaweiFitnessDataSync.CMD_STEP_COUNT))
         @Suppress("UNCHECKED_CAST")
         val completed = result["completedContainers"] as List<String>
         assertTrue(completed.contains("sleep"))
@@ -510,9 +657,7 @@ class HuaweiFitnessDataSyncTest {
         val queue = ArrayDeque(
             listOf(
                 null,
-                null,
                 countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 0),
-                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 0),
                 totals,
             ),
         )
