@@ -21,6 +21,8 @@ class HuaweiSession(
     private val transport: RfcommTransport,
     private val secrets: HuaweiSecretStore,
     private val emit: (Map<String, Any?>) -> Unit,
+    /** App files root for TruSleep side-files (optional — skip persist when null). */
+    private val appFilesDir: (() -> java.io.File)? = null,
 ) {
     companion object {
         private const val TAG = "FOS_HUAWEI"
@@ -208,6 +210,31 @@ class HuaweiSession(
     private var productSyncActive: Boolean = false
 
     /**
+     * Last zone we pushed to the watch (set-time / timezone-id). Used to format
+     * TruSleep unix consistently for any phone region.
+     */
+    @Volatile
+    private var syncedWatchZone: HuaweiPacketCrypto.WatchZone =
+        HuaweiPacketCrypto.WatchZone.fromPhone()
+    /** Last set-time skew (deviceUnix − phoneUnix); null until first echo. */
+    private var lastWatchSkewSec: Int? = null
+    private var lastWatchDeviceUnix: Int? = null
+
+    fun currentWatchZone(): HuaweiPacketCrypto.WatchZone = syncedWatchZone
+
+    private fun watchClockSnapshotMap(): Map<String, Any?> {
+        val z = syncedWatchZone
+        return buildMap {
+            put("zoneId", z.zoneId)
+            put("offsetSec", z.offsetSec)
+            put("offsetLabel", z.formatOffsetLabel())
+            put("phoneUnix", (System.currentTimeMillis() / 1000L).toInt())
+            lastWatchSkewSec?.let { put("skewSec", it) }
+            lastWatchDeviceUnix?.let { put("deviceUnix", it) }
+        }
+    }
+
+    /**
      * Gate B: Count → Totals over the authenticated session.
      * Caller must already have a ready encrypted session (post authenticate).
      */
@@ -233,8 +260,9 @@ class HuaweiSession(
     }
 
     /**
-     * Activity Sync: FitnessData sleep + daily HR (message path).
-     * FileSleep deferred. Caller must hold the shared Sync lock.
+     * Activity Sync: FitnessData sleep + daily HR (message path), then
+     * non-blocking TruSleep FileDownload probe (soft-fail).
+     * Caller must hold the shared Sync lock.
      */
     fun syncActivity(
         startUnix: Long,
@@ -255,6 +283,8 @@ class HuaweiSession(
         }
         productSyncActive = true
         try {
+            // Refresh phone→watch clock/zone before sleep file decode.
+            syncWatchTimeAndZone(reason = "activity-sync")
             return fitnessDataSync().sync(
                 startUnix,
                 endUnix,
@@ -306,7 +336,138 @@ class HuaweiSession(
                 )
             },
             isConnected = { transport.isConnected() },
+            sleepFileDownload = {
+                HuaweiFileDownload(
+                    exchangeEncrypted = { req, svc, cmd, timeout ->
+                        exchangeEncrypted(req, svc, cmd, timeout)
+                    },
+                    sendEncrypted = { frame -> sendEncryptedClearing(frame) },
+                    sendPlain = { frame -> sendPlainClearing(frame) },
+                    awaitRawBlock = { svc, timeout -> awaitFileDownloadBlock(svc, timeout) },
+                    isConnected = { transport.isConnected() },
+                    liveDownloadEnabled = true,
+                    persistFile = { id, bytes -> persistSleepFile(id, bytes) },
+                    formatUnix = { unix -> syncedWatchZone.formatUnix(unix) },
+                    watchZoneLabel = {
+                        "${syncedWatchZone.zoneId} ${syncedWatchZone.formatOffsetLabel()}"
+                    },
+                )
+            },
+            watchClockSnapshot = { watchClockSnapshotMap() },
         )
+
+    /**
+     * Push phone clock + zone to watch; persist zone for sleep formatting; log skew.
+     */
+    private fun syncWatchTimeAndZone(reason: String) {
+        val now = System.currentTimeMillis()
+        val zone = HuaweiPacketCrypto.WatchZone.fromPhone(now)
+        syncedWatchZone = zone
+        Log.i(
+            TAG,
+            "watch-zone push reason=$reason zoneId=${zone.zoneId} " +
+                "offset=${zone.formatOffsetLabel()} phoneUnix=${zone.unixAtSync}",
+        )
+        val time = exchangeEncrypted(
+            HuaweiFraming.Frame(SVC, CMD_SET_TIME, HuaweiPacketCrypto.timeAndZoneTlvs(now)),
+            SVC,
+            CMD_SET_TIME,
+            CONFIGURE_TIMEOUT_MS,
+        )
+        if (time == null) {
+            Log.w(TAG, "watch-zone set-time timeout reason=$reason")
+        } else {
+            recordWatchZoneFromSetTime(time, reason = reason, pushed = zone)
+        }
+        if (supportsCommand(SVC, CMD_TIME_ZONE_ID)) {
+            val tz = exchangeEncrypted(
+                HuaweiFraming.Frame(SVC, CMD_TIME_ZONE_ID, HuaweiPacketCrypto.timeZoneIdTlvs(now)),
+                SVC,
+                CMD_TIME_ZONE_ID,
+                CONFIGURE_TIMEOUT_MS,
+            )
+            if (tz == null) {
+                Log.w(TAG, "watch-zone timezone-id timeout reason=$reason")
+            } else {
+                recordWatchZoneFromTimezoneId(tz, reason = reason, pushed = zone)
+            }
+        }
+    }
+
+    private fun recordWatchZoneFromSetTime(
+        response: HuaweiFraming.Frame,
+        reason: String,
+        pushed: HuaweiPacketCrypto.WatchZone = HuaweiPacketCrypto.WatchZone.fromPhone(),
+    ) {
+        syncedWatchZone = pushed
+        val dump = HuaweiPacketCrypto.tlvTagDump(response)
+        val deviceTime = HuaweiPacketCrypto.parseUnixTag(response, 0x01)
+        val phoneUnix = pushed.unixAtSync
+        val skewSec = if (deviceTime != null) deviceTime - phoneUnix else null
+        lastWatchDeviceUnix = deviceTime
+        lastWatchSkewSec = skewSec
+        Log.i(
+            TAG,
+            "watch-zone set-time ok reason=$reason zoneId=${pushed.zoneId} " +
+                "offset=${pushed.formatOffsetLabel()} phoneUnix=$phoneUnix " +
+                "deviceUnix=$deviceTime skewSec=$skewSec tlvs=[$dump]",
+        )
+    }
+
+    private fun recordWatchZoneFromTimezoneId(
+        response: HuaweiFraming.Frame,
+        reason: String,
+        pushed: HuaweiPacketCrypto.WatchZone = syncedWatchZone,
+    ) {
+        syncedWatchZone = pushed
+        val dump = HuaweiPacketCrypto.tlvTagDump(response)
+        // If watch echoes IANA id, prefer it.
+        val echoed = response.tlvs.firstOrNull { it.tag == 0x03 }?.value
+            ?.toString(Charsets.UTF_8)
+            ?.takeIf { it.isNotBlank() && it.length < 64 && !it.contains('\u0000') }
+        if (echoed != null && echoed != pushed.zoneId) {
+            syncedWatchZone = pushed.copy(zoneId = echoed)
+            Log.i(
+                TAG,
+                "watch-zone timezone-id echoed reason=$reason echoed=$echoed " +
+                    "(was ${pushed.zoneId}) tlvs=[$dump]",
+            )
+        } else {
+            Log.i(
+                TAG,
+                "watch-zone timezone-id ok reason=$reason zoneId=${syncedWatchZone.zoneId} " +
+                    "tlvs=[$dump]",
+            )
+        }
+    }
+
+    /** Write under `filesDir/vitals/sleep_files/{id}.bin`; return relative path. */
+    private fun persistSleepFile(id: String, bytes: ByteArray): String? {
+        val root = appFilesDir?.invoke() ?: return null
+        val dir = java.io.File(root, "vitals/sleep_files")
+        if (!dir.exists() && !dir.mkdirs()) {
+            Log.w(TAG, "file-download mkdir failed ${dir.absolutePath}")
+            return null
+        }
+        val safeId = id.replace(Regex("[^0-9A-Za-z._-]"), "_")
+        if (safeId.isEmpty() || safeId != id) {
+            Log.w(TAG, "file-download persist rejected id=$id")
+            return null
+        }
+        val file = java.io.File(dir, "$safeId.bin")
+        val canonicalDir = dir.canonicalFile
+        val canonicalFile = file.canonicalFile
+        if (!canonicalFile.path.startsWith(canonicalDir.path + java.io.File.separator) &&
+            canonicalFile.path != canonicalDir.path
+        ) {
+            Log.w(TAG, "file-download persist path escape id=$safeId")
+            return null
+        }
+        file.writeBytes(bytes)
+        val rel = "vitals/sleep_files/$safeId.bin"
+        Log.i(TAG, "file-download persisted id=$safeId len=${bytes.size} path=$rel")
+        return rel
+    }
 
     fun onRawBytes(bytes: ByteArray) {
         bytesReceived.addAndGet(bytes.size)
@@ -356,13 +517,32 @@ class HuaweiSession(
                 assemblingSlices = false
                 sliceAcc.reset()
                 if (body.size >= 2) {
-                    publishFrame(
+                    val svc = body[0].toInt() and 0xFF
+                    val cmd = body[1].toInt() and 0xFF
+                    val payload = body.copyOfRange(2, body.size)
+                    val frame = if (
+                        HuaweiFraming.isFileDownloadBlock(svc, cmd) &&
+                        !(
+                            payload.size >= 3 &&
+                                (payload[0].toInt() and 0xFF) == 0x7C &&
+                                (payload[1].toInt() and 0xFF) == 0x01 &&
+                                (payload[2].toInt() and 0xFF) == 0x01
+                            )
+                    ) {
                         HuaweiFraming.Frame(
-                            serviceId = body[0].toInt() and 0xFF,
-                            commandId = body[1].toInt() and 0xFF,
-                            tlvs = HuaweiFraming.decodeTlvs(body.copyOfRange(2, body.size)),
-                        ),
-                    )
+                            serviceId = svc,
+                            commandId = cmd,
+                            tlvs = emptyList(),
+                            rawBody = payload,
+                        )
+                    } else {
+                        HuaweiFraming.Frame(
+                            serviceId = svc,
+                            commandId = cmd,
+                            tlvs = HuaweiFraming.decodeTlvs(payload),
+                        )
+                    }
+                    publishFrame(frame)
                 }
             }
         }
@@ -371,44 +551,75 @@ class HuaweiSession(
     private fun publishFrame(frame: HuaweiFraming.Frame) {
         val key = sessionKey
         var decryptOk = true
+        val isFileBlock = HuaweiFraming.isFileDownloadBlock(frame.serviceId, frame.commandId)
         val decrypted = if (key != null && encryptionEnabled && HuaweiPacketCrypto.isEncrypted(frame)) {
-            try {
-                HuaweiPacketCrypto.decryptIfNeeded(frame, key, useGcm())
-            } catch (e: Exception) {
-                // Retry with trailing-null strip (GB TLV parser notes extra nulls) and
-                // AES-128 (first 16 of session key) before giving up.
-                val recovered = HuaweiPacketCrypto.decryptWithFallbacks(frame, key, useGcm())
-                if (recovered != null) {
-                    Log.i(
-                        TAG,
-                        "session decrypt recovered svc=0x${frame.serviceId.toString(16)} " +
-                            "cmd=0x${frame.commandId.toString(16)} via=${recovered.second}",
-                    )
-                    recovered.first
-                } else {
-                    val ivLen = frame.tlvs.firstOrNull { it.tag == 0x7d }?.value?.size ?: -1
-                    val ctLen = frame.tlvs.firstOrNull { it.tag == 0x7e }?.value?.size ?: -1
-                    if (frame.serviceId == SVC_MUSIC) {
-                        Log.w(
+            if (isFileBlock) {
+                try {
+                    val plain = HuaweiPacketCrypto.decryptToBytes(frame, key, useGcm())
+                    frame.copy(tlvs = emptyList(), rawBody = plain)
+                } catch (e: Exception) {
+                    val recovered = HuaweiPacketCrypto.decryptToBytesWithFallbacks(frame, key, useGcm())
+                    if (recovered != null) {
+                        Log.i(
                             TAG,
-                            "music decrypt failed (gcm/cbc): ${e.message} ivLen=$ivLen ctLen=$ctLen keyLen=${key.size}",
+                            "file-download block decrypt recovered " +
+                                "svc=0x${frame.serviceId.toString(16)} via=${recovered.second} " +
+                                "len=${recovered.first.size}",
                         )
+                        frame.copy(tlvs = emptyList(), rawBody = recovered.first)
                     } else {
-                        Log.w(
-                            TAG,
-                            "session decrypt failed svc=0x${frame.serviceId.toString(16)} " +
-                                "cmd=0x${frame.commandId.toString(16)}: ${e.message} " +
-                                "ivLen=$ivLen ctLen=$ctLen keyLen=${key.size}",
-                        )
+                        Log.w(TAG, "file-download block decrypt failed: ${e.message}")
+                        decryptOk = false
+                        frame
                     }
-                    decryptOk = false
-                    frame
+                }
+            } else {
+                try {
+                    HuaweiPacketCrypto.decryptIfNeeded(frame, key, useGcm())
+                } catch (e: Exception) {
+                    // Retry with trailing-null strip (GB TLV parser notes extra nulls) and
+                    // AES-128 (first 16 of session key) before giving up.
+                    val recovered = HuaweiPacketCrypto.decryptWithFallbacks(frame, key, useGcm())
+                    if (recovered != null) {
+                        Log.i(
+                            TAG,
+                            "session decrypt recovered svc=0x${frame.serviceId.toString(16)} " +
+                                "cmd=0x${frame.commandId.toString(16)} via=${recovered.second}",
+                        )
+                        recovered.first
+                    } else {
+                        val ivLen = frame.tlvs.firstOrNull { it.tag == 0x7d }?.value?.size ?: -1
+                        val ctLen = frame.tlvs.firstOrNull { it.tag == 0x7e }?.value?.size ?: -1
+                        if (frame.serviceId == SVC_MUSIC) {
+                            Log.w(
+                                TAG,
+                                "music decrypt failed (gcm/cbc): ${e.message} ivLen=$ivLen ctLen=$ctLen keyLen=${key.size}",
+                            )
+                        } else {
+                            Log.w(
+                                TAG,
+                                "session decrypt failed svc=0x${frame.serviceId.toString(16)} " +
+                                    "cmd=0x${frame.commandId.toString(16)}: ${e.message} " +
+                                    "ivLen=$ivLen ctLen=$ctLen keyLen=${key.size}",
+                            )
+                        }
+                        decryptOk = false
+                        frame
+                    }
                 }
             }
         } else {
             frame
         }
-        logTlvs(decrypted)
+        if (isFileBlock) {
+            Log.d(
+                TAG,
+                "file-download block rx svc=0x${decrypted.serviceId.toString(16)} " +
+                    "rawLen=${decrypted.rawBody?.size ?: 0}",
+            )
+        } else {
+            logTlvs(decrypted)
+        }
 
         // Async handlers must run in publishFrame — awaitFrame drops unrelated frames
         // while waiting for configure responses.
@@ -771,7 +982,7 @@ class HuaweiSession(
             Log.w(TAG, "post-bind: no set-time response")
             return false
         }
-        Log.i(TAG, "post-bind: set-time ok")
+        recordWatchZoneFromSetTime(time, reason = "post-bind")
 
         // Battery may time out on some firmware; GB continues either way.
         val battery = exchangeEncrypted(
@@ -831,7 +1042,7 @@ class HuaweiSession(
             if (tz == null) {
                 Log.w(TAG, "post-bind: no timezone-id response — continuing")
             } else {
-                Log.i(TAG, "post-bind: timezone-id ok")
+                recordWatchZoneFromTimezoneId(tz, reason = "post-bind")
             }
         }
 
@@ -1499,6 +1710,34 @@ class HuaweiSession(
         } catch (e: Exception) {
             Log.w(TAG, "sendEncryptedNoWait failed: ${e.message}")
         }
+    }
+
+    /** Clear inbound queue then send encrypted TLV frame (FileDownload block request). */
+    private fun sendEncryptedClearing(request: HuaweiFraming.Frame) {
+        synchronized(frameLock) { frameQueue.clear() }
+        sendEncryptedNoWait(request)
+    }
+
+    /** Clear inbound queue then send plaintext TLV frame (FileDownload noEncrypt path). */
+    private fun sendPlainClearing(request: HuaweiFraming.Frame) {
+        synchronized(frameLock) { frameQueue.clear() }
+        try {
+            val encoded = HuaweiFraming.encode(request)
+            Log.i(
+                TAG,
+                "tx(plain,no-wait) svc=0x${request.serviceId.toString(16)} " +
+                    "cmd=0x${request.commandId.toString(16)} ${encoded.size}B",
+            )
+            transport.write(encoded)
+        } catch (e: Exception) {
+            Log.w(TAG, "sendPlainClearing failed: ${e.message}")
+        }
+    }
+
+    /** Await next FileDownload block push; returns decrypted raw body. */
+    private fun awaitFileDownloadBlock(serviceId: Int, timeoutMs: Long): ByteArray? {
+        val frame = awaitFrame(serviceId, HuaweiFileDownload.CMD_BLOCK, timeoutMs) ?: return null
+        return frame.rawBody
     }
 
     /** Encrypt raw (non-TLV) payload as 7C/7D/7E — FileUpload chunk path. */

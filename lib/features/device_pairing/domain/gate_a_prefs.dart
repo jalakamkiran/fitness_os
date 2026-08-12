@@ -7,6 +7,10 @@ abstract final class GateAPrefs {
   static const gateABtToggleOk = 'gate_a_bt_toggle_ok';
   static const gateAPassed = 'gate_a_passed';
   static const lastSyncCursor = 'last_sync_cursor';
+  /// Activity Sync (vitals) incremental cursor — distinct from workout [lastSyncCursor].
+  static const lastActivitySyncCursor = 'last_activity_sync_cursor';
+  /// Bumped when activity Sync merge rules change; forces one wide-window re-pull.
+  static const activitySyncImplVersion = 'activity_sync_impl_version';
   static const lastR11Path = 'last_r11_winning_path';
   /// Bumped when swim segment wire parse changes; forces one full-history re-sync.
   static const swimSegmentParserVersion = 'swim_segment_parser_version';
@@ -20,6 +24,16 @@ abstract final class GateAPrefs {
   static const fitnessTotalsDayJson = 'fitness_totals_day_json';
   /// Side-file subdir under application support for per-day HR minute series.
   static const dailyHrSeriesDir = 'vitals/hr_series';
+  /// Side-file subdir for per-session sleep stage lists (message-path SoT).
+  static const sleepStagesDir = 'vitals/sleep_stages';
+  /// Side-file subdir for TruSleep FileDownload enrich refs (present|absent).
+  static const sleepEnrichDir = 'vitals/sleep_enrich';
+  /// Native-persisted TruSleep blobs (len/path only in enrich JSON; never commit).
+  static const sleepFilesDir = 'vitals/sleep_files';
+  /// True after any file-interval display SoT upsert (messages never own begin/end).
+  static const fileSleepSotActive = 'file_sleep_sot_active';
+  /// JSON map of feel-on-wake survey answers keyed by sleep merge key.
+  static const sleepFeelOnWakeJson = 'sleep_feel_on_wake_json';
   /// Side-file subdir for canonical swim sessions (one JSON per workout #).
   static const canonicalSwimDir = 'workouts/canonical_swim';
   /// Gemini API key for W4 coach (device-local; never commit).

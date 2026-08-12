@@ -13,10 +13,36 @@ abstract class VitalsRepository {
 
   Future<List<SleepSessionSummary>> loadSleepSessions();
 
+  /// Message-path stage blocks for one sleep session merge key.
+  /// Empty on missing/corrupt side-file (fail-closed; does not wipe prefs).
+  Future<List<SleepStageSummary>> loadSleepStages(SleepSessionSummary session);
+
   Future<List<DailyHrDaySummary>> loadDailyHr();
 
   /// Per-minute HR samples for one local calendar day (`yyyy-MM-dd`), if persisted.
   Future<List<DailyHrSample>> loadDailyHrSeries(String dayKey);
+
+  /// Continuous vitals HR samples in `[beginUnix, endUnix]` (inclusive bounds).
+  /// Loads every local dayKey covering the span (overnight = two files).
+  Future<List<DailyHrSample>> loadSleepHrWindow({
+    required int beginUnix,
+    required int endUnix,
+  });
+
+  /// TruSleep FileDownload enrich present for this session (side-file ref).
+  Future<bool> isSleepEnrichPresent(SleepSessionSummary session);
+
+  /// Feel-on-wake answer for [session.mergeKey], or null if unanswered.
+  Future<String?> loadFeelOnWake(SleepSessionSummary session);
+
+  /// Persist feel-on-wake once per session key (no-op if already answered).
+  Future<void> saveFeelOnWake(SleepSessionSummary session, String answer);
+
+  /// Sleep sessions whose local end falls in the given calendar month.
+  Future<List<SleepSessionSummary>> loadSleepSessionsForMonth({
+    required int year,
+    required int month,
+  });
 
   /// FitnessTotals day rows (replace-by-day store). Fail-closed on corrupt JSON.
   Future<List<FitnessTotalsDay>> loadFitnessTotals();

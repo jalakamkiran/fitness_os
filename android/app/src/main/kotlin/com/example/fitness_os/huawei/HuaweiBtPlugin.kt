@@ -44,6 +44,7 @@ class HuaweiBtPlugin(
             transport = transport!!,
             secrets = secrets!!,
             emit = { event -> emitOnUi(event) },
+            appFilesDir = { activity.applicationContext.filesDir },
         )
     }
 

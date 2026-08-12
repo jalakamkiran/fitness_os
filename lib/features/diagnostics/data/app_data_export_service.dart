@@ -206,6 +206,10 @@ class AppDataExportService {
         'swimSegmentParserVersion':
             _prefs.getInt(GateAPrefs.swimSegmentParserVersion),
         'lastSyncCursor': _prefs.getInt(GateAPrefs.lastSyncCursor),
+        'lastActivitySyncCursor':
+            _prefs.getInt(GateAPrefs.lastActivitySyncCursor),
+        'activitySyncImplVersion':
+            _prefs.getInt(GateAPrefs.activitySyncImplVersion),
         'gateAPassed': _prefs.getBool(GateAPrefs.gateAPassed) ?? false,
         'gateAInterruptFlags': {
           'killOk': _prefs.getBool(GateAPrefs.gateAKillOk) ?? false,

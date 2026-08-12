@@ -85,6 +85,8 @@ void main() {
       GateAPrefs.gateABtToggleOk: true,
       GateAPrefs.gateAPassed: true,
       GateAPrefs.lastSyncCursor: 'cursor',
+      GateAPrefs.lastActivitySyncCursor: 1_700_000_000,
+      GateAPrefs.activitySyncImplVersion: 1,
     });
     final prefs = await SharedPreferences.getInstance();
     final link = _StubLink();
@@ -94,6 +96,8 @@ void main() {
     expect(prefs.getString(GateAPrefs.rememberedMac), isNull);
     expect(prefs.getBool(GateAPrefs.gateAPassed), isNull);
     expect(prefs.getString(GateAPrefs.lastSyncCursor), isNull);
+    expect(prefs.getInt(GateAPrefs.lastActivitySyncCursor), isNull);
+    expect(prefs.getInt(GateAPrefs.activitySyncImplVersion), isNull);
   });
 
   test('Forget clears vitals keys via wipe callback and is idempotent', () async {
@@ -107,6 +111,8 @@ void main() {
           '[{"dayKey":"2023-01-01","dayStartUnix":1,"calories":1,"steps":1,"exerciseDurationSec":1}]',
       GateAPrefs.workoutsJson:
           '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
+      GateAPrefs.lastActivitySyncCursor: 999,
+      GateAPrefs.activitySyncImplVersion: 1,
     });
     final prefs = await SharedPreferences.getInstance();
     final link = _StubLink();
@@ -129,6 +135,8 @@ void main() {
     expect(prefs.getString(GateAPrefs.dailyHrJson), isNull);
     expect(prefs.getString(GateAPrefs.fitnessTotalsDayJson), isNull);
     expect(prefs.getString(GateAPrefs.workoutsJson), isNull);
+    expect(prefs.getInt(GateAPrefs.lastActivitySyncCursor), isNull);
+    expect(prefs.getInt(GateAPrefs.activitySyncImplVersion), isNull);
 
     final second = await repo.forgetDevice();
     expect(second.isRight, isTrue);

@@ -3,9 +3,12 @@ import 'dart:io';
 
 import 'package:fitness_os/core/error/failures.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/core/observability/trusleep_timestamp_observe.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
+import 'package:fitness_os/features/vitals/domain/sleep_hr_window.dart';
+import 'package:fitness_os/features/vitals/domain/trusleep_sleep_sot.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -21,6 +24,15 @@ class VitalsRepositoryImpl implements VitalsRepository {
   final HuaweiLink _link;
   final SharedPreferences _prefs;
   final Directory? Function()? _sideFileRootOverride;
+
+  /// Bumped when activity Sync merge / SoT rules change (forces one wide pull).
+  static const currentActivitySyncImplVersion = 1;
+
+  /// Overnight-scale overlap when advancing from [GateAPrefs.lastActivitySyncCursor].
+  static const activityCursorOverlapSec = 6 * 3600;
+
+  /// ~30m Health vs TruSleep shift — join message stages onto file windows.
+  static const stageAttachBufferSec = 30 * 60;
 
   /// Set when prefs JSON is corrupt — fail-closed; empty sync must not "confirm" wipe.
   bool _sleepLoadFailed = false;
@@ -68,6 +80,34 @@ class VitalsRepositoryImpl implements VitalsRepository {
   }
 
   @override
+  Future<List<SleepStageSummary>> loadSleepStages(
+    SleepSessionSummary session,
+  ) async {
+    if (session.beginUnix <= 0 || session.endUnix <= session.beginUnix) {
+      return const [];
+    }
+    final root = await _sideFileRoot();
+    if (root == null) return const [];
+    final file = File(_stagesFilePath(root, session));
+    if (!await file.exists()) return const [];
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map) return const [];
+      final raw = decoded['stages'];
+      if (raw is! List) return const [];
+      return raw
+          .whereType<Map>()
+          .map((e) => SleepStageSummary.fromMap(Map<String, dynamic>.from(e)))
+          .where((s) => s.timestampUnix > 0 && s.durationMin > 0)
+          .toList()
+        ..sort((a, b) => a.timestampUnix.compareTo(b.timestampUnix));
+    } catch (_) {
+      // Fail-closed: corrupt stage file must not wipe begin/end prefs siblings.
+      return const [];
+    }
+  }
+
+  @override
   Future<List<DailyHrDaySummary>> loadDailyHr() async {
     final raw = _prefs.getString(GateAPrefs.dailyHrJson);
     if (raw == null || raw.isEmpty) {
@@ -110,6 +150,71 @@ class VitalsRepositoryImpl implements VitalsRepository {
     } catch (_) {
       return const [];
     }
+  }
+
+  @override
+  Future<List<DailyHrSample>> loadSleepHrWindow({
+    required int beginUnix,
+    required int endUnix,
+  }) async {
+    final dayKeys = sleepHrDayKeys(beginUnix: beginUnix, endUnix: endUnix);
+    if (dayKeys.isEmpty) return const [];
+    final all = <DailyHrSample>[];
+    for (final dayKey in dayKeys) {
+      all.addAll(await loadDailyHrSeries(dayKey));
+    }
+    return windowSleepHrSamples(
+      samples: all,
+      beginUnix: beginUnix,
+      endUnix: endUnix,
+    );
+  }
+
+  @override
+  Future<bool> isSleepEnrichPresent(SleepSessionSummary session) async {
+    final root = await _sideFileRoot();
+    if (root == null) return false;
+    final file = File(_enrichFilePath(root, session));
+    if (!await file.exists()) return false;
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map) return false;
+      return decoded['present'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<String?> loadFeelOnWake(SleepSessionSummary session) async {
+    final map = _feelOnWakeMap();
+    final value = map[session.mergeKey];
+    return value is String && value.isNotEmpty ? value : null;
+  }
+
+  @override
+  Future<void> saveFeelOnWake(
+    SleepSessionSummary session,
+    String answer,
+  ) async {
+    if (answer.isEmpty) return;
+    final map = _feelOnWakeMap();
+    if (map.containsKey(session.mergeKey)) return;
+    map[session.mergeKey] = answer;
+    await _prefs.setString(GateAPrefs.sleepFeelOnWakeJson, jsonEncode(map));
+  }
+
+  @override
+  Future<List<SleepSessionSummary>> loadSleepSessionsForMonth({
+    required int year,
+    required int month,
+  }) async {
+    if (month < 1 || month > 12) return const [];
+    final sessions = await loadSleepSessions();
+    return sessions.where((s) {
+      final end = DateTime.fromMillisecondsSinceEpoch(s.endUnix * 1000);
+      return end.year == year && end.month == month;
+    }).toList();
   }
 
   @override
@@ -162,9 +267,22 @@ class VitalsRepositoryImpl implements VitalsRepository {
     _mergeInFlight = true;
     try {
       final last = await loadLastEnable();
+      final endUnix = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final storedImpl =
+          _prefs.getInt(GateAPrefs.activitySyncImplVersion) ?? 0;
+      final forceWide = storedImpl < currentActivitySyncImplVersion;
+      if (forceWide) {
+        // One-shot clear of Sync-fed continuous HR residue on strip bump.
+        await _clearDailyHrResidue();
+      }
+      final startUnix = await _resolveActivitySyncStartUnix(endUnix);
       final result = await _link.syncActivity(
-        skipTruSleepSoft: last?.outcomeFor('trusleep') == 'armed',
-        skipAutoHrSoft: last?.outcomeFor('auto_hr') == 'armed',
+        startUnix: startUnix,
+        endUnix: endUnix,
+        // Force sleep pull: always re-arm TruSleep soft-enable.
+        skipTruSleepSoft: false,
+        // Native Sync ignores auto-HR soft; keep channel arg for compat.
+        skipAutoHrSoft: true,
       );
 
       // Late merge after Forget / identity wipe — no-op.
@@ -191,6 +309,12 @@ class VitalsRepositoryImpl implements VitalsRepository {
               ServerFailure('Local vitals store unreadable — not overwriting'),
             );
           }
+          if (forceWide && _gateStillPassed()) {
+            await _prefs.setInt(
+              GateAPrefs.activitySyncImplVersion,
+              currentActivitySyncImplVersion,
+            );
+          }
           final sleep = await _safeLoadSleep();
           final hr = await _safeLoadHr();
           return Right(
@@ -211,8 +335,27 @@ class VitalsRepositoryImpl implements VitalsRepository {
           if (!_gateStillPassed()) {
             return const Left(ServerFailure('Gate cleared — sync discarded'));
           }
-          await _mergeContainers(result);
+          final merge = await _mergeContainers(result);
+          if (forceWide && _gateStillPassed()) {
+            await _prefs.setInt(
+              GateAPrefs.activitySyncImplVersion,
+              currentActivitySyncImplVersion,
+            );
+          }
+          final allowCursorAdvance =
+              result.status == ActivitySyncStatus.ok && merge.fileSotUpserted;
+          await _maybeAdvanceActivityCursor(
+            fileSotUpserted: allowCursorAdvance,
+            maxUpsertedEndUnix: merge.maxUpsertedEndUnix,
+          );
           final sleep = await _safeLoadSleep();
+          // Temporary: log displayed timings + message deltas (~5–6 Syncs).
+          await TruSleepTimestampObserve.report(
+            displayedSessions: sleep,
+            messageSessions: result.sleepSessions,
+            enrich: result.sleepEnrich,
+            watchClock: result.watchClock,
+          );
           final hr = await _safeLoadHr();
           final partial = result.status == ActivitySyncStatus.partialBatch ||
               result.status == ActivitySyncStatus.stuck;
@@ -235,6 +378,51 @@ class VitalsRepositoryImpl implements VitalsRepository {
     } finally {
       _mergeInFlight = false;
     }
+  }
+
+  /// Wide window until cursor sticks; then cursor − overnight overlap.
+  Future<int> _resolveActivitySyncStartUnix(int endUnix) async {
+    final wideStart = endUnix - HuaweiLink.activityWindowDays * 24 * 60 * 60;
+    final storedImpl =
+        _prefs.getInt(GateAPrefs.activitySyncImplVersion) ?? 0;
+    if (storedImpl < currentActivitySyncImplVersion) {
+      return wideStart;
+    }
+    final cursor = _prefs.getInt(GateAPrefs.lastActivitySyncCursor);
+    if (cursor == null || cursor <= 0) {
+      return wideStart;
+    }
+    final withOverlap = cursor - activityCursorOverlapSec;
+    if (withOverlap < wideStart) return wideStart;
+    if (withOverlap > endUnix) return endUnix;
+    return withOverlap;
+  }
+
+  Future<void> _maybeAdvanceActivityCursor({
+    required bool fileSotUpserted,
+    required int maxUpsertedEndUnix,
+  }) async {
+    if (!fileSotUpserted || maxUpsertedEndUnix <= 0) return;
+    if (!_gateStillPassed()) return;
+    await _prefs.setInt(
+      GateAPrefs.lastActivitySyncCursor,
+      maxUpsertedEndUnix + 1,
+    );
+  }
+
+  bool _hasFileSleepSotFlip() =>
+      _prefs.getBool(GateAPrefs.fileSleepSotActive) ?? false;
+
+  Future<void> _clearDailyHrResidue() async {
+    await _prefs.remove(GateAPrefs.dailyHrJson);
+    final root = await _sideFileRoot();
+    if (root == null) return;
+    final dir = Directory('${root.path}/${GateAPrefs.dailyHrSeriesDir}');
+    try {
+      if (await dir.exists()) {
+        await dir.delete(recursive: true);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -300,22 +488,22 @@ class VitalsRepositoryImpl implements VitalsRepository {
     if (hrEmpty) {
       final hrOutcome = lastEnable?.outcomeFor('auto_hr');
       if (hrOutcome == 'armed') {
-        return 'Wear the watch for several hours, then Sync — '
-            'fresh auto-HR may not backfill older minutes';
+        // Sync no longer refills whole-day HR — do not promise wear→Sync BPM.
+        return 'No new sleep data in range (continuous HR is not synced)';
       }
       if (hrOutcome == 'skipped' ||
           hrOutcome == 'failed' ||
           hrOutcome == 'timed_out') {
-        return 'Auto-HR not armed — tap Enable auto-tracking, then wear and Sync';
+        return 'No new sleep data in range — Enable auto-tracking if needed';
       }
       if (lastEnable == null) {
-        return 'Tap Enable auto-tracking, wear several hours, then Sync';
+        return 'No new sleep data in range';
       }
     }
     if (lastEnable == null && enableSkipped) {
-      return 'Enable skipped — watch may need TruSleep / auto-HR armed';
+      return 'Enable skipped — watch may need TruSleep armed';
     }
-    return 'No new sleep or heart-rate data in range';
+    return 'No new sleep data in range';
   }
 
   String? _syncEnableMessage({
@@ -347,22 +535,260 @@ class VitalsRepositoryImpl implements VitalsRepository {
     } catch (_) {}
   }
 
-  Future<void> _mergeContainers(ActivitySyncResult result) async {
-    if (!_gateStillPassed()) return;
+  Future<_SleepMergeResult> _mergeContainers(ActivitySyncResult result) async {
+    if (!_gateStillPassed()) {
+      return const _SleepMergeResult();
+    }
     final completed = result.completedContainers;
-    if (completed.contains('sleep') && !_sleepLoadFailed) {
-      await _mergeSleep(result.sleepSessions);
+    final intervals = _collectStateIntervals(result.sleepEnrich);
+    var merge = const _SleepMergeResult();
+
+    if (intervals.isNotEmpty) {
+      merge = await _mergeFileSleepSot(
+        intervals: intervals,
+        messageSessions: result.sleepSessions,
+        enrich: result.sleepEnrich,
+      );
+    } else if (completed.contains('sleep') && !_sleepLoadFailed) {
+      if (_hasFileSleepSotFlip()) {
+        // Messages never own begin/end after flip — stages only.
+        await _attachMessageStagesOntoFileSot(result.sleepSessions);
+      } else {
+        // Pre-flip interim: message-path SoT until first file upsert.
+        await _mergeSleep(result.sleepSessions);
+      }
     }
-    if (!_gateStillPassed()) return;
-    if (completed.contains('daily_hr') &&
-        result.dailyHrSamples.isNotEmpty &&
-        !_hrLoadFailed) {
-      await _mergeDailyHr(result.dailyHrSamples);
-    }
-    if (!_gateStillPassed()) return;
-    // FitnessTotals: merge even all-zero scalar rows (do not copy HR samples guard).
+    if (!_gateStillPassed()) return merge;
+
+    // Continuous HR stripped — never merge daily_hr from Sync.
+    if (!_gateStillPassed()) return merge;
+    // FitnessTotals: merge even all-zero scalar rows.
     if (completed.contains('fitness_totals') && !_fitnessTotalsLoadFailed) {
       await _mergeFitnessTotals(result.fitnessTotals);
+    }
+    if (!_gateStillPassed()) return merge;
+    // Enrich absent ⇒ leave prior enrich refs untouched (monotonic).
+    if (intervals.isEmpty && result.sleepEnrich.isNotEmpty) {
+      await _mergeSleepEnrich(result.sleepEnrich);
+    }
+    return merge;
+  }
+
+  List<SleepStateInterval> _collectStateIntervals(
+    List<SleepEnrichOutcome> enrich,
+  ) {
+    final out = <SleepStateInterval>[];
+    for (final o in enrich) {
+      if (!o.present || o.stateIntervals.isEmpty) continue;
+      out.addAll(o.stateIntervals);
+      break; // full list is on first row (native contract)
+    }
+    return out;
+  }
+
+  Future<_SleepMergeResult> _mergeFileSleepSot({
+    required List<SleepStateInterval> intervals,
+    required List<SleepSessionSummary> messageSessions,
+    required List<SleepEnrichOutcome> enrich,
+  }) async {
+    if (!_gateStillPassed()) return const _SleepMergeResult();
+    final built = TruSleepSleepSot.buildSessions(intervals);
+    if (built.isEmpty) return const _SleepMergeResult();
+
+    final existing = await _safeLoadSleep();
+    if (!_gateStillPassed()) return const _SleepMergeResult();
+
+    // Upsert: drop prior sessions that overlap this pull's file sessions.
+    final retained = existing
+        .where((e) => !built.any((b) => _sleepOverlaps(e, b)))
+        .toList();
+    final replaced = existing
+        .where((e) => built.any((b) => _sleepOverlaps(e, b)))
+        .toList();
+
+    final withStages = <SleepSessionSummary>[];
+    for (final file in built) {
+      final stages = _stagesForFileWindow(file, messageSessions);
+      withStages.add(
+        SleepSessionSummary(
+          beginUnix: file.beginUnix,
+          endUnix: file.endUnix,
+          wireType: file.wireType, // null → mergeKey ends with ':'
+          stages: stages,
+        ),
+      );
+    }
+
+    await _migrateFeelOnWake(
+      fromSessions: replaced,
+      toSessions: withStages,
+    );
+    if (!_gateStillPassed()) return const _SleepMergeResult();
+
+    final merged = <SleepSessionSummary>[...retained, ...withStages]
+      ..sort((a, b) => b.beginUnix.compareTo(a.beginUnix));
+
+    await _prefs.setString(
+      GateAPrefs.sleepSessionsJson,
+      jsonEncode(merged.map((s) => s.toJson()).toList()),
+    );
+    // Flip marker independent of cursor — R2 holds even when partial skips cursor.
+    await _prefs.setBool(GateAPrefs.fileSleepSotActive, true);
+
+    // Rewrite stages under file mergeKeys; remove overlapping priors' files.
+    await _deleteStageFiles(replaced);
+    await _persistSleepStages(
+      withStages.where((s) => s.stages.isNotEmpty).toList(),
+    );
+
+    // Rewrite enrich under file windows (monotonic present refs).
+    await _rewriteEnrichForFileSessions(withStages, enrich);
+
+    var maxEnd = 0;
+    for (final s in withStages) {
+      if (s.endUnix > maxEnd) maxEnd = s.endUnix;
+    }
+    return _SleepMergeResult(
+      fileSotUpserted: true,
+      maxUpsertedEndUnix: maxEnd,
+    );
+  }
+
+  List<SleepStageSummary> _stagesForFileWindow(
+    SleepSessionSummary file,
+    List<SleepSessionSummary> messages,
+  ) {
+    final buffered = SleepSessionSummary(
+      beginUnix: file.beginUnix - stageAttachBufferSec,
+      endUnix: file.endUnix + stageAttachBufferSec,
+    );
+    final stages = <SleepStageSummary>[];
+    for (final msg in messages) {
+      if (!_sleepOverlaps(buffered, msg)) continue;
+      for (final st in msg.stages) {
+        final stageEnd = st.timestampUnix + st.durationMin * 60;
+        if (st.timestampUnix < buffered.endUnix &&
+            stageEnd > buffered.beginUnix) {
+          stages.add(st);
+        }
+      }
+    }
+    stages.sort((a, b) => a.timestampUnix.compareTo(b.timestampUnix));
+    return stages;
+  }
+
+  Future<void> _attachMessageStagesOntoFileSot(
+    List<SleepSessionSummary> messages,
+  ) async {
+    if (!_gateStillPassed() || messages.isEmpty) return;
+    final existing = await _safeLoadSleep();
+    if (existing.isEmpty || !_gateStillPassed()) return;
+    final hasAnyStages = messages.any((m) => m.stages.isNotEmpty);
+    if (!hasAnyStages) return;
+
+    final updated = <SleepSessionSummary>[];
+    for (final file in existing) {
+      final stages = _stagesForFileWindow(file, messages);
+      if (stages.isEmpty) continue;
+      updated.add(
+        SleepSessionSummary(
+          beginUnix: file.beginUnix,
+          endUnix: file.endUnix,
+          wireType: file.wireType,
+          stages: stages,
+        ),
+      );
+    }
+    if (updated.isEmpty) return;
+    await _deleteStageFiles(updated);
+    await _persistSleepStages(updated);
+  }
+
+  Future<void> _migrateFeelOnWake({
+    required List<SleepSessionSummary> fromSessions,
+    required List<SleepSessionSummary> toSessions,
+  }) async {
+    if (fromSessions.isEmpty || toSessions.isEmpty) return;
+    final map = _feelOnWakeMap();
+    if (map.isEmpty) return;
+    final next = Map<String, dynamic>.from(map);
+    var changed = false;
+    for (final old in fromSessions) {
+      final feel = map[old.mergeKey];
+      if (feel == null) continue;
+      SleepSessionSummary? best;
+      var bestOverlap = 0;
+      for (final n in toSessions) {
+        final o = _overlapSec(old, n);
+        if (o > bestOverlap) {
+          bestOverlap = o;
+          best = n;
+        }
+      }
+      // No overlap → leave prior feel key untouched (retained nights).
+      if (best == null || bestOverlap <= 0) continue;
+      if (best.mergeKey == old.mergeKey) continue;
+      next.remove(old.mergeKey);
+      next[best.mergeKey] = feel;
+      changed = true;
+    }
+    if (!changed || !_gateStillPassed()) return;
+    await _prefs.setString(GateAPrefs.sleepFeelOnWakeJson, jsonEncode(next));
+  }
+
+  int _overlapSec(SleepSessionSummary a, SleepSessionSummary b) {
+    final begin = a.beginUnix > b.beginUnix ? a.beginUnix : b.beginUnix;
+    final end = a.endUnix < b.endUnix ? a.endUnix : b.endUnix;
+    final o = end - begin;
+    return o > 0 ? o : 0;
+  }
+
+  Future<void> _rewriteEnrichForFileSessions(
+    List<SleepSessionSummary> fileSessions,
+    List<SleepEnrichOutcome> enrich,
+  ) async {
+    if (!_gateStillPassed() || fileSessions.isEmpty) return;
+    SleepEnrichOutcome? present;
+    for (final o in enrich) {
+      if (o.present) {
+        present = o;
+        break;
+      }
+    }
+    if (present == null) return;
+    for (final session in fileSessions) {
+      if (!_gateStillPassed()) return;
+      await persistSleepEnrich(
+        session: session,
+        present: true,
+        refs: {
+          'files': present.refs.map((r) => r.toJson()).toList(),
+          if (present.stateIntervals.isNotEmpty)
+            'stateIntervals':
+                present.stateIntervals.map((i) => i.toJson()).toList(),
+        },
+      );
+    }
+  }
+
+  Future<void> _mergeSleepEnrich(List<SleepEnrichOutcome> outcomes) async {
+    if (!_gateStillPassed() || outcomes.isEmpty) return;
+    for (final outcome in outcomes) {
+      if (!_gateStillPassed()) return;
+      if (!outcome.present) continue;
+      if (outcome.beginUnix <= 0 || outcome.endUnix <= outcome.beginUnix) {
+        continue;
+      }
+      await persistSleepEnrich(
+        session: outcome.asSession,
+        present: true,
+        refs: {
+          'files': outcome.refs.map((r) => r.toJson()).toList(),
+          if (outcome.stateIntervals.isNotEmpty)
+            'stateIntervals':
+                outcome.stateIntervals.map((i) => i.toJson()).toList(),
+        },
+      );
     }
   }
 
@@ -373,68 +799,28 @@ class VitalsRepositoryImpl implements VitalsRepository {
         .toList();
     if (valid.isEmpty) return;
 
-    final existing = await _safeLoadSleep();
-    // Re-sync replaces overlapping fragments (old per-page splits, etc.).
-    final kept = existing.where((e) {
-      return !valid.any((i) => _sleepOverlaps(e, i));
-    }).toList();
     final byKey = <String, SleepSessionSummary>{
-      for (final s in kept) _sleepKey(s): s,
       for (final s in valid) _sleepKey(s): s,
     };
-    final merged = byKey.values.toList()
+    final unique = byKey.values.toList()
       ..sort((a, b) => b.beginUnix.compareTo(a.beginUnix));
+    final existing = await _safeLoadSleep();
     if (!_gateStillPassed()) return;
     await _prefs.setString(
       GateAPrefs.sleepSessionsJson,
-      jsonEncode(merged.map((s) => s.toJson()).toList()),
+      jsonEncode(unique.map((s) => s.toJson()).toList()),
+    );
+    await _deleteStageFiles(existing);
+    await _wipeSleepStagesDir();
+    await _persistSleepStages(
+      unique.where((s) => s.stages.isNotEmpty).toList(),
     );
   }
 
-  String _sleepKey(SleepSessionSummary s) =>
-      '${s.beginUnix}:${s.endUnix}:${s.wireType ?? ''}';
+  String _sleepKey(SleepSessionSummary s) => s.mergeKey;
 
   bool _sleepOverlaps(SleepSessionSummary a, SleepSessionSummary b) {
     return a.beginUnix < b.endUnix && b.beginUnix < a.endUnix;
-  }
-
-  Future<void> _mergeDailyHr(List<DailyHrSample> samples) async {
-    if (!_gateStillPassed()) return;
-    final byDay = <String, List<int>>{};
-    final byDaySamples = <String, List<DailyHrSample>>{};
-    for (final s in samples) {
-      if (s.bpm <= 0 || s.timestampUnix <= 0) continue;
-      final day = _localDayKey(s.timestampUnix);
-      byDay.putIfAbsent(day, () => []).add(s.bpm);
-      byDaySamples.putIfAbsent(day, () => []).add(s);
-    }
-    if (byDay.isEmpty) return;
-
-    final existing = await _safeLoadHr();
-    final map = <String, DailyHrDaySummary>{
-      for (final d in existing) d.dayKey: d,
-    };
-    for (final entry in byDay.entries) {
-      final bpms = entry.value;
-      final minBpm = bpms.reduce((a, b) => a < b ? a : b);
-      final maxBpm = bpms.reduce((a, b) => a > b ? a : b);
-      final avg = (bpms.reduce((a, b) => a + b) / bpms.length).round();
-      map[entry.key] = DailyHrDaySummary(
-        dayKey: entry.key,
-        minBpm: minBpm,
-        avgBpm: avg,
-        maxBpm: maxBpm,
-        sampleCount: bpms.length,
-      );
-    }
-    final merged = map.values.toList()
-      ..sort((a, b) => b.dayKey.compareTo(a.dayKey));
-    if (!_gateStillPassed()) return;
-    await _prefs.setString(
-      GateAPrefs.dailyHrJson,
-      jsonEncode(merged.map((d) => d.toJson()).toList()),
-    );
-    await _persistDailyHrSeries(byDaySamples);
   }
 
   /// Replace-by-local-day across the completed FitnessTotals payload.
@@ -458,37 +844,134 @@ class VitalsRepositoryImpl implements VitalsRepository {
     );
   }
 
-  Future<void> _persistDailyHrSeries(
-    Map<String, List<DailyHrSample>> incomingByDay,
-  ) async {
+  @override
+  Future<void> clearLocal() async {
+    await _prefs.remove(GateAPrefs.sleepSessionsJson);
+    await _prefs.remove(GateAPrefs.dailyHrJson);
+    await _prefs.remove(GateAPrefs.fitnessTotalsDayJson);
+    await _prefs.remove(GateAPrefs.lastAutoTrackingEnableJson);
+    await _prefs.remove(GateAPrefs.sleepFeelOnWakeJson);
+    await _prefs.remove(GateAPrefs.lastActivitySyncCursor);
+    await _prefs.remove(GateAPrefs.activitySyncImplVersion);
+    await _prefs.remove(GateAPrefs.fileSleepSotActive);
+    _sleepLoadFailed = false;
+    _hrLoadFailed = false;
+    _fitnessTotalsLoadFailed = false;
+    await _wipeSideFiles();
+  }
+
+  Future<void> _wipeSideFiles() async {
+    final root = await _sideFileRoot();
+    if (root == null) return;
+    for (final rel in [
+      GateAPrefs.dailyHrSeriesDir,
+      GateAPrefs.sleepStagesDir,
+      GateAPrefs.sleepEnrichDir,
+      GateAPrefs.sleepFilesDir,
+    ]) {
+      final dir = Directory('${root.path}/$rel');
+      try {
+        if (await dir.exists()) {
+          await dir.delete(recursive: true);
+        }
+      } catch (_) {
+        // Best-effort wipe.
+      }
+    }
+  }
+
+  Future<void> _persistSleepStages(List<SleepSessionSummary> sessions) async {
     if (!_gateStillPassed()) return;
     final root = await _sideFileRoot();
     if (root == null) return;
-    final seriesDir = Directory('${root.path}/${GateAPrefs.dailyHrSeriesDir}');
-    if (!await seriesDir.exists()) {
-      await seriesDir.create(recursive: true);
+    final dir = Directory('${root.path}/${GateAPrefs.sleepStagesDir}');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
     }
-    for (final entry in incomingByDay.entries) {
+    for (final session in sessions) {
       if (!_gateStillPassed()) return;
-      final existing = await loadDailyHrSeries(entry.key);
-      final byTs = <int, DailyHrSample>{
-        for (final s in existing) s.timestampUnix: s,
-        for (final s in entry.value) s.timestampUnix: s,
-      };
-      final merged = byTs.values.toList()
-        ..sort((a, b) => a.timestampUnix.compareTo(b.timestampUnix));
-      final file = File(_seriesFilePath(root, entry.key));
+      if (session.stages.isEmpty) continue;
+      final file = File(_stagesFilePath(root, session));
       await file.writeAsString(
         jsonEncode({
-          'dayKey': entry.key,
-          'samples': merged.map((s) => s.toJson()).toList(),
+          'beginUnix': session.beginUnix,
+          'endUnix': session.endUnix,
+          'wireType': session.wireType,
+          'stages': session.stages.map((s) => s.toJson()).toList(),
         }),
       );
     }
   }
 
+  Future<void> _deleteStageFiles(List<SleepSessionSummary> sessions) async {
+    final root = await _sideFileRoot();
+    if (root == null) return;
+    for (final session in sessions) {
+      final file = File(_stagesFilePath(root, session));
+      try {
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _wipeSleepStagesDir() async {
+    final root = await _sideFileRoot();
+    if (root == null) return;
+    final dir = Directory('${root.path}/${GateAPrefs.sleepStagesDir}');
+    try {
+      if (await dir.exists()) {
+        await dir.delete(recursive: true);
+      }
+    } catch (_) {}
+  }
+
+  /// Persist enrich outcome for a session (U6). Public for Sync merge path.
+  Future<void> persistSleepEnrich({
+    required SleepSessionSummary session,
+    required bool present,
+    Map<String, Object?>? refs,
+  }) async {
+    if (!_gateStillPassed()) return;
+    final root = await _sideFileRoot();
+    if (root == null) return;
+    final dir = Directory('${root.path}/${GateAPrefs.sleepEnrichDir}');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    final file = File(_enrichFilePath(root, session));
+    await file.writeAsString(
+      jsonEncode({
+        'beginUnix': session.beginUnix,
+        'endUnix': session.endUnix,
+        'present': present,
+        if (refs != null) 'refs': refs,
+      }),
+    );
+  }
+
+  Map<String, dynamic> _feelOnWakeMap() {
+    final raw = _prefs.getString(GateAPrefs.sleepFeelOnWakeJson);
+    if (raw == null || raw.isEmpty) return <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
+    } catch (_) {}
+    return <String, dynamic>{};
+  }
+
   String _seriesFilePath(Directory root, String dayKey) =>
       '${root.path}/${GateAPrefs.dailyHrSeriesDir}/$dayKey.json';
+
+  String _stagesFilePath(Directory root, SleepSessionSummary session) =>
+      '${root.path}/${GateAPrefs.sleepStagesDir}/${_safeFileToken(session.mergeKey)}.json';
+
+  String _enrichFilePath(Directory root, SleepSessionSummary session) =>
+      '${root.path}/${GateAPrefs.sleepEnrichDir}/${_safeFileToken(session.mergeKey)}.json';
+
+  String _safeFileToken(String key) =>
+      key.replaceAll(RegExp(r'[^0-9A-Za-z._-]'), '_');
 
   Future<Directory?> _sideFileRoot() async {
     final override = _sideFileRootOverride?.call();
@@ -498,14 +981,6 @@ class VitalsRepositoryImpl implements VitalsRepository {
     } catch (_) {
       return null;
     }
-  }
-
-  String _localDayKey(int unixSec) {
-    final dt = DateTime.fromMillisecondsSinceEpoch(unixSec * 1000);
-    final y = dt.year.toString().padLeft(4, '0');
-    final m = dt.month.toString().padLeft(2, '0');
-    final d = dt.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
   }
 
   Future<List<SleepSessionSummary>> _safeLoadSleep() async {
@@ -531,29 +1006,14 @@ class VitalsRepositoryImpl implements VitalsRepository {
       return const [];
     }
   }
+}
 
-  @override
-  Future<void> clearLocal() async {
-    await _prefs.remove(GateAPrefs.sleepSessionsJson);
-    await _prefs.remove(GateAPrefs.dailyHrJson);
-    await _prefs.remove(GateAPrefs.fitnessTotalsDayJson);
-    await _prefs.remove(GateAPrefs.lastAutoTrackingEnableJson);
-    _sleepLoadFailed = false;
-    _hrLoadFailed = false;
-    _fitnessTotalsLoadFailed = false;
-    await _wipeSideFiles();
-  }
+class _SleepMergeResult {
+  const _SleepMergeResult({
+    this.fileSotUpserted = false,
+    this.maxUpsertedEndUnix = 0,
+  });
 
-  Future<void> _wipeSideFiles() async {
-    final root = await _sideFileRoot();
-    if (root == null) return;
-    final seriesDir = Directory('${root.path}/${GateAPrefs.dailyHrSeriesDir}');
-    try {
-      if (await seriesDir.exists()) {
-        await seriesDir.delete(recursive: true);
-      }
-    } catch (_) {
-      // Best-effort wipe.
-    }
-  }
+  final bool fileSotUpserted;
+  final int maxUpsertedEndUnix;
 }
