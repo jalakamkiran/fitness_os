@@ -5,15 +5,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_os/core/error/failures.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
+import 'package:fitness_os/features/vitals/domain/morning_wellness.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/vitals/presentation/view/sleep_detail_screen.dart';
 
 class _FakeRepo implements VitalsRepository {
   _FakeRepo({
     this.stages = const [],
+    this.wellness,
   });
 
   final List<SleepStageSummary> stages;
+  final MorningWellness? wellness;
 
   @override
   Future<bool> isGateAPassed() async => true;
@@ -52,12 +55,15 @@ class _FakeRepo implements VitalsRepository {
       false;
 
   @override
-  Future<String?> loadFeelOnWake(SleepSessionSummary session) async => null;
+  Future<MorningWellness?> loadMorningWellness(
+    SleepSessionSummary session,
+  ) async =>
+      wellness;
 
   @override
-  Future<void> saveFeelOnWake(
+  Future<void> saveMorningWellness(
     SleepSessionSummary session,
-    String answer,
+    MorningWellness wellness,
   ) async {}
 
   @override
@@ -193,5 +199,51 @@ void main() {
     expect(find.textContaining('Overnight HR'), findsNothing);
     expect(find.text('wear → Enable auto-HR → Sync'), findsNothing);
     expect(find.text('Continuous HR'), findsNothing);
+  });
+
+  testWidgets('complete wellness shows read-only scores', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: BpTheme.light(),
+        home: SleepDetailScreen(
+          session: session,
+          repository: _FakeRepo(
+            stages: stages,
+            wellness: const MorningWellness(
+              sleepQuality: 3,
+              fatigue: 4,
+              soreness: 5,
+              stress: 2,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Morning wellness'), findsOneWidget);
+    expect(find.textContaining('Sleep quality · 3'), findsOneWidget);
+    expect(find.textContaining('Fatigue · 4'), findsOneWidget);
+    expect(find.textContaining('Muscle soreness · 5'), findsOneWidget);
+    expect(find.textContaining('Stress · 2'), findsOneWidget);
+    expect(find.textContaining('watch measured'), findsNothing);
+    expect(find.textContaining('intensity'), findsNothing);
+  });
+
+  testWidgets('missing wellness omits card', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: BpTheme.light(),
+        home: SleepDetailScreen(
+          session: session,
+          repository: _FakeRepo(stages: stages),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Morning wellness'), findsNothing);
   });
 }

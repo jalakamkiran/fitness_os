@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_os/core/error/failures.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
+import 'package:fitness_os/features/vitals/domain/morning_wellness.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_bloc.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_event.dart';
@@ -49,12 +50,15 @@ class _FakeRepo implements VitalsRepository {
       false;
 
   @override
-  Future<String?> loadFeelOnWake(SleepSessionSummary session) async => null;
+  Future<MorningWellness?> loadMorningWellness(
+    SleepSessionSummary session,
+  ) async =>
+      null;
 
   @override
-  Future<void> saveFeelOnWake(
+  Future<void> saveMorningWellness(
     SleepSessionSummary session,
-    String answer,
+    MorningWellness wellness,
   ) async {}
 
   @override

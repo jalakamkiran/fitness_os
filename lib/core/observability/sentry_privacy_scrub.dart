@@ -32,6 +32,14 @@ abstract final class SentryPrivacyScrub {
     'details',
     'arguments',
     'result',
+    // Hooper-4 morning wellness (local prefs; never upload scores).
+    'sleepQuality',
+    'fatigue',
+    'soreness',
+    'stress',
+    'morningWellness',
+    'sleep_feel_on_wake_json',
+    'sleepFeelOnWakeJson',
   };
 
   static String redactText(String input) {

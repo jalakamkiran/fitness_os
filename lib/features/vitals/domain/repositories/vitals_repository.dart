@@ -1,6 +1,7 @@
 import 'package:fitness_os/core/error/failures.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
+import 'package:fitness_os/features/vitals/domain/morning_wellness.dart';
 
 abstract class VitalsRepository {
   Future<bool> isGateAPassed();
@@ -32,11 +33,14 @@ abstract class VitalsRepository {
   /// TruSleep FileDownload enrich present for this session (side-file ref).
   Future<bool> isSleepEnrichPresent(SleepSessionSummary session);
 
-  /// Feel-on-wake answer for [session.mergeKey], or null if unanswered.
-  Future<String?> loadFeelOnWake(SleepSessionSummary session);
+  /// Complete Hooper-4 morning wellness for [session.mergeKey], or null.
+  Future<MorningWellness?> loadMorningWellness(SleepSessionSummary session);
 
-  /// Persist feel-on-wake once per session key (no-op if already answered).
-  Future<void> saveFeelOnWake(SleepSessionSummary session, String answer);
+  /// Persist complete Hooper-4 once per session key (no-op if already complete).
+  Future<void> saveMorningWellness(
+    SleepSessionSummary session,
+    MorningWellness wellness,
+  );
 
   /// Sleep sessions whose local end falls in the given calendar month.
   Future<List<SleepSessionSummary>> loadSleepSessionsForMonth({

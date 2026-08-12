@@ -4,16 +4,18 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/features/vitals/domain/morning_wellness.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_bloc.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_event.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_state.dart';
 import 'package:fitness_os/features/vitals/presentation/view/sleep_detail_route.dart';
 import 'package:fitness_os/features/vitals/presentation/view/sleep_history_route.dart';
+import 'package:fitness_os/features/vitals/presentation/widgets/morning_wellness_copy.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/sleep_formatters.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/sleep_session_card.dart';
 
-/// Recovery · Sleep list (S0): sync pill, today card, survey, history, locked.
+/// Recovery · Sleep list (S0): sync pill, Hooper-4 survey, today card, history.
 class SleepTabScreen extends StatefulWidget {
   const SleepTabScreen({super.key, this.repository});
 
@@ -26,9 +28,11 @@ class SleepTabScreen extends StatefulWidget {
 
 class _SleepTabScreenState extends State<SleepTabScreen> {
   List<SleepStageSummary> _todayStages = const [];
-  String? _feelAnswer;
+  MorningWellness? _storedWellness;
   bool _surveyLoading = true;
   SleepSessionSummary? _surveySession;
+  final Map<String, int> _draft = {};
+  bool _saving = false;
 
   VitalsRepository get _repo => widget.repository ?? sl<VitalsRepository>();
 
@@ -47,45 +51,57 @@ class _SleepTabScreenState extends State<SleepTabScreen> {
   Future<void> _loadExtras(List<SleepSessionSummary> sessions) async {
     final today = todaysSleepSession(sessions);
     List<SleepStageSummary> stages = const [];
-    String? feel;
+    MorningWellness? wellness;
     SleepSessionSummary? surveySession;
 
+    // Today’s overnight only (no historical catch-up). Nap fallback ignored.
     if (today != null) {
       stages = await _repo.loadSleepStages(today);
       if (sleepCrossesLocalMidnight(today)) {
-        feel = await _repo.loadFeelOnWake(today);
         surveySession = today;
-      }
-    }
-
-    // Prefer today's overnight; else most recent unanswered overnight.
-    if (surveySession == null) {
-      for (final s in sessions) {
-        if (!sleepCrossesLocalMidnight(s)) continue;
-        final existing = await _repo.loadFeelOnWake(s);
-        if (existing == null) {
-          surveySession = s;
-          feel = null;
-          break;
-        }
+        wellness = await _repo.loadMorningWellness(today);
       }
     }
 
     if (!mounted) return;
     setState(() {
       _todayStages = stages;
-      _feelAnswer = feel;
+      _storedWellness = wellness;
       _surveySession = surveySession;
+      _draft.clear();
       _surveyLoading = false;
     });
   }
 
-  Future<void> _onSurveyPick(String answer) async {
+  int get _draftAnswered => _draft.length;
+
+  Future<void> _onDimensionPick(String key, int score) async {
+    if (_saving) return;
+    setState(() => _draft[key] = score);
+    if (_draftAnswered < MorningWellnessCopy.dimensions.length) return;
+
     final session = _surveySession;
     if (session == null) return;
-    await _repo.saveFeelOnWake(session, answer);
+    final wellness = MorningWellness(
+      sleepQuality: _draft['sleepQuality']!,
+      fatigue: _draft['fatigue']!,
+      soreness: _draft['soreness']!,
+      stress: _draft['stress']!,
+    );
+    if (!wellness.isComplete) return;
+
+    setState(() => _saving = true);
+    await _repo.saveMorningWellness(session, wellness);
+    final reloaded = await _repo.loadMorningWellness(session);
     if (!mounted) return;
-    setState(() => _feelAnswer = answer);
+    setState(() {
+      _saving = false;
+      if (reloaded != null) {
+        _storedWellness = reloaded;
+        _draft.clear();
+      }
+      // Save failure → keep draft and survey visible.
+    });
   }
 
   @override
@@ -106,10 +122,13 @@ class _SleepTabScreenState extends State<SleepTabScreen> {
           final failed = state.phase == VitalsPhase.stuck ||
               (state.message != null &&
                   state.message!.toLowerCase().contains('fail'));
-          final showSurvey = !_surveyLoading &&
-              _surveySession != null &&
-              _feelAnswer == null &&
+          final overnightCandidate = _surveySession != null &&
               sleepCrossesLocalMidnight(_surveySession!);
+          // Presence gate: not syncing + today’s overnight + incomplete.
+          final showSurvey = !syncing &&
+              !_surveyLoading &&
+              overnightCandidate &&
+              _storedWellness == null;
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -122,6 +141,14 @@ class _SleepTabScreenState extends State<SleepTabScreen> {
                   everSynced: state.everSynced,
                 ),
               ),
+              if (showSurvey) ...[
+                const SizedBox(height: 12),
+                _Hooper4Survey(
+                  draft: Map<String, int>.from(_draft),
+                  saving: _saving,
+                  onPick: _onDimensionPick,
+                ),
+              ],
               const SizedBox(height: 12),
               if (today == null && state.sleepSessions.isEmpty)
                 _EmptySleepCard(syncing: syncing, failed: failed)
@@ -146,10 +173,6 @@ class _SleepTabScreenState extends State<SleepTabScreen> {
                   showDetailsCta: true,
                   onViewDetails: () => SleepDetailRoute.go(context, today),
                 ),
-              if (showSurvey) ...[
-                const SizedBox(height: 12),
-                _FeelOnWakeSurvey(onPick: _onSurveyPick),
-              ],
               const SizedBox(height: 12),
               Card(
                 child: ListTile(
@@ -301,23 +324,22 @@ class _EmptySleepCard extends StatelessWidget {
   }
 }
 
-class _FeelOnWakeSurvey extends StatelessWidget {
-  const _FeelOnWakeSurvey({required this.onPick});
+class _Hooper4Survey extends StatelessWidget {
+  const _Hooper4Survey({
+    required this.draft,
+    required this.saving,
+    required this.onPick,
+  });
 
-  final ValueChanged<String> onPick;
-
-  static const _options = <(String emoji, String label, String key)>[
-    ('😫', 'Awful', 'awful'),
-    ('😕', 'Meh', 'meh'),
-    ('😐', 'Okay', 'okay'),
-    ('🙂', 'Good', 'good'),
-    ('😄', 'Great', 'great'),
-  ];
+  final Map<String, int> draft;
+  final bool saving;
+  final void Function(String key, int score) onPick;
 
   @override
   Widget build(BuildContext context) {
     final colors = FathomColors.of(context);
     final theme = Theme.of(context);
+    final answered = draft.length;
 
     return Card(
       child: Padding(
@@ -325,59 +347,151 @@ class _FeelOnWakeSurvey extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Feel on wake',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: colors.inkFaint,
-                fontWeight: FontWeight.w700,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Morning wellness',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colors.inkFaint,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Text(
+                  '$answered/4 answered',
+                  style: FathomTextStyles.mono(
+                    fontSize: 11,
+                    color: colors.inkFaint,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 6),
             Text(
-              'How do you feel waking up?',
+              'How did last night land?',
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w700,
                 color: colors.ink,
               ),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                for (final opt in _options)
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: InkWell(
-                        onTap: () => onPick(opt.$3),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: colors.line),
+            for (final dim in MorningWellnessCopy.dimensions) ...[
+              _DimensionRow(
+                title: dim.title,
+                lowLabel: dim.lowLabel,
+                highLabel: dim.highLabel,
+                selected: draft[dim.key],
+                enabled: !saving,
+                onPick: (score) => onPick(dim.key, score),
+              ),
+              if (dim.key != MorningWellnessCopy.dimensions.last.key)
+                const SizedBox(height: 12),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DimensionRow extends StatelessWidget {
+  const _DimensionRow({
+    required this.title,
+    required this.lowLabel,
+    required this.highLabel,
+    required this.selected,
+    required this.enabled,
+    required this.onPick,
+  });
+
+  final String title;
+  final String lowLabel;
+  final String highLabel;
+  final int? selected;
+  final bool enabled;
+  final ValueChanged<int> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = FathomColors.of(context);
+    final theme = Theme.of(context);
+    final unanswered = selected == null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: unanswered ? colors.inkDim : colors.ink,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '1 · $lowLabel',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colors.inkFaint,
+                ),
+              ),
+            ),
+            Text(
+              '7 · $highLabel',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.inkFaint,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            for (var score = MorningWellness.minScore;
+                score <= MorningWellness.maxScore;
+                score++)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Semantics(
+                    button: true,
+                    label: '$title $score',
+                    child: InkWell(
+                      onTap: enabled ? () => onPick(score) : null,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        constraints: const BoxConstraints(minHeight: 44),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: selected == score
+                                ? colors.accent
+                                : colors.line,
+                            width: selected == score ? 1.5 : 1,
                           ),
-                          child: Column(
-                            children: [
-                              Text(opt.$1, style: const TextStyle(fontSize: 20)),
-                              const SizedBox(height: 4),
-                              Text(
-                                opt.$2,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: colors.inkDim,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
+                          color: selected == score
+                              ? colors.bgElev
+                              : colors.bg,
+                        ),
+                        child: Text(
+                          '$score',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: colors.ink,
                           ),
                         ),
                       ),
                     ),
                   ),
-              ],
-            ),
+                ),
+              ),
           ],
         ),
-      ),
+      ],
     );
   }
 }

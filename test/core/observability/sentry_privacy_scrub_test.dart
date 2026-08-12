@@ -42,11 +42,19 @@ void main() {
         'hrSeries': [60, 62],
         'mac': 'AA:BB:CC:DD:EE:FF',
         'gemini_api_key': 'secret',
+        'sleepQuality': 3,
+        'fatigue': 4,
+        'morningWellness': {'stress': 2},
+        'sleep_feel_on_wake_json': '{}',
       });
       expect(out?.containsKey('workouts'), isFalse);
       expect(out?.containsKey('hrSeries'), isFalse);
       expect(out?.containsKey('mac'), isFalse);
       expect(out?.containsKey('gemini_api_key'), isFalse);
+      expect(out?.containsKey('sleepQuality'), isFalse);
+      expect(out?.containsKey('fatigue'), isFalse);
+      expect(out?.containsKey('morningWellness'), isFalse);
+      expect(out?.containsKey('sleep_feel_on_wake_json'), isFalse);
       expect(out?['status'], 'ok');
     });
 

@@ -3,6 +3,7 @@ import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/home/data/repositories/home_repository_impl.dart';
+import 'package:fitness_os/features/vitals/domain/morning_wellness.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
@@ -100,12 +101,15 @@ class _Vitals implements VitalsRepository {
       false;
 
   @override
-  Future<String?> loadFeelOnWake(SleepSessionSummary session) async => null;
+  Future<MorningWellness?> loadMorningWellness(
+    SleepSessionSummary session,
+  ) async =>
+      null;
 
   @override
-  Future<void> saveFeelOnWake(
+  Future<void> saveMorningWellness(
     SleepSessionSummary session,
-    String answer,
+    MorningWellness wellness,
   ) async {}
 
   @override

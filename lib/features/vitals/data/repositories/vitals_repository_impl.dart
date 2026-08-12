@@ -6,6 +6,7 @@ import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/observability/trusleep_timestamp_observe.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
+import 'package:fitness_os/features/vitals/domain/morning_wellness.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/vitals/domain/sleep_hr_window.dart';
 import 'package:fitness_os/features/vitals/domain/trusleep_sleep_sot.dart';
@@ -186,21 +187,26 @@ class VitalsRepositoryImpl implements VitalsRepository {
   }
 
   @override
-  Future<String?> loadFeelOnWake(SleepSessionSummary session) async {
+  Future<MorningWellness?> loadMorningWellness(
+    SleepSessionSummary session,
+  ) async {
     final map = _feelOnWakeMap();
-    final value = map[session.mergeKey];
-    return value is String && value.isNotEmpty ? value : null;
+    return MorningWellness.tryParse(map[session.mergeKey]);
   }
 
   @override
-  Future<void> saveFeelOnWake(
+  Future<void> saveMorningWellness(
     SleepSessionSummary session,
-    String answer,
+    MorningWellness wellness,
   ) async {
-    if (answer.isEmpty) return;
+    if (!wellness.isComplete) return;
     final map = _feelOnWakeMap();
-    if (map.containsKey(session.mergeKey)) return;
-    map[session.mergeKey] = answer;
+    final existing = MorningWellness.tryParse(map[session.mergeKey]);
+    if (existing != null) return;
+    final stamped = wellness.answeredAt != null
+        ? wellness
+        : wellness.copyWithAnsweredAt(DateTime.now().toUtc());
+    map[session.mergeKey] = stamped.toJson();
     await _prefs.setString(GateAPrefs.sleepFeelOnWakeJson, jsonEncode(map));
   }
 
@@ -714,8 +720,8 @@ class VitalsRepositoryImpl implements VitalsRepository {
     final next = Map<String, dynamic>.from(map);
     var changed = false;
     for (final old in fromSessions) {
-      final feel = map[old.mergeKey];
-      if (feel == null) continue;
+      final source = map[old.mergeKey];
+      if (source == null) continue;
       SleepSessionSummary? best;
       var bestOverlap = 0;
       for (final n in toSessions) {
@@ -725,11 +731,31 @@ class VitalsRepositoryImpl implements VitalsRepository {
           best = n;
         }
       }
-      // No overlap → leave prior feel key untouched (retained nights).
+      // No overlap → leave prior wellness key untouched (retained nights).
       if (best == null || bestOverlap <= 0) continue;
       if (best.mergeKey == old.mergeKey) continue;
+
+      final destKey = best.mergeKey;
+      final dest = next[destKey];
+      final sourceComplete = MorningWellness.isCompleteRaw(source);
+      final destComplete = MorningWellness.isCompleteRaw(dest);
+
+      // Collision matrix:
+      // (1) incomplete dest + complete source → write source
+      // (2) complete dest + incomplete source → keep dest
+      // (3) both complete → keep destination
+      // Always remove source key so answers are not duplicated.
       next.remove(old.mergeKey);
-      next[best.mergeKey] = feel;
+      if (destComplete && !sourceComplete) {
+        // keep dest
+      } else if (destComplete && sourceComplete) {
+        // keep dest
+      } else if (!destComplete && sourceComplete) {
+        next[destKey] = source;
+      } else {
+        // both incomplete/legacy — still move source onto dest
+        next[destKey] = source;
+      }
       changed = true;
     }
     if (!changed || !_gateStillPassed()) return;

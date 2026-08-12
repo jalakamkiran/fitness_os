@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/features/vitals/domain/morning_wellness.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
+import 'package:fitness_os/features/vitals/presentation/widgets/morning_wellness_copy.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/sleep_formatters.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/sleep_hypnogram.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/sleep_stage_mix.dart';
@@ -28,6 +30,7 @@ class SleepDetailScreen extends StatefulWidget {
 class _SleepDetailScreenState extends State<SleepDetailScreen> {
   bool _loading = true;
   List<SleepStageSummary> _stages = const [];
+  MorningWellness? _wellness;
 
   VitalsRepository get _repo => widget.repository ?? sl<VitalsRepository>();
 
@@ -39,9 +42,16 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
 
   Future<void> _load() async {
     final stages = await _repo.loadSleepStages(widget.session);
+    MorningWellness? wellness;
+    try {
+      wellness = await _repo.loadMorningWellness(widget.session);
+    } catch (_) {
+      wellness = null;
+    }
     if (!mounted) return;
     setState(() {
       _stages = stages;
+      _wellness = wellness;
       _loading = false;
     });
   }
@@ -112,10 +122,59 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                     ),
                   ),
                 ],
+                if (_wellness != null) ...[
+                  const SizedBox(height: 16),
+                  _MorningWellnessSection(wellness: _wellness!),
+                ],
                 const SizedBox(height: 16),
                 _StructureSection(stages: _stages),
               ],
             ),
+    );
+  }
+}
+
+class _MorningWellnessSection extends StatelessWidget {
+  const _MorningWellnessSection({required this.wellness});
+
+  final MorningWellness wellness;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = FathomColors.of(context);
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Morning wellness',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.inkFaint,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 10),
+            for (final dim in MorningWellnessCopy.dimensions) ...[
+              Text(
+                MorningWellnessCopy.detailLine(
+                  dim.key,
+                  MorningWellnessCopy.scoreFor(wellness, dim.key)!,
+                ),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colors.ink,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (dim.key != MorningWellnessCopy.dimensions.last.key)
+                const SizedBox(height: 6),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
+import 'package:fitness_os/features/vitals/domain/morning_wellness.dart';
 import 'package:fitness_os/features/vitals/domain/sleep_hr_window.dart';
 import 'package:fitness_os/features/vitals/data/repositories/vitals_repository_impl.dart';
 import 'package:fitness_os/features/vitals/domain/trusleep_sleep_sot.dart';
@@ -294,6 +295,15 @@ void main() {
             '[{"dayKey":"2023-11-14","dayStartUnix":1700000000,"calories":10,"steps":100,"exerciseDurationSec":60}]',
         GateAPrefs.lastAutoTrackingEnableJson:
             '{"overall":"all_armed","features":[{"id":"auto_hr","outcome":"armed"}]}',
+        GateAPrefs.sleepFeelOnWakeJson: jsonEncode({
+          '100:200:': {
+            'sleepQuality': 3,
+            'fatigue': 3,
+            'soreness': 3,
+            'stress': 3,
+            'schema': 2,
+          },
+        }),
         GateAPrefs.workoutsJson:
             '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
       });
@@ -307,9 +317,34 @@ void main() {
       expect(prefs.getString(GateAPrefs.dailyHrJson), isNull);
       expect(prefs.getString(GateAPrefs.fitnessTotalsDayJson), isNull);
       expect(prefs.getString(GateAPrefs.lastAutoTrackingEnableJson), isNull);
+      expect(prefs.getString(GateAPrefs.sleepFeelOnWakeJson), isNull);
       expect(prefs.getInt(GateAPrefs.lastActivitySyncCursor), isNull);
       expect(prefs.getInt(GateAPrefs.activitySyncImplVersion), isNull);
       expect(prefs.getString(GateAPrefs.workoutsJson), isNotNull);
+    });
+
+    test('legacy string feel upserts to complete Hooper-4', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.sleepSessionsJson:
+            '[{"beginUnix":100,"endUnix":200}]',
+        GateAPrefs.sleepFeelOnWakeJson: jsonEncode({'100:200:': 'good'}),
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final repo = VitalsRepositoryImpl(link: _StubLink(), prefs: prefs);
+      const session = SleepSessionSummary(beginUnix: 100, endUnix: 200);
+      expect(await repo.loadMorningWellness(session), isNull);
+      await repo.saveMorningWellness(
+        session,
+        const MorningWellness(
+          sleepQuality: 4,
+          fatigue: 4,
+          soreness: 4,
+          stress: 4,
+        ),
+      );
+      final loaded = await repo.loadMorningWellness(session);
+      expect(loaded?.sleepQuality, 4);
     });
 
     test('enable persists last-run; Sync force-pulls TruSleep, soft-skips armed HR',
@@ -773,11 +808,27 @@ void main() {
       );
 
       final session = june.first;
-      expect(await repo.loadFeelOnWake(session), isNull);
-      await repo.saveFeelOnWake(session, 'good');
-      expect(await repo.loadFeelOnWake(session), 'good');
-      await repo.saveFeelOnWake(session, 'great'); // once-per-key
-      expect(await repo.loadFeelOnWake(session), 'good');
+      expect(await repo.loadMorningWellness(session), isNull);
+      const first = MorningWellness(
+        sleepQuality: 3,
+        fatigue: 4,
+        soreness: 5,
+        stress: 2,
+      );
+      await repo.saveMorningWellness(session, first);
+      final loaded = await repo.loadMorningWellness(session);
+      expect(loaded?.sleepQuality, 3);
+      expect(loaded?.fatigue, 4);
+      await repo.saveMorningWellness(
+        session,
+        const MorningWellness(
+          sleepQuality: 1,
+          fatigue: 1,
+          soreness: 1,
+          stress: 1,
+        ),
+      ); // once-per-complete-key
+      expect((await repo.loadMorningWellness(session))?.sleepQuality, 3);
     });
 
     test('fitness totals merge persists today row including zeros', () async {
@@ -1325,11 +1376,91 @@ void main() {
         expect(sleep, hasLength(2));
         final overnight =
             sleep.firstWhere((s) => s.beginUnix == 10_000);
-        expect(await repo.loadFeelOnWake(overnight), 'good');
+        expect(await repo.loadMorningWellness(overnight), isNull);
+        // Legacy string moved but incomplete for Hooper-4 load.
         final feelMap = jsonDecode(
           prefs.getString(GateAPrefs.sleepFeelOnWakeJson)!,
         ) as Map<String, dynamic>;
         expect(feelMap['100:500:'], 'ok_nap');
+        expect(feelMap.containsKey('9000:19000:'), isFalse);
+        expect(feelMap['10000:20000:'], 'good');
+      });
+
+      test('feel migrate moves complete object intact', () async {
+        SharedPreferences.setMockInitialValues({
+          ..._gateOpen(implVersion: _implV1),
+          GateAPrefs.sleepSessionsJson: jsonEncode([
+            {'beginUnix': 9000, 'endUnix': 19_000},
+          ]),
+          GateAPrefs.sleepFeelOnWakeJson: jsonEncode({
+            '9000:19000:': {
+              'sleepQuality': 3,
+              'fatigue': 4,
+              'soreness': 5,
+              'stress': 2,
+              'schema': 2,
+            },
+          }),
+        });
+        final prefs = await SharedPreferences.getInstance();
+        const i1 = SleepStateInterval(beginUnix: 10_000, endUnix: 20_000);
+        final link = _StubLink(
+          result: _fileSync(
+            intervals: const [i1],
+            messages: const [
+              SleepSessionSummary(beginUnix: 9000, endUnix: 19_000),
+            ],
+          ),
+        );
+        final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+        await repo.syncFromWatch();
+        final overnight = (await repo.loadSleepSessions())
+            .firstWhere((s) => s.beginUnix == 10_000);
+        final w = await repo.loadMorningWellness(overnight);
+        expect(w?.sleepQuality, 3);
+        expect(w?.fatigue, 4);
+        expect(w?.soreness, 5);
+        expect(w?.stress, 2);
+      });
+
+      test('feel migrate keeps complete dest over legacy source', () async {
+        SharedPreferences.setMockInitialValues({
+          ..._gateOpen(implVersion: _implV1),
+          GateAPrefs.sleepSessionsJson: jsonEncode([
+            {'beginUnix': 9000, 'endUnix': 19_000},
+          ]),
+          GateAPrefs.sleepFeelOnWakeJson: jsonEncode({
+            '9000:19000:': 'legacy',
+            '10000:20000:': {
+              'sleepQuality': 2,
+              'fatigue': 2,
+              'soreness': 2,
+              'stress': 2,
+              'schema': 2,
+            },
+          }),
+        });
+        final prefs = await SharedPreferences.getInstance();
+        const i1 = SleepStateInterval(beginUnix: 10_000, endUnix: 20_000);
+        final link = _StubLink(
+          result: _fileSync(
+            intervals: const [i1],
+            messages: const [
+              SleepSessionSummary(beginUnix: 9000, endUnix: 19_000),
+            ],
+          ),
+        );
+        final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+        await repo.syncFromWatch();
+        final overnight = (await repo.loadSleepSessions())
+            .firstWhere((s) => s.beginUnix == 10_000);
+        final w = await repo.loadMorningWellness(overnight);
+        expect(w?.sleepQuality, 2);
+        final feelMap = jsonDecode(
+          prefs.getString(GateAPrefs.sleepFeelOnWakeJson)!,
+        ) as Map<String, dynamic>;
         expect(feelMap.containsKey('9000:19000:'), isFalse);
       });
 
