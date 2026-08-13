@@ -98,7 +98,7 @@ Battery (session UX): **Done** — `POC-2026-07-18-gate-a-battery`.
 | TruSleep ON → night 1 sync messages + files | **Pending** | Night 1 may miss |
 | Night 2 preferred before absent | **Pending** | Max 2 nights |
 | Optional TruSleep OFF night if no stages | **Pending** | |
-| FileDownload sleep_state / sleep_data | **Probe API soft-skip** | `HuaweiFileDownload` in Sync chain; live consult off until night capture / `ABSENT-…` |
+| FileDownload sleep_state / sleep_data | **Init present** `POC-2026-08-11-trusleep-fd` | state=528 B, data=694564 B; transfer SM live; Health-match intervals pending |
 
 ---
 
@@ -108,7 +108,7 @@ Battery (session UX): **Done** — `POC-2026-07-18-gate-a-battery`.
 |-----------|----------|
 | Strength list proven; Data/Pace/Swim/GPS not probed | **Totals-only** for workout follow-on until Outdoor/Pool + hint probes |
 | Outdoor / Pool not yet attempted | Catalog honesty SoT proceeds; sport wire-spec sections stay pre-promotion / stub |
-| No sleep file after budget | TruSleep FileDownload probe soft-skips (`pending_capture`) until night budget — budget not started |
+| No sleep file after budget | Run live `0x2c` transfer; if size stays 0 after correct init → cite `ABSENT-…` |
 | No step HR after attempt budget | daily HR ≤2 + `absent-in-observed-sessions` — budget not started |
 | Indoor / OW skipped for calendar | **Not a plan failure** — explicit deferral |
 | Must-seeds incomplete | Freeze what was observed (Strength); pending modes stay `unobserved` |

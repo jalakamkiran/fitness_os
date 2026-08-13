@@ -3,21 +3,30 @@ import 'package:flutter/material.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
 
-/// Calm session card for the Swim list — key signals only, no charts.
-class SwimSessionRow extends StatelessWidget {
-  const SwimSessionRow({
+/// Calm session card for sport history lists — key signals only, no charts.
+class WorkoutSessionRow extends StatelessWidget {
+  const WorkoutSessionRow({
     super.key,
     required this.workout,
     required this.onTap,
+    this.thirdLabel = 'SWOLF',
+    this.thirdValue,
   });
 
   final WorkoutSummary workout;
   final VoidCallback onTap;
 
+  /// Third meta column label (swim SWOLF, run/strength Calories, etc.).
+  final String thirdLabel;
+
+  /// Third meta value; defaults to [WorkoutSummary.avgSwolf] when null.
+  final String? thirdValue;
+
   @override
   Widget build(BuildContext context) {
     final colors = FathomColors.of(context);
     final theme = Theme.of(context);
+    final third = thirdValue ?? (workout.avgSwolf?.toString() ?? '—');
 
     return Material(
       color: colors.bgElev,
@@ -41,7 +50,7 @@ class SwimSessionRow extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          swimSessionTitle(workout),
+                          workoutSessionTitle(workout),
                           style: theme.textTheme.titleMedium?.copyWith(
                             color: colors.ink,
                             fontWeight: FontWeight.w800,
@@ -81,8 +90,8 @@ class SwimSessionRow extends StatelessWidget {
                   ),
                   Expanded(
                     child: _Meta(
-                      label: 'SWOLF',
-                      value: workout.avgSwolf?.toString() ?? '—',
+                      label: thirdLabel,
+                      value: third,
                     ),
                   ),
                 ],

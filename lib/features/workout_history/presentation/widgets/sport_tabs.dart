@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 enum WorkoutSportTab { swim, run, strength }
 
-/// Top sport switcher for the Workouts tab (Swim live; Run/Strength soon).
+/// Top sport switcher for the Workouts tab.
 class SportTabs extends StatelessWidget {
   const SportTabs({
     super.key,
@@ -40,7 +40,6 @@ class SportTabs extends StatelessWidget {
             Expanded(
               child: _Tab(
                 label: 'Run',
-                soon: true,
                 selected: selected == WorkoutSportTab.run,
                 onTap: () => onSelected(WorkoutSportTab.run),
               ),
@@ -48,7 +47,6 @@ class SportTabs extends StatelessWidget {
             Expanded(
               child: _Tab(
                 label: 'Strength',
-                soon: true,
                 selected: selected == WorkoutSportTab.strength,
                 onTap: () => onSelected(WorkoutSportTab.strength),
               ),
@@ -65,12 +63,10 @@ class _Tab extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
-    this.soon = false,
   });
 
   final String label;
   final bool selected;
-  final bool soon;
   final VoidCallback onTap;
 
   @override
@@ -88,29 +84,13 @@ class _Tab extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: theme.textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: selected ? colors.ink : colors.inkFaint,
-                ),
-              ),
-              if (soon) ...[
-                const SizedBox(height: 2),
-                Text(
-                  'Soon',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.6,
-                    color: colors.inkFaint,
-                  ),
-                ),
-              ],
-            ],
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: selected ? colors.ink : colors.inkFaint,
+            ),
           ),
         ),
       ),
