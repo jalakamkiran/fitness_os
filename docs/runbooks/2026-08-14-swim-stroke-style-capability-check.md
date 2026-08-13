@@ -92,11 +92,11 @@ If blocked empty / no styles:
 
 | Field | Value |
 |-------|--------|
-| Date | |
-| Workout number | |
-| startTime | |
-| Observed sequence (codes / labels) | |
-| Result | Pass / Fail / Blocked |
-| Notes | |
+| Date | 2026-08-14 |
+| Workout number | 36 (latest; also styles_logged on 6, 7, 10–13, 16, 18–21, 26–28, 30, 31, 33) |
+| startTime | 1786588295 |
+| Observed sequence (codes / labels) | Free×4, Back, Breast×2, Free, Back, Free, Breast, Free×2, Back, Free, Back, Breast, Back, Free, Back (ends lap 19 = Backstroke) |
+| Result | Pass |
+| Notes | Owner confirmed last lap was Backstroke. Per-lap styles retained on GT5 full-history Sync (`styles_logged`). Session-level Medley / future mapping corrections deferred to Style UI follow-up. |
 
 _Fill after the check. This section is the R6 handoff for Style UI follow-up._
