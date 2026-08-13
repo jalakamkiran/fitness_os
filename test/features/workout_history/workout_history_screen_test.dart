@@ -55,14 +55,15 @@ class _FakeRepo implements WorkoutHistoryRepository {
       );
 }
 
-WorkoutSummary _swim({
+WorkoutSummary _workout({
   required int number,
   required int startTime,
   required int durationSec,
+  required int type,
   int? distanceM,
   int? avgSwolf,
+  int? calories,
   String? sessionFlag,
-  int type = 6,
 }) {
   return WorkoutSummary(
     number: number,
@@ -72,6 +73,7 @@ WorkoutSummary _swim({
     type: type,
     distanceM: distanceM,
     avgSwolf: avgSwolf,
+    calories: calories,
     sessionFlag: sessionFlag,
   );
 }
@@ -82,28 +84,46 @@ void main() {
   late WorkoutHistoryBloc bloc;
 
   final fixtures = [
-    _swim(
+    _workout(
       number: 11,
+      type: 6,
       startTime: DateTime(2026, 7, 24, 7, 12).millisecondsSinceEpoch ~/ 1000,
       durationSec: 42 * 60 + 18,
       distanceM: 1250,
       avgSwolf: 41,
       sessionFlag: 'Pace decay after interval 3',
     ),
-    _swim(
+    _workout(
       number: 10,
+      type: 6,
       startTime: DateTime(2026, 7, 22, 18, 40).millisecondsSinceEpoch ~/ 1000,
       durationSec: 34 * 60 + 5,
       distanceM: 1000,
       avgSwolf: 39,
     ),
-    const WorkoutSummary(
+    // Owner GT5 log shape: #35 indoor run + outdoor run must not appear on Swim.
+    _workout(
+      number: 35,
+      type: 5,
+      startTime: DateTime(2026, 8, 12, 10, 0).millisecondsSinceEpoch ~/ 1000,
+      durationSec: 433,
+      distanceM: 1000,
+      calories: 80,
+    ),
+    _workout(
       number: 99,
-      startTime: 1,
-      endTime: 2,
-      durationSec: 60,
       type: 2,
+      startTime: 1,
+      durationSec: 60,
       distanceM: 5000,
+      calories: 400,
+    ),
+    _workout(
+      number: 34,
+      type: 140,
+      startTime: DateTime(2026, 8, 11, 18, 0).millisecondsSinceEpoch ~/ 1000,
+      durationSec: 2850,
+      calories: 220,
     ),
   ];
 
@@ -157,7 +177,8 @@ void main() {
     expect(find.textContaining('2 · pool'), findsOneWidget);
   });
 
-  testWidgets('Swim list shows fixture session rows', (tester) async {
+  testWidgets('Swim list shows fixture session rows and hides runs',
+      (tester) async {
     await pumpScreen(tester);
 
     expect(find.text('Pool swim · #11'), findsOneWidget);
@@ -166,7 +187,10 @@ void main() {
     expect(find.text('42:18'), findsOneWidget);
     expect(find.text('41'), findsOneWidget);
     expect(find.text('Pace decay after interval 3'), findsOneWidget);
+    expect(find.textContaining('Indoor run'), findsNothing);
     expect(find.textContaining('#99'), findsNothing);
+    expect(find.textContaining('#35'), findsNothing);
+    expect(find.textContaining('#34'), findsNothing);
   });
 
   testWidgets('tapping a swim row opens detail route', (tester) async {
@@ -180,24 +204,31 @@ void main() {
     expect(find.textContaining('1250'), findsWidgets);
   });
 
-  testWidgets('Run and Strength show empty scaffolding', (tester) async {
+  testWidgets('Run tab lists indoor and outdoor runs', (tester) async {
     await pumpScreen(tester);
 
     await tester.tap(find.text('Run'));
     await tester.pumpAndSettle();
-    expect(
-      find.textContaining('Run sessions will list here'),
-      findsOneWidget,
-    );
-    expect(find.text('Empty · OK'), findsOneWidget);
+
+    expect(find.textContaining('2 · run'), findsOneWidget);
+    expect(find.text('Indoor run · #35'), findsOneWidget);
+    expect(find.text('Run · #99'), findsOneWidget);
+    expect(find.text('1,000 m'), findsOneWidget);
+    expect(find.text('80'), findsOneWidget); // calories
     expect(find.text('Pool swim · #11'), findsNothing);
+    expect(find.textContaining('Strength ·'), findsNothing);
+  });
+
+  testWidgets('Strength tab lists strength sessions', (tester) async {
+    await pumpScreen(tester);
 
     await tester.tap(find.text('Strength'));
     await tester.pumpAndSettle();
-    expect(
-      find.textContaining('Strength history stays off Swim'),
-      findsOneWidget,
-    );
-    expect(find.text('Empty · OK'), findsOneWidget);
+
+    expect(find.textContaining('1 · strength'), findsOneWidget);
+    expect(find.text('Strength · #34'), findsOneWidget);
+    expect(find.text('220'), findsOneWidget);
+    expect(find.text('Indoor run · #35'), findsNothing);
+    expect(find.text('Pool swim · #11'), findsNothing);
   });
 }

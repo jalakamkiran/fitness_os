@@ -159,6 +159,19 @@ void main() {
       );
       expect(CanonicalSwimSession.fromWorkoutSummary(summary), isNull);
     });
+
+    test('returns null for indoor run type 5', () {
+      const summary = WorkoutSummary(
+        number: 35,
+        startTime: 1,
+        endTime: 434,
+        durationSec: 433,
+        type: 5,
+        distanceM: 1000,
+      );
+      expect(CanonicalSwimSession.looksLikeSwim(summary), isFalse);
+      expect(CanonicalSwimSession.fromWorkoutSummary(summary), isNull);
+    });
   });
 
   group('poolLengthCmToMeters', () {

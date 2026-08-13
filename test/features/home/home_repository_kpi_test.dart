@@ -312,4 +312,49 @@ void main() {
     expect(snap.stepsLabel, '20');
     expect(snap.workoutTimeLabel, '2m');
   });
+
+  test('indoor run type 5 today is not a Home swim takeaway', () async {
+    final start = DateTime(fixedNow.year, fixedNow.month, fixedNow.day, 10);
+    final startUnix = start.millisecondsSinceEpoch ~/ 1000;
+    final repo = await buildRepo(
+      workouts: [
+        WorkoutSummary(
+          number: 35,
+          type: 5,
+          startTime: startUnix,
+          endTime: startUnix + 433,
+          durationSec: 433,
+          distanceM: 1000,
+          calories: 80,
+          steps: 1200,
+        ),
+      ],
+    );
+    final snap = await repo.loadSnapshot();
+    expect(snap.swimSessionNumber, isNull);
+    expect(snap.swimTakeawayTitle, isNot(contains('Pool swim')));
+    expect(snap.swimTakeawayTitle, isNot(contains('Indoor run')));
+    expect(snap.workoutTimeLabel, '7m');
+  });
+
+  test('pool swim type 6 today is a Home swim takeaway', () async {
+    final start = DateTime(fixedNow.year, fixedNow.month, fixedNow.day, 7);
+    final startUnix = start.millisecondsSinceEpoch ~/ 1000;
+    final repo = await buildRepo(
+      workouts: [
+        WorkoutSummary(
+          number: 33,
+          type: 6,
+          startTime: startUnix,
+          endTime: startUnix + 3600,
+          durationSec: 3600,
+          distanceM: 1000,
+          calories: 349,
+        ),
+      ],
+    );
+    final snap = await repo.loadSnapshot();
+    expect(snap.swimSessionNumber, 33);
+    expect(snap.swimTakeawayTitle, 'Pool swim · 1.0 km');
+  });
 }
