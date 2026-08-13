@@ -154,6 +154,152 @@ class HuaweiFileDownloadTest {
     }
 
     @Test
+    fun download_productSpecs_neverIncludeSleepData() {
+        // Regression: product Sync path must stay sleep_state-only.
+        val responses = ArrayDeque(
+            listOf(
+                initResponse("sleep_state.bin", 0x0e, 1, 0),
+            ),
+        )
+        val names = ArrayList<String>()
+        val dl = HuaweiFileDownload(
+            exchangeEncrypted = { req, _, _, _ ->
+                val name = req.tlvs.firstOrNull { it.tag == 0x01 }?.value
+                    ?.toString(Charsets.UTF_8)
+                if (name != null) names.add(name)
+                responses.removeFirstOrNull()
+            },
+            sendEncrypted = {},
+            liveDownloadEnabled = true,
+        )
+        dl.downloadSleepFiles(preferNewSync = true, startUnix = 0, endUnix = 1)
+        assertEquals(listOf("sleep_state.bin"), names)
+        assertTrue(names.none { it.contains("sleep_data") })
+    }
+
+    @Test
+    fun diagnosticNamedFile_jsonSummaries_redactsKeysNotValues() {
+        val body = """{"avgHrv":64,"avgHeartRate":58,"avgBreathRate":14,"noise":"SECRET"}"""
+            .toByteArray(Charsets.UTF_8)
+        val encQueue = ArrayDeque<HuaweiFraming.Frame?>()
+        encQueue.add(initResponse("SLEEP_DETAILS", 0x00, 3, body.size))
+        encQueue.add(infoResponse(3, maxBlock = 256, noEncrypt = false))
+        val blockQueue = ArrayDeque<ByteArray>()
+        blockQueue.add(blockChunk(fileId = 3, offset = 0, data = body))
+        val dl = HuaweiFileDownload(
+            exchangeEncrypted = { _, _, _, _ -> encQueue.removeFirstOrNull() },
+            sendEncrypted = {},
+            awaitRawBlock = { _, _ -> blockQueue.removeFirstOrNull() },
+            liveDownloadEnabled = true,
+        )
+        val out = dl.downloadDiagnosticNamedFileObserve(
+            fileName = "SLEEP_DETAILS",
+            fileType = 0x00,
+            shortId = "cand-fd-sleep-details",
+        )
+        assertEquals("present", out.status)
+        assertEquals(body.size, out.len)
+        assertTrue(out.redactedKeys.contains("avgHrv"))
+        assertTrue(out.overnightSummaryKeys.contains("avgHrv"))
+        assertTrue(out.overnightSummaryKeys.contains("avgHeartRate"))
+        assertTrue(out.overnightSummaryKeys.contains("avgBreathRate"))
+        // Privacy: map must not embed body secret *values* (keys like "noise" may appear).
+        val dumped = out.toMap().toString()
+        assertTrue(!dumped.contains("SECRET"))
+        assertTrue(out.redactedKeys.contains("noise"))
+        assertTrue(!out.redactedKeys.contains("SECRET"))
+    }
+
+    @Test
+    fun diagnosticNamedFile_empty_unmet() {
+        val encQueue = ArrayDeque<HuaweiFraming.Frame?>()
+        encQueue.add(initResponse("SLEEP_DETAILS", 0x00, 3, 0))
+        val dl = HuaweiFileDownload(
+            exchangeEncrypted = { _, _, _, _ -> encQueue.removeFirstOrNull() },
+            sendEncrypted = {},
+            liveDownloadEnabled = true,
+        )
+        val out = dl.downloadDiagnosticNamedFileObserve(
+            fileName = "SLEEP_DETAILS",
+            fileType = 0x00,
+            shortId = "cand-fd-sleep-details",
+        )
+        assertEquals("absent", out.status)
+        assertEquals("empty", out.reason)
+    }
+
+    @Test
+    fun diagnosticNamedFile_flagOff_pendingCapture() {
+        val dl = HuaweiFileDownload(
+            exchangeEncrypted = { _, _, _, _ ->
+                throw AssertionError("must soft-skip")
+            },
+            liveDownloadEnabled = false,
+        )
+        val out = dl.downloadDiagnosticNamedFileObserve(
+            fileName = "SLEEP_DETAILS",
+            fileType = 0x00,
+            shortId = "x",
+        )
+        assertEquals("skipped", out.status)
+        assertEquals("pending_capture", out.reason)
+    }
+
+    @Test
+    fun sleepDataObserve_present_wipesAndOmitsBody() {
+        // Synthetic TLV-like chunk: tag=0xA1 len=4 LE + payload
+        val payload = byteArrayOf(0xA1.toByte(), 0x04, 0x00, 0x11, 0x22, 0x33, 0x44)
+        val encQueue = ArrayDeque<HuaweiFraming.Frame?>()
+        encQueue.add(initResponse("sleep_data.bin", 0x0f, 9, payload.size))
+        encQueue.add(infoResponse(9, maxBlock = 64, noEncrypt = false))
+        val blockQueue = ArrayDeque<ByteArray>()
+        blockQueue.add(blockChunk(fileId = 9, offset = 0, data = payload))
+        var wiped = false
+        val dl = HuaweiFileDownload(
+            exchangeEncrypted = { _, _, _, _ -> encQueue.removeFirstOrNull() },
+            sendEncrypted = {},
+            awaitRawBlock = { _, _ -> blockQueue.removeFirstOrNull() },
+            liveDownloadEnabled = true,
+        )
+        val out = dl.downloadSleepDataStructureObserve(
+            wipeBody = { wiped = true },
+        )
+        assertEquals("present", out.status)
+        assertEquals(payload.size, out.len)
+        assertTrue(wiped)
+        assertTrue(out.tagHistogram.isNotEmpty())
+        // Payload bytes must not appear as committed values — only tag/count/totalLen.
+        assertTrue(out.tagHistogram.none { row -> row["tag"] == 0x11 })
+        assertTrue(!out.toMap().toString().contains("0x11"))
+    }
+
+    @Test
+    fun sleepDataObserve_midBlockFail_absent() {
+        val encQueue = ArrayDeque<HuaweiFraming.Frame?>()
+        encQueue.add(initResponse("sleep_data.bin", 0x0f, 9, 100))
+        encQueue.add(infoResponse(9, maxBlock = 64, noEncrypt = false))
+        val dl = HuaweiFileDownload(
+            exchangeEncrypted = { _, _, _, _ -> encQueue.removeFirstOrNull() },
+            sendEncrypted = {},
+            awaitRawBlock = { _, _ -> null },
+            liveDownloadEnabled = true,
+        )
+        val out = dl.downloadSleepDataStructureObserve()
+        assertEquals("absent", out.status)
+        assertTrue(out.reason!!.startsWith("fail"))
+    }
+
+    @Test
+    fun observeBinaryStructure_privacySafeKeysOnly() {
+        val json = """{"avgOxygenSaturation":98,"ppgBlob":"AABBCCDDEEFF"}"""
+            .toByteArray()
+        val obs = HuaweiFileDownload.observeBinaryStructure(json)
+        assertTrue(obs.overnightSummaryKeys.any { it.contains("avgOxygen", ignoreCase = true) })
+        assertTrue(!obs.redactedKeys.contains("AABBCCDDEEFF"))
+        assertTrue(!obs.toMap().toString().contains("AABBCC"))
+    }
+
+    @Test
     fun framing_fileDownloadBlock_preservesRawBody() {
         val raw = byteArrayOf(0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAA.toByte(), 0xBB.toByte())
         val body = ByteArray(2 + raw.size)

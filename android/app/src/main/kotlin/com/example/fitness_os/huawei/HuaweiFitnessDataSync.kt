@@ -804,6 +804,61 @@ class HuaweiFitnessDataSync(
         if (resultCode != null) put("resultCode", resultCode)
     }
 
+    /**
+     * Diagnostic-only daily interval HR/SpO₂ presence pull (`0x0A`/`0x0B`).
+     * Product [sync] still skips daily_hr. Returns tag+len histogram — never series.
+     */
+    fun probeDailyHrIntervalProxy(startUnix: Long, endUnix: Long): Map<String, Any?> {
+        if (!isConnected()) {
+            return mapOf("status" to "skipped", "reason" to "disconnected", "class" to "interval-proxy")
+        }
+        val stepCountFrame = exchangeEncrypted(
+            buildWindowRequest(CMD_STEP_COUNT, startUnix, endUnix),
+            SVC,
+            CMD_STEP_COUNT,
+            TIMEOUT_MS,
+        )
+        if (stepCountFrame == null) {
+            Log.i(TAG, "physio-probe path2 stepCount timeout")
+            return mapOf(
+                "status" to "absent",
+                "reason" to "step_count_timeout",
+                "class" to "interval-proxy",
+            )
+        }
+        val indices = parseCountIndices(stepCountFrame)
+        val histograms = ArrayList<String>()
+        var hrBitmapDays = 0
+        var sampleCount = 0
+        for (index in indices) {
+            val dataFrame = exchangeEncrypted(
+                buildIndexRequest(CMD_STEP_DATA, index),
+                SVC,
+                CMD_STEP_DATA,
+                TIMEOUT_MS,
+            ) ?: continue
+            histograms.add(tlvTagLenHistogram(dataFrame.tlvs))
+            val parsed = parseStepDataHr(dataFrame)
+            if (parsed.hrBitmapPresent) hrBitmapDays++
+            sampleCount += parsed.samples.size
+            // Do not retain BPM series in the result map.
+        }
+        Log.i(
+            TAG,
+            "physio-probe path2 indices=${indices.size} hrBitmapDays=$hrBitmapDays " +
+                "sampleCount=$sampleCount (values redacted)",
+        )
+        return buildMap {
+            put("status", if (hrBitmapDays > 0 || histograms.isNotEmpty()) "present" else "absent")
+            put("class", "interval-proxy")
+            put("indexCount", indices.size)
+            put("hrBitmapDays", hrBitmapDays)
+            put("sampleCount", sampleCount)
+            put("tagLenHistograms", histograms.take(8))
+            put("reason", if (hrBitmapDays > 0) "hr_bitmap_present" else "no_hr_bitmap")
+        }
+    }
+
     private fun buildWindowRequest(cmd: Int, startUnix: Long, endUnix: Long): HuaweiFraming.Frame {
         val nested = HuaweiFraming.encodeTlvs(
             listOf(

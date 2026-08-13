@@ -2,6 +2,9 @@ package com.example.fitness_os.huawei
 
 import android.util.Log
 import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -316,6 +319,103 @@ class HuaweiSession(
         } finally {
             productSyncActive = false
         }
+    }
+
+    /**
+     * Debug-only post-Sync physio capture probe (dict → gated sleep_data → optional path-2).
+     * Caller must hold [HuaweiSyncLock]. Never merges into Flutter TruSleep SoT.
+     */
+    fun probePhysioCapture(
+        includeDict: Boolean = true,
+        includeSleepData: Boolean = true,
+        includePath2Intervals: Boolean = false,
+        startUnix: Long = 0L,
+        endUnix: Long = System.currentTimeMillis() / 1000L,
+    ): Map<String, Any?> {
+        if (sessionKey == null || !encryptionEnabled) {
+            Log.w(TAG, "physio-probe rejected — session not ready")
+            return mapOf(
+                "status" to "not_ready",
+                "message" to "Session not ready — reconnect first",
+                "feedsProductSleepSot" to false,
+            )
+        }
+        productSyncActive = true
+        try {
+            val start = startUnix.toInt().coerceAtLeast(0)
+            val end = endUnix.toInt().coerceAtLeast(start)
+            return HuaweiPhysioCaptureProbe(
+                fileDownload = { diagnosticFileDownload() },
+                listenFeatureUploadSequence = { timeoutMs ->
+                    listenForSequenceFeatureUpload(timeoutMs)
+                },
+                pullIntervalProxy = if (includePath2Intervals) {
+                    { s, e -> fitnessDataSync().probeDailyHrIntervalProxy(s.toLong(), e.toLong()) }
+                } else {
+                    null
+                },
+            ).run(
+                HuaweiPhysioCaptureProbe.Options(
+                    includeDict = includeDict,
+                    includeSleepData = includeSleepData,
+                    includePath2Intervals = includePath2Intervals,
+                    startUnix = start,
+                    endUnix = end,
+                ),
+            )
+        } finally {
+            productSyncActive = false
+        }
+    }
+
+    /** Live FileDownload collaborator for diagnostic probes (not product Sync). */
+    private fun diagnosticFileDownload(): HuaweiFileDownload =
+        HuaweiFileDownload(
+            exchangeEncrypted = { req, svc, cmd, timeout ->
+                exchangeEncrypted(req, svc, cmd, timeout)
+            },
+            sendEncrypted = { frame -> sendEncryptedClearing(frame) },
+            sendPlain = { frame -> sendPlainClearing(frame) },
+            awaitRawBlock = { svc, timeout -> awaitFileDownloadBlock(svc, timeout) },
+            isConnected = { transport.isConnected() },
+            liveDownloadEnabled = true,
+            persistFile = null, // never persist diagnostic dict/sleep_data bodies
+            formatUnix = { unix -> syncedWatchZone.formatUnix(unix) },
+            watchZoneLabel = {
+                "${syncedWatchZone.zoneId} ${syncedWatchZone.formatOffsetLabel()}"
+            },
+        )
+
+    /**
+     * Controlled listen for FeatureUpload (`0x28`) sequence / SLEEP_DETAILS-class push.
+     * Does not start a phone-initiated upload. Privacy: route + len only.
+     */
+    private fun listenForSequenceFeatureUpload(timeoutMs: Long): Map<String, Any?>? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val remaining = (deadline - System.currentTimeMillis()).coerceAtLeast(1L)
+            val frame = awaitServiceFrame(HuaweiFeatureUpload.SVC_FILE, remaining) ?: continue
+            val name = frame.tlvs.firstOrNull { it.tag == 0x01 }?.value
+                ?.toString(Charsets.UTF_8)
+                .orEmpty()
+            val lower = name.lowercase(Locale.US)
+            if (lower.contains("sleep") || lower.contains("sequence")) {
+                val size = frame.tlvs.firstOrNull { it.tag == 0x04 }?.value
+                    ?.takeIf { it.size >= 4 }
+                    ?.let { ByteBuffer.wrap(it).order(ByteOrder.BIG_ENDIAN).int }
+                    ?: 0
+                Log.i(TAG, "physio-probe FU listen hit route=$name len=$size")
+                return mapOf(
+                    "status" to "present",
+                    "route" to name,
+                    "len" to size,
+                    "redactedKeys" to emptyList<String>(),
+                    "overnightSummaryKeys" to emptyList<String>(),
+                    "reason" to "fu_info_only_no_body",
+                )
+            }
+        }
+        return null
     }
 
     private fun fitnessDataSync(): HuaweiFitnessDataSync =
@@ -1800,6 +1900,25 @@ class HuaweiSession(
         val got = latch.await(timeoutMs, TimeUnit.MILLISECONDS)
         inbound.set(null)
         return got
+    }
+
+    /** Await next frame for [serviceId] (any command). Drops other services. */
+    private fun awaitServiceFrame(serviceId: Int, timeoutMs: Long): HuaweiFraming.Frame? {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        while (true) {
+            synchronized(frameLock) {
+                while (frameQueue.isNotEmpty()) {
+                    val head = frameQueue.removeFirst()
+                    if (head.serviceId == serviceId) return head
+                }
+            }
+            val remainingMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+            if (remainingMs <= 0) return null
+            val latch = CountDownLatch(1)
+            inbound.set(latch)
+            latch.await(remainingMs.coerceAtMost(1000), TimeUnit.MILLISECONDS)
+            inbound.set(null)
+        }
     }
 
     private fun awaitFrame(serviceId: Int, commandId: Int, timeoutMs: Long): HuaweiFraming.Frame? {

@@ -105,6 +105,10 @@ When owner completes budget with empty HR: set observation `absent-in-observed-s
 
 FileDownload sleep_state / sleep_data: see sleep-files stub — **not** promoted here.
 
+### Diagnostic path-2 interval pull (POC)
+
+Product activity Sync still **skips** `0x0A`/`0x0B` daily_hr. Debug `probePhysioCapture(includePath2Intervals: true)` may pull tag+len histograms only (`class: interval-proxy`). Never restores product continuous-HR charts; never mints overnight-summary `present` for HRV/RR.
+
 ---
 
 ## Daily HR / step samples (partial — capture)

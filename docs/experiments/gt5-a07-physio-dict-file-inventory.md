@@ -82,12 +82,14 @@ In-band composition into product Sync’s `0x2c` init window is **not** required
 
 | Metric | Class | Pipe | Status |
 |--------|-------|------|--------|
-| Overnight HRV | overnight-summary | dict candidates → sleep_data → path-2 | unmet |
-| Overnight sleep HR | overnight-summary | same | unmet |
-| Overnight RR | overnight-summary | same | unmet |
-| Overnight sleep SpO₂ | overnight-summary | same | unmet |
+| Overnight HRV | overnight-summary | dict candidates → sleep_data → path-2 | unmet — diagnostic ready; live night pending |
+| Overnight sleep HR | overnight-summary | same | unmet — diagnostic ready; live night pending |
+| Overnight RR | overnight-summary | same | unmet — diagnostic ready; live night pending |
+| Overnight sleep SpO₂ | overnight-summary | same | unmet — diagnostic ready; live night pending |
 
-Terminal `capture:…` / `ABSENT-…` rows land in U5 after executed pipes + Health notes.
+### Implementation note (2026-08-14)
+
+Native/debug surface landed: `HuaweiPhysioCaptureProbe` + Session/MethodChannel `probePhysioCapture` (debug-only). Synthetic unit tests cover AE1 privacy + AE3 fail-closed shapes. Terminal `capture:` / `ABSENT-…` still requires owner GT5-A07 night(s) + Health booleans (U4) before U5.
 
 ---
 
