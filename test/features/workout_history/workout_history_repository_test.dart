@@ -182,6 +182,107 @@ void main() {
       );
     });
 
+    test('after parser bump stamps, next sync uses incremental window',
+        () async {
+      const cursor = 1_700_000_000;
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.lastSyncCursor: cursor,
+        // Stale vs current (v3 force lever) → first sync full-history.
+        GateAPrefs.swimSegmentParserVersion: 2,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_swim_bump_');
+      addTearDown(() => tmp.delete(recursive: true));
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 20,
+              startTime: 1_700_000_100,
+              endTime: 1_700_003_600,
+              durationSec: 3500,
+              type: 6,
+              distanceM: 500,
+              segmentsCount: 0,
+              segments: [],
+            ),
+          ],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        swimRootOverride: () => tmp,
+      );
+
+      final first = await repo.syncFromWatch();
+      expect(first, isA<Right>());
+      expect(
+        link.lastStartUnix,
+        WorkoutHistoryRepositoryImpl.fallbackStartUnix,
+      );
+      expect(
+        prefs.getInt(GateAPrefs.swimSegmentParserVersion),
+        WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
+      );
+
+      link.result = const WorkoutSyncResult(
+        status: WorkoutSyncStatus.empty,
+        workouts: [],
+      );
+      await repo.syncFromWatch();
+      expect(
+        link.lastStartUnix,
+        // Cursor advanced from first ok merge (endTime+1), then overlap.
+        (1_700_003_600 + 1) - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
+      );
+    });
+
+    test('ok sync with swim styles does not change summary style fields',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_swim_style_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      const incoming = WorkoutSummary(
+        number: 21,
+        startTime: 1_700_000_000,
+        endTime: 1_700_000_300,
+        durationSec: 300,
+        type: 6,
+        distanceM: 75,
+        segmentsCount: 3,
+        segments: [
+          WorkoutSegment(index: 0, style: 2, distanceM: 25),
+          WorkoutSegment(index: 1, style: 4, distanceM: 25),
+          WorkoutSegment(index: 2, style: 1, distanceM: 25),
+        ],
+      );
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [incoming],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        swimRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      final local = await repo.loadLocal();
+      expect(local.single.segments!.map((s) => s.style).toList(), [2, 4, 1]);
+      final swim = await repo.loadCanonicalSwim(21);
+      expect(swim!.p0.laps.map((l) => l.style).toList(), [2, 4, 1]);
+    });
+
     test('busy while activity in flight does not wipe workout list', () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
