@@ -10,6 +10,7 @@ import 'package:fitness_os/features/workout_history/domain/swim_invent_guard.dar
 import 'package:fitness_os/features/workout_history/domain/swim_p0_metrics.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_recommendations.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_session_analytics.dart';
+import 'package:fitness_os/features/workout_history/domain/swim_stroke_label.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/coach_settings_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_session_charts.dart';
@@ -74,7 +75,7 @@ class WorkoutDetailScreen extends StatelessWidget {
               title: 'Swim',
               children: [
                 if (workout.swimType != null)
-                  _Row('Swim type', _swimStrokeLabel(workout.swimType!)),
+                  _Row('Swim type', swimStrokeLabel(workout.swimType!)),
                 if (workout.strokes != null)
                   _Row('Strokes', '${workout.strokes}'),
                 if (workout.strokeRate != null)
@@ -1188,18 +1189,6 @@ String _typeLabel(int type) {
     140: 'Strength',
   };
   return names[type] ?? 'Workout type $type';
-}
-
-/// Huawei swimming_stroke: 1 breast, 2 free, 3 fly, 4 back, 5 medley.
-String _swimStrokeLabel(int stroke) {
-  const names = <int, String>{
-    1: 'Breaststroke',
-    2: 'Freestyle',
-    3: 'Butterfly',
-    4: 'Backstroke',
-    5: 'Medley',
-  };
-  return names[stroke] ?? 'Stroke $stroke';
 }
 
 /// Totals tag 0x18 is pool length in centimetres (catalog + 2500→25m probe).
