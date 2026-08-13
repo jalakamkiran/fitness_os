@@ -2,12 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fitness_os/core/error/failures.dart';
+import 'package:fitness_os/core/huawei/fos_huawei_log.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/workout_history/data/canonical_swim_store.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
+import 'package:fitness_os/features/workout_history/domain/swim_style_capability_log.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -36,9 +38,11 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   /// workouts are not missed if the watch clocks slightly disagree.
   static const cursorOverlapSec = 86400;
 
-  /// v2: swim/pace page index TLV 0x08 + GB 0x83 field map (strokes/time).
-  /// Pref below this → next Sync uses [fallbackStartUnix] once, then stamps.
-  static const currentSwimSegmentParserVersion = 2;
+  /// v3: force full-history once for swim stroke style capability proof
+  /// (tonight Medley / older pool window). Pref below this → next Sync uses
+  /// [fallbackStartUnix] once, then stamps. v2 was swim/pace page index TLV
+  /// 0x08 + GB 0x83 field map (strokes/time).
+  static const currentSwimSegmentParserVersion = 3;
 
   @override
   Future<bool> isGateAPassed() async =>
@@ -114,38 +118,41 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
 
       switch (result.status) {
         case WorkoutSyncStatus.notReady:
-          return Left(
-            ServerFailure(result.message ?? 'Session not ready — reconnect'),
-          );
         case WorkoutSyncStatus.busy:
-          // Non-destructive — another Sync owns the radio.
-          return Left(
-            ServerFailure(
-              result.message ?? 'Another Sync is already in progress',
-            ),
-          );
         case WorkoutSyncStatus.stuck:
-          return Left(
-            ServerFailure(
-              result.message ?? 'Sync stuck — disconnect and reconnect',
-            ),
-          );
         case WorkoutSyncStatus.partialBatch:
-          // Workouts do not merge on partial_batch this cut (vitals path only).
+        case WorkoutSyncStatus.error:
+          // Soft Sync failure — not a capability Pass or Blocked-empty claim.
+          FosHuaweiLog.i(
+            syncNotOkSwimStyleOutcomeLine(result.status),
+            op: 'sync',
+          );
           return Left(
             ServerFailure(
               result.message ??
-                  'Workout Sync incomplete — retry after reconnect',
+                  switch (result.status) {
+                    WorkoutSyncStatus.notReady =>
+                      'Session not ready — reconnect',
+                    WorkoutSyncStatus.busy =>
+                      'Another Sync is already in progress',
+                    WorkoutSyncStatus.stuck =>
+                      'Sync stuck — disconnect and reconnect',
+                    WorkoutSyncStatus.partialBatch =>
+                      'Workout Sync incomplete — retry after reconnect',
+                    _ => 'Sync failed',
+                  },
             ),
           );
-        case WorkoutSyncStatus.error:
-          return Left(ServerFailure(result.message ?? 'Sync failed'));
         case WorkoutSyncStatus.empty:
           // Keep prior rows; empty window is success.
           final local = await loadLocal();
           return Right(local);
         case WorkoutSyncStatus.ok:
           final merged = await _mergeAndPersist(result.workouts);
+          emitSwimStyleCapabilityLogs(
+            result.workouts,
+            log: (message) => FosHuaweiLog.i(message, op: 'sync'),
+          );
           await _prefs.setInt(
             GateAPrefs.swimSegmentParserVersion,
             currentSwimSegmentParserVersion,
