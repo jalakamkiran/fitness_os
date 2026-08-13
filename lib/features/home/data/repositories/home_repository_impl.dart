@@ -9,11 +9,11 @@ import 'package:fitness_os/features/home/domain/repositories/home_repository.dar
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 
-/// Huawei pool-swim activity type id (see workout history labels).
-const int kPoolSwimType = 5;
+/// Huawei pool-swim activity type id (frozen: Totals 0x14 = 6).
+const int kPoolSwimType = 6;
 
-/// Open-water swim type id.
-const int kOpenWaterSwimType = 6;
+/// Open-water swim type id (frozen: Totals 0x14 = 8).
+const int kOpenWaterSwimType = 8;
 
 /// When FT today reports 0 kcal but workouts burned more than this, treat the
 /// FT row as untrusted (e.g. wrong day-anchor zeros) and use workout-sum.
@@ -165,12 +165,13 @@ class HomeRepositoryImpl implements HomeRepository {
     if (hasSwimTakeaway && latestSwim != null) {
       final swim = latestSwim;
       sessionNumber = swim.number;
+      final label =
+          swim.type == kOpenWaterSwimType ? 'Open water' : 'Pool swim';
       final km = swim.distanceM == null
           ? null
           : (swim.distanceM! / 1000).toStringAsFixed(1);
-      takeawayTitle = km != null
-          ? 'Pool swim · $km km'
-          : 'Pool swim · #${swim.number}';
+      takeawayTitle =
+          km != null ? '$label · $km km' : '$label · #${swim.number}';
       takeawayBody =
           '${_formatDuration(swim.durationSec)} · open session for signals';
     } else if (precedence == HomePrecedence.noSwimDataYet) {

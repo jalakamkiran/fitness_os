@@ -105,11 +105,11 @@ Firmware string for freeze table: **not recorded in Gate A interrupt matrix** â€
 | Field | Surface | Score | Observation | Notes |
 |-------|---------|------:|-------------|-------|
 | begin/end (messages `0x07:0x0C`/`0x0D`) | FitnessData | **3** | `unobserved` | Night budget not started |
-| begin/end (`sleep_state.bin`) | FileDownload | **3** | `unobserved` | Wire-spec stub deferred |
+| begin/end (`sleep_state.bin`) | FileDownload | **3** | `present` (`POC-2026-08-11-trusleep-fd`, 528 B) | Intervals parse pending Health match |
 | stages light/deep (TruSleep off) | `0x0D` | **2** | `unobserved` | |
 | stages REM+ (HarmonyOS 5 claim) | contested | **2** | `unobserved` | |
-| ACC ~1/min activity bytes | `sleep_data.bin` TAG_ACC | **3** | `unobserved` | **Not** high-rate IMU |
-| PPG compressed | `sleep_data.bin` TAG_PPG | **3** | `unobserved` | |
+| ACC ~1/min activity bytes | `sleep_data.bin` TAG_ACC | **3** | `present` (file 694564 B; tags unparsed) | **Not** high-rate IMU |
+| PPG compressed | `sleep_data.bin` TAG_PPG | **3** | `present` (file 694564 B; tags unparsed) | |
 | High-rate IMU/PPG dump | â€” | **0** | n/a | R11 |
 
 Enable: `0x07:0x16`. File svc: `0x2c` if `truSleepNewSync` else `0x0a`.
@@ -182,5 +182,5 @@ Battery was inventoried as wire-spec **4** before POC level parse; on-device log
 | `docs/wire-specs/huawei-br-gt5-gate-a.md` | Gate A + Gate B list Totals |
 | `docs/wire-specs/huawei-br-gt5-gate-b-enrichment.md` | Workout enrichment envelopes |
 | `docs/wire-specs/huawei-br-gt5-fitness-data.md` | FitnessData family (pre-promotion) |
-| `docs/wire-specs/huawei-br-gt5-sleep-files.md` | Sleep FileDownload (deferred stub) |
+| `docs/wire-specs/huawei-br-gt5-sleep-files.md` | Sleep FileDownload (`POC-2026-08-11-trusleep-fd`) |
 | `docs/learnings/2026-07-18-huawei-gt5-companion-poc.md` | POC proof |

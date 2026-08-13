@@ -325,7 +325,11 @@ class AppDataExportService {
   /// Mirrors [CanonicalSwimSession.looksLikeSwim] for raw prefs maps.
   bool _looksLikeSwimMap(Map<dynamic, dynamic> item) {
     final type = item['type'];
-    if (type is num && type.toInt() >= 5 && type.toInt() <= 8) return true;
+    if (type is num) {
+      final t = type.toInt();
+      if (t == 6 || t == 8) return true;
+      if (t == 5 || t == 7) return false;
+    }
     return item['poolLength'] != null ||
         item['strokes'] != null ||
         item['avgSwolf'] != null ||
