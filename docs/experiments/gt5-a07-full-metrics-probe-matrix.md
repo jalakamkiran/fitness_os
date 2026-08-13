@@ -100,7 +100,10 @@ Battery (session UX): **Done** — `POC-2026-07-18-gate-a-battery`.
 | Optional TruSleep OFF night if no stages | **Pending** | |
 | FileDownload sleep_state / sleep_data | **Init present** `POC-2026-08-11-trusleep-fd` | state=528 B, data=694564 B; transfer SM live; Health-match intervals pending |
 | Physio dict/file inventory (U1) | **Done** `2026-08-14` | See `gt5-a07-physio-dict-file-inventory.md` — product Sync = `sleep_state` only; no in-repo dict client; ≤3 invent candidates (`FD-0x2c-pull`×2 + `FU-0x28-receive`); caps dump still Pending; DataSync `0x37:0x04` excluded |
+| Physio diagnostic probe (U2/U3/U6 code) | **Ready** `2026-08-14` | Debug `probePhysioCapture` under SyncLock; product Sync unchanged; unit tests green |
 | Caps dump (file/dict-like + `truSleepNewSync`) | **Pending** | Required before minting hard `ABSENT-dict-route` / overnight-summary `ABSENT-…` after disproof budget |
+| Same-night Health presence (U4) | **Pending owner** | Boolean only for HRV / RR / sleep SpO₂ / sleep HR — no screenshots/values |
+| Terminal catalog promotion (U5) | **Blocked on capture night** | Needs U2–U4 (+ U6 if HRV/RR unmet) evidence before `capture:` / `ABSENT-…` |
 
 ---
 

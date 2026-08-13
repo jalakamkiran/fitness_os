@@ -74,6 +74,11 @@ class HuaweiFileDownload(
         private const val BLOCK_HEADER_LEN = 6 // fileId + offset + unk
         private const val STATE_RECORD_LEN = 16
 
+        private val OVERNIGHT_SUMMARY_KEY_HINTS = setOf(
+            "avghrv", "avgheartrate", "avgbreathrate", "avgoxygensaturation",
+            "hrv", "respiratoryrate", "spo2", "sleephr", "rmssd",
+        )
+
         /**
          * Parse sleep_state.bin LE records (start u32, end u32, 8 B pad).
          * Privacy-safe — returns unix pairs only.
@@ -92,6 +97,79 @@ class HuaweiFileDownload(
             }
             return out
         }
+
+        /**
+         * Privacy-safe binary inventory: TLV-like tag histogram + printable key runs.
+         * Never returns payload bodies or numeric series.
+         */
+        fun observeBinaryStructure(bytes: ByteArray): StructureObserve {
+            val hist = linkedMapOf<Int, Pair<Int, Int>>() // tag -> (count, totalLen)
+            var i = 0
+            while (i + 3 <= bytes.size) {
+                val tag = bytes[i].toInt() and 0xFF
+                val len = (bytes[i + 1].toInt() and 0xFF) or
+                    ((bytes[i + 2].toInt() and 0xFF) shl 8)
+                if (len <= 0 || i + 3 + len > bytes.size) {
+                    i++
+                    continue
+                }
+                val prev = hist[tag]
+                hist[tag] = if (prev == null) {
+                    1 to len
+                } else {
+                    (prev.first + 1) to (prev.second + len)
+                }
+                i += 3 + len
+            }
+            val tagHistogram = hist.entries
+                .sortedByDescending { it.value.second }
+                .take(32)
+                .map { (tag, pair) ->
+                    mapOf(
+                        "tag" to tag,
+                        "count" to pair.first,
+                        "totalLen" to pair.second,
+                    )
+                }
+            val keys = extractRedactedKeys(bytes)
+            val overnight = keys.filter { key ->
+                OVERNIGHT_SUMMARY_KEY_HINTS.any { hint ->
+                    key.lowercase(Locale.US).contains(hint)
+                }
+            }
+            return StructureObserve(
+                status = "present",
+                serviceId = SVC_NEW,
+                id = "structure",
+                len = bytes.size,
+                tagHistogram = tagHistogram,
+                redactedKeys = keys,
+                overnightSummaryKeys = overnight,
+            )
+        }
+
+        fun extractRedactedKeys(bytes: ByteArray): List<String> {
+            val text = runCatching { String(bytes, Charsets.UTF_8) }.getOrNull().orEmpty()
+            val fromJson = Regex("\"([A-Za-z_][A-Za-z0-9_]{1,63})\"\\s*:")
+                .findAll(text)
+                .map { it.groupValues[1] }
+                .toList()
+            if (fromJson.isNotEmpty()) {
+                // Prefer JSON object keys only — never quoted string values.
+                return fromJson.distinct().take(64)
+            }
+            val fromAscii = Regex("[A-Za-z_][A-Za-z0-9_]{2,31}")
+                .findAll(text)
+                .map { it.value }
+                .filter { candidate ->
+                    candidate.any { it.isLowerCase() } || candidate.any { it.isUpperCase() }
+                }
+                .toList()
+            return fromAscii.distinct().take(64)
+        }
+
+        /** Redacted JSON/ASCII key inventory — names only; never values. */
+        fun redactedJsonKeyInventory(bytes: ByteArray): List<String> = extractRedactedKeys(bytes)
     }
 
     data class StateInterval(
@@ -139,6 +217,31 @@ class HuaweiFileDownload(
         val fileType: Byte,
         val shortId: String,
     )
+
+    data class StructureObserve(
+        val status: String, // present | absent | skipped
+        val serviceId: Int,
+        val id: String,
+        val len: Int = 0,
+        /** Privacy-safe tag+count+totalLen rows — never body bytes. */
+        val tagHistogram: List<Map<String, Any?>> = emptyList(),
+        /** Printable identifier-like runs / JSON keys — names only. */
+        val redactedKeys: List<String> = emptyList(),
+        /** Keys that look like typed overnight-summary scalars (names only). */
+        val overnightSummaryKeys: List<String> = emptyList(),
+        val reason: String? = null,
+    ) {
+        fun toMap(): Map<String, Any?> = buildMap {
+            put("status", status)
+            put("serviceId", serviceId)
+            put("id", id)
+            put("len", len)
+            put("tagHistogram", tagHistogram)
+            put("redactedKeys", redactedKeys)
+            put("overnightSummaryKeys", overnightSummaryKeys)
+            if (reason != null) put("reason", reason)
+        }
+    }
 
     /**
      * Download `sleep_state.bin` over FileDownload new-sync (`0x2c`).
@@ -237,6 +340,160 @@ class HuaweiFileDownload(
             ProbeOutcome(
                 status = "absent",
                 serviceId = serviceId,
+                reason = "error",
+            )
+        }
+    }
+
+    /**
+     * Diagnostic FileDownload pull for an invented dict/sequence filename.
+     * Observes redacted keys then wipes the body — never feeds product SoT.
+     */
+    fun downloadDiagnosticNamedFileObserve(
+        fileName: String,
+        fileType: Byte,
+        shortId: String,
+        startUnix: Int = 0,
+        endUnix: Int = (System.currentTimeMillis() / 1000L).toInt(),
+    ): StructureObserve {
+        val serviceId = SVC_NEW
+        if (!isConnected()) {
+            return StructureObserve(
+                status = "skipped",
+                serviceId = serviceId,
+                id = shortId,
+                reason = "disconnected",
+            )
+        }
+        if (!liveDownloadEnabled) {
+            return StructureObserve(
+                status = "skipped",
+                serviceId = serviceId,
+                id = shortId,
+                reason = "pending_capture",
+            )
+        }
+        return try {
+            val spec = SleepFileSpec(fileName, fileType, shortId)
+            val result = downloadOneNewSync(serviceId, spec, startUnix, endUnix)
+            when {
+                result == null -> StructureObserve(
+                    status = "absent",
+                    serviceId = serviceId,
+                    id = shortId,
+                    reason = "fail:$shortId",
+                )
+                result.isEmpty() -> StructureObserve(
+                    status = "absent",
+                    serviceId = serviceId,
+                    id = shortId,
+                    reason = "empty",
+                )
+                else -> {
+                    val observed = observeBinaryStructure(result)
+                    Log.i(
+                        TAG,
+                        "file-download diagnostic ok name=$fileName len=${result.size} " +
+                            "keys=${observed.redactedKeys.size} " +
+                            "overnightKeys=${observed.overnightSummaryKeys.size}",
+                    )
+                    result.fill(0)
+                    StructureObserve(
+                        status = "present",
+                        serviceId = serviceId,
+                        id = shortId,
+                        len = observed.len,
+                        tagHistogram = observed.tagHistogram,
+                        redactedKeys = observed.redactedKeys,
+                        overnightSummaryKeys = observed.overnightSummaryKeys,
+                    )
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "file-download diagnostic fail-closed: ${t.message}")
+            StructureObserve(
+                status = "absent",
+                serviceId = serviceId,
+                id = shortId,
+                reason = "error",
+            )
+        }
+    }
+
+    /**
+     * Post-Sync diagnostic: download `sleep_data.bin`, observe structure, then wipe body.
+     * Never adds sleep_data to product [downloadSleepFiles] specs.
+     */
+    fun downloadSleepDataStructureObserve(
+        startUnix: Int = 0,
+        endUnix: Int = (System.currentTimeMillis() / 1000L).toInt(),
+        wipeBody: ((ByteArray) -> Unit)? = null,
+    ): StructureObserve {
+        val serviceId = SVC_NEW
+        val id = "sleep_data"
+        if (!isConnected()) {
+            return StructureObserve(
+                status = "skipped",
+                serviceId = serviceId,
+                id = id,
+                reason = "disconnected",
+            )
+        }
+        if (!liveDownloadEnabled) {
+            return StructureObserve(
+                status = "skipped",
+                serviceId = serviceId,
+                id = id,
+                reason = "pending_capture",
+            )
+        }
+        return try {
+            val spec = SleepFileSpec(FILE_SLEEP_DATA, TYPE_SLEEP_DATA, id)
+            val result = downloadOneNewSync(serviceId, spec, startUnix, endUnix)
+            when {
+                result == null -> StructureObserve(
+                    status = "absent",
+                    serviceId = serviceId,
+                    id = id,
+                    reason = "fail:$id",
+                )
+                result.isEmpty() -> StructureObserve(
+                    status = "absent",
+                    serviceId = serviceId,
+                    id = id,
+                    reason = "empty",
+                )
+                else -> {
+                    val observed = observeBinaryStructure(result)
+                    Log.i(
+                        TAG,
+                        "file-download sleep_data observe len=${result.size} " +
+                            "tags=${observed.tagHistogram.size} keys=${observed.redactedKeys.size}",
+                    )
+                    try {
+                        wipeBody?.invoke(result)
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "file-download sleep_data wipe fail: ${t.message}")
+                    }
+                    // Overwrite buffer in-place when possible (caller still holds ref).
+                    result.fill(0)
+                    StructureObserve(
+                        status = "present",
+                        serviceId = serviceId,
+                        id = id,
+                        len = observed.len,
+                        tagHistogram = observed.tagHistogram,
+                        redactedKeys = observed.redactedKeys,
+                        overnightSummaryKeys = observed.overnightSummaryKeys,
+                    )
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "file-download sleep_data observe fail-closed: ${t.message}")
+            StructureObserve(
+                status = "absent",
+                serviceId = serviceId,
+                id = id,
                 reason = "error",
             )
         }

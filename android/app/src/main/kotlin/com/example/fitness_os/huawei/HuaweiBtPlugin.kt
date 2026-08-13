@@ -269,6 +269,67 @@ class HuaweiBtPlugin(
                         activity.runOnUiThread { result.success(payload) }
                     }
                 }
+                "probePhysioCapture" -> {
+                    if (!isDebuggable()) {
+                        result.error(
+                            "debug_only",
+                            "probePhysioCapture is debug-only",
+                            null,
+                        )
+                        return
+                    }
+                    val includeDict = call.argument<Boolean>("includeDict") ?: true
+                    val includeSleepData = call.argument<Boolean>("includeSleepData") ?: true
+                    val includePath2Intervals =
+                        call.argument<Boolean>("includePath2Intervals") ?: false
+                    val startUnix = (call.argument<Number>("startUnix")?.toLong())
+                        ?: (System.currentTimeMillis() / 1000L - 14L * 86400L)
+                    val endUnix = (call.argument<Number>("endUnix")?.toLong())
+                        ?: (System.currentTimeMillis() / 1000L)
+                    if (!syncLock.tryAcquire()) {
+                        result.success(
+                            mapOf(
+                                "status" to "busy",
+                                "message" to "Another Sync is already in progress",
+                                "feedsProductSleepSot" to false,
+                            ),
+                        )
+                        return
+                    }
+                    sessionIo.execute {
+                        val payload = try {
+                            if (transport?.isConnected() != true) {
+                                mapOf(
+                                    "status" to "not_ready",
+                                    "message" to "Not connected",
+                                    "feedsProductSleepSot" to false,
+                                )
+                            } else {
+                                session?.probePhysioCapture(
+                                    includeDict = includeDict,
+                                    includeSleepData = includeSleepData,
+                                    includePath2Intervals = includePath2Intervals,
+                                    startUnix = startUnix,
+                                    endUnix = endUnix,
+                                ) ?: mapOf(
+                                    "status" to "error",
+                                    "message" to "No session",
+                                    "feedsProductSleepSot" to false,
+                                )
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("FOS_HUAWEI", "probePhysioCapture error", e)
+                            mapOf(
+                                "status" to "error",
+                                "message" to (e.message ?: "probe failed"),
+                                "feedsProductSleepSot" to false,
+                            )
+                        } finally {
+                            syncLock.release()
+                        }
+                        activity.runOnUiThread { result.success(payload) }
+                    }
+                }
                 "setAuthKey" -> {
                     val key = call.argument<String>("userId")?.trim().orEmpty()
                     when {

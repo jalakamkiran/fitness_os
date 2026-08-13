@@ -91,6 +91,19 @@ recent calendar-night + merge near-adjacent fragments. Stages still live in mess
 - Cite block/info/complete on-device frames in a follow-up capture note when transfer completes end-to-end.
 - Catalog S4 file rows: bump observation to `present` with this capture id; keep score **3** until sleep_state intervals are Health-matched and product-consumed.
 
+### Diagnostic `sleep_data` observe (POC — not product Sync)
+
+Post-Sync debug MethodChannel `probePhysioCapture` may download `sleep_data.bin` when overnight-summary dict targets remain unmet. Product Sync **still** downloads `sleep_state.bin` only.
+
+| Rule | Detail |
+|------|--------|
+| Gate | Debug/FLAG_DEBUGGABLE only; default off; SyncLock + `productSyncActive` |
+| Persist | Body is **not** persisted; structure map = tag histogram + redacted keys; buffer wiped after observe |
+| Classes | File-present by size ≠ overnight-summary fields present |
+| SoT | Probe map sets `feedsProductSleepSot=false` — never merges into TruSleep sleep_state SoT |
+
+Live structure inventory / `ABSENT-…` rows land after owner capture night(s) in U5.
+
 ---
 
 ## Related
