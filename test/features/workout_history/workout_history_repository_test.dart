@@ -188,8 +188,8 @@ void main() {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
         GateAPrefs.lastSyncCursor: cursor,
-        // Stale vs current (v3 force lever) → first sync full-history.
-        GateAPrefs.swimSegmentParserVersion: 2,
+        // Stale vs current → first sync full-history.
+        GateAPrefs.swimSegmentParserVersion: 1,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_swim_bump_');

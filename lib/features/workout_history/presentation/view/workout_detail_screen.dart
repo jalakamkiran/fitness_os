@@ -14,6 +14,7 @@ import 'package:fitness_os/features/workout_history/domain/swim_stroke_label.dar
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/coach_settings_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_session_charts.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/swim_stroke_icon.dart';
 
 class WorkoutDetailScreen extends StatelessWidget {
   const WorkoutDetailScreen({super.key, required this.workout});
@@ -937,7 +938,16 @@ class _SwimLapMetricsTable extends StatelessWidget {
                   for (var i = 0; i < laps.length; i++)
                     DataRow(
                       cells: [
-                        DataCell(Text('I${i + 1}')),
+                        DataCell(
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SwimStrokeIcon(style: laps[i].style),
+                              const SizedBox(width: 6),
+                              Text('I${i + 1}'),
+                            ],
+                          ),
+                        ),
                         DataCell(Text('${laps[i].index + 1}')),
                         DataCell(Text(_cell(laps[i].distanceM, suffix: 'm'))),
                         DataCell(
@@ -1028,7 +1038,18 @@ class _LapTable extends StatelessWidget {
                   for (final seg in segments)
                     DataRow(
                       cells: [
-                        DataCell(Text('${seg.index + 1}')),
+                        DataCell(
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SwimStrokeIcon(
+                                style: seg.style ?? seg.swimType,
+                              ),
+                              const SizedBox(width: 6),
+                              Text('${seg.index + 1}'),
+                            ],
+                          ),
+                        ),
                         DataCell(Text(_cell(seg.distanceM, suffix: 'm'))),
                         DataCell(Text(_formatDuration(seg.durationSec ?? 0))),
                         DataCell(Text(_cell(seg.strokes))),

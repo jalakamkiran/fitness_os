@@ -38,11 +38,10 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   /// workouts are not missed if the watch clocks slightly disagree.
   static const cursorOverlapSec = 86400;
 
-  /// v3: force full-history once for swim stroke style capability proof
-  /// (tonight Medley / older pool window). Pref below this → next Sync uses
-  /// [fallbackStartUnix] once, then stamps. v2 was swim/pace page index TLV
-  /// 0x08 + GB 0x83 field map (strokes/time).
-  static const currentSwimSegmentParserVersion = 3;
+  /// v2: swim/pace page index TLV 0x08 + GB 0x83 field map (strokes/time).
+  /// Pref below this → next Sync uses [fallbackStartUnix] once, then stamps.
+  /// (v3 one-shot force for stroke-style capability proof is complete — left at v2.)
+  static const currentSwimSegmentParserVersion = 2;
 
   @override
   Future<bool> isGateAPassed() async =>
