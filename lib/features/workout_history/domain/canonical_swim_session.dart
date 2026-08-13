@@ -64,8 +64,10 @@ class CanonicalSwimSession {
   }
 
   /// Pool + open-water types observed on GT5-A07 (6 / 8) plus swim field presence.
+  /// Indoor run (5) and indoor cycle (7) are not swims.
   static bool looksLikeSwim(WorkoutSummary w) {
-    if (w.type == 5 || w.type == 6 || w.type == 7 || w.type == 8) return true;
+    if (w.type == 6 || w.type == 8) return true;
+    if (w.type == 5 || w.type == 7) return false;
     return w.poolLength != null ||
         w.strokes != null ||
         w.avgSwolf != null ||

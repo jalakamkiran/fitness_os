@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fathom Onboarding — Diagram Preview</title>
+  <style>
+    :root { --bg:#0f1419; --panel:#1a2332; --text:#e7ecf3; --muted:#9aa7b8; --accent:#5b9fd4; --border:#2a3648; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:"IBM Plex Sans","Segoe UI",sans-serif; background:var(--bg); color:var(--text);
+      display:grid; grid-template-columns:300px 1fr; height:100vh; }
+    aside { background:var(--panel); border-right:1px solid var(--border); padding:1rem; overflow:auto; }
+    h1 { font-size:1rem; margin:0 0 .35rem; }
+    p, .hint { color:var(--muted); font-size:.8rem; line-height:1.45; }
+    select { width:100%; padding:.5rem; border-radius:6px; border:1px solid var(--border);
+      background:var(--bg); color:var(--text); margin:.35rem 0 1rem; }
+    a { color:var(--accent); font-size:.8rem; }
+    main { overflow:auto; padding:1rem; background:#2b2f36; }
+    #stage { background:#fff; border-radius:8px; min-height:70vh; overflow:auto; }
+    #meta { margin-top:.75rem; font-size:.75rem; color:var(--muted); }
+    button { background:var(--accent); color:#041018; border:0; border-radius:6px; padding:.45rem .7rem;
+      font-weight:600; cursor:pointer; margin-right:.4rem; margin-bottom:.6rem; }
+  </style>
+</head>
+<body>
+  <aside>
+    <h1>Fathom HLD / LLD</h1>
+    <p>SVG preview of committed <code>.excalidraw</code> scenes. Edit the same files in Excalidraw.</p>
+    <label for="diagram">Scene</label>
+    <select id="diagram"></select>
+    <div>
+      <button type="button" id="openExcal">Open on excalidraw.com</button>
+    </div>
+    <p class="hint">
+      Official editor: drag any file from <code>docs/onboarding/diagrams/</code> onto
+      <a href="https://excalidraw.com" target="_blank" rel="noreferrer">excalidraw.com</a>
+      (File → Open).
+    </p>
+    <div id="meta"></div>
+  </aside>
+  <main>
+    <div id="stage"></div>
+  </main>
+  <script>
+    const DIAGRAMS = [
+      ["01-hld-system-context.excalidraw", "HLD · System context"],
+      ["02-hld-layered-architecture.excalidraw", "HLD · Layered architecture"],
+      ["03-hld-feature-module-map.excalidraw", "HLD · Feature module map"],
+      ["04-hld-user-journeys-sync-planes.excalidraw", "HLD · Journeys & sync planes"],
+      ["05-lld-bootstrap-di.excalidraw", "LLD · Bootstrap & DI"],
+      ["06-lld-huawei-native-stack.excalidraw", "LLD · Huawei native stack"],
+      ["07-lld-huawei-flutter-bridge.excalidraw", "LLD · Flutter Huawei bridge"],
+      ["08-lld-gate-a-pairing.excalidraw", "LLD · Gate A pairing"],
+      ["09-lld-sync-pass.excalidraw", "LLD · Sync pass"],
+      ["10-lld-feature-internals.excalidraw", "LLD · Feature internals"],
+      ["11-lld-persistence-map.excalidraw", "LLD · Persistence map"],
+      ["12-lld-navigation-routes.excalidraw", "LLD · Navigation routes"],
+    ];
+
+    const sel = document.getElementById("diagram");
+    for (const [name, label] of DIAGRAMS) {
+      const o = document.createElement("option");
+      o.value = name; o.textContent = label; sel.appendChild(o);
+    }
+
+    function esc(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    function render(scene) {
+      const els = (scene.elements || []).filter((e) => !e.isDeleted);
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const e of els) {
+        const x2 = e.x + (e.width || 0);
+        const y2 = e.y + (e.height || 0);
+        minX = Math.min(minX, e.x); minY = Math.min(minY, e.y);
+        maxX = Math.max(maxX, x2); maxY = Math.max(maxY, y2);
+      }
+      const pad = 40;
+      minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+      const w = Math.max(400, maxX - minX);
+      const h = Math.max(300, maxY - minY);
+      const parts = [];
+      for (const e of els) {
+        if (e.type === "rectangle") {
+          parts.push(`<rect x="${e.x}" y="${e.y}" width="${e.width}" height="${e.height}"
+            fill="${e.backgroundColor || "none"}" stroke="${e.strokeColor || "#111"}"
+            stroke-width="${e.strokeWidth || 2}" rx="8" />`);
+        } else if (e.type === "diamond") {
+          const cx = e.x + e.width / 2, cy = e.y + e.height / 2;
+          const pts = `${cx},${e.y} ${e.x + e.width},${cy} ${cx},${e.y + e.height} ${e.x},${cy}`;
+          parts.push(`<polygon points="${pts}" fill="${e.backgroundColor || "none"}"
+            stroke="${e.strokeColor || "#111"}" stroke-width="${e.strokeWidth || 2}" />`);
+        } else if (e.type === "ellipse") {
+          parts.push(`<ellipse cx="${e.x + e.width / 2}" cy="${e.y + e.height / 2}"
+            rx="${e.width / 2}" ry="${e.height / 2}" fill="${e.backgroundColor || "none"}"
+            stroke="${e.strokeColor || "#111"}" stroke-width="${e.strokeWidth || 2}" />`);
+        } else if (e.type === "arrow" || e.type === "line") {
+          const pts = (e.points || []).map(([px, py]) => `${e.x + px},${e.y + py}`).join(" ");
+          const marker = e.type === "arrow" ? 'marker-end="url(#arrow)"' : "";
+          parts.push(`<polyline points="${pts}" fill="none" stroke="${e.strokeColor || "#111"}"
+            stroke-width="${e.strokeWidth || 2}" ${marker} />`);
+        } else if (e.type === "text") {
+          const lines = String(e.text || "").split("\n");
+          const fs = e.fontSize || 16;
+          const anchor = e.textAlign === "center" ? "middle" : e.textAlign === "right" ? "end" : "start";
+          const tx = e.textAlign === "center" ? e.x + e.width / 2 : e.x;
+          lines.forEach((line, i) => {
+            parts.push(`<text x="${tx}" y="${e.y + fs * (i + 0.9)}" font-size="${fs}"
+              font-family="Helvetica, Arial, sans-serif" fill="${e.strokeColor || "#111"}"
+              text-anchor="${anchor}">${esc(line)}</text>`);
+          });
+        }
+      }
+      document.getElementById("stage").innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"
+          viewBox="${minX} ${minY} ${w} ${h}">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#1e1e1e" />
+            </marker>
+          </defs>
+          <rect x="${minX}" y="${minY}" width="${w}" height="${h}" fill="#ffffff" />
+          ${parts.join("\n")}
+        </svg>`;
+      document.getElementById("meta").textContent =
+        `${sel.value} · ${els.length} elements · open same file in Excalidraw to edit`;
+    }
+
+    async function load() {
+      const name = sel.value;
+      const res = await fetch(`./diagrams/${name}`);
+      if (!res.ok) throw new Error(res.statusText);
+      render(await res.json());
+    }
+
+    sel.onchange = load;
+    document.getElementById("openExcal").onclick = () => {
+      window.open("https://excalidraw.com", "_blank", "noopener,noreferrer");
+    };
+    load().catch((e) => {
+      document.getElementById("stage").innerHTML =
+        `<p style="padding:1rem;color:#b00020">Serve this folder: <code>npx serve docs/onboarding -p 5179</code><br>${esc(e)}</p>`;
+    });
+  </script>
+</body>
+</html>

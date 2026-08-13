@@ -70,7 +70,10 @@ String formatDistanceM(int? meters) {
   return '${buf.toString()} m';
 }
 
-String swimSessionTitle(WorkoutSummary w) {
+String workoutSessionTitle(WorkoutSummary w) {
   final label = workoutTypeLabel(w.type);
   return '$label · #${w.number}';
 }
+
+/// Alias kept for swim-list call sites.
+String swimSessionTitle(WorkoutSummary w) => workoutSessionTitle(w);
