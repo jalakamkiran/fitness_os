@@ -9,7 +9,7 @@ import 'package:fitness_os/features/workout_history/presentation/bloc/workout_hi
 import 'package:fitness_os/features/workout_history/presentation/view/workout_detail_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/sport_tabs.dart';
-import 'package:fitness_os/features/workout_history/presentation/widgets/swim_session_row.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/workout_session_row.dart';
 
 class WorkoutHistoryScreen extends StatelessWidget {
   const WorkoutHistoryScreen({super.key, this.bloc});
@@ -123,18 +123,37 @@ class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
                 ),
               Expanded(
                 child: switch (_sport) {
-                  WorkoutSportTab.swim => _SwimPanel(workouts: state.workouts),
-                  WorkoutSportTab.run => const _EmptySportPanel(
-                      title: 'Run',
-                      body:
-                          'Scaffolding only. Run sessions will list here when '
-                          'the sport lane opens — no charts on the list.',
+                  WorkoutSportTab.swim => _SportSessionPanel(
+                      workouts: state.workouts,
+                      match: isSwimWorkout,
+                      countSuffix: 'pool',
+                      emptyBody:
+                          'No swim sessions yet.\n'
+                          'Complete a pool swim on the watch, then Sync.',
+                      thirdLabel: 'SWOLF',
+                      thirdValue: (w) => w.avgSwolf?.toString() ?? '—',
                     ),
-                  WorkoutSportTab.strength => const _EmptySportPanel(
-                      title: 'Strength',
-                      body:
-                          'Scaffolding only. Strength history stays off Swim '
-                          'and never borrows vitals trends.',
+                  WorkoutSportTab.run => _SportSessionPanel(
+                      workouts: state.workouts,
+                      match: isRunWorkout,
+                      countSuffix: 'run',
+                      emptyBody:
+                          'No run sessions yet.\n'
+                          'Complete a run on the watch, then Sync.',
+                      thirdLabel: 'Calories',
+                      thirdValue: (w) =>
+                          w.calories == null ? '—' : '${w.calories}',
+                    ),
+                  WorkoutSportTab.strength => _SportSessionPanel(
+                      workouts: state.workouts,
+                      match: isStrengthWorkout,
+                      countSuffix: 'strength',
+                      emptyBody:
+                          'No strength sessions yet.\n'
+                          'Complete a strength workout on the watch, then Sync.',
+                      thirdLabel: 'Calories',
+                      thirdValue: (w) =>
+                          w.calories == null ? '—' : '${w.calories}',
                     ),
                 },
               ),
@@ -146,16 +165,28 @@ class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
   }
 }
 
-class _SwimPanel extends StatelessWidget {
-  const _SwimPanel({required this.workouts});
+class _SportSessionPanel extends StatelessWidget {
+  const _SportSessionPanel({
+    required this.workouts,
+    required this.match,
+    required this.countSuffix,
+    required this.emptyBody,
+    required this.thirdLabel,
+    required this.thirdValue,
+  });
 
   final List<WorkoutSummary> workouts;
+  final bool Function(int type) match;
+  final String countSuffix;
+  final String emptyBody;
+  final String thirdLabel;
+  final String Function(WorkoutSummary workout) thirdValue;
 
   @override
   Widget build(BuildContext context) {
     final colors = FathomColors.of(context);
     final theme = Theme.of(context);
-    final swim = workouts.where((w) => isSwimWorkout(w.type)).toList();
+    final filtered = workouts.where((w) => match(w.type)).toList();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -173,7 +204,7 @@ class _SwimPanel extends StatelessWidget {
               ),
             ),
             Text(
-              '${swim.length} · pool',
+              '${filtered.length} · $countSuffix',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: colors.inkFaint,
                 fontFeatures: const [FontFeature.tabularFigures()],
@@ -182,76 +213,27 @@ class _SwimPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        if (swim.isEmpty)
+        if (filtered.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 8),
             child: Text(
-              'No swim sessions yet.\n'
-              'Complete a pool swim on the watch, then Sync.',
+              emptyBody,
               textAlign: TextAlign.center,
               style:
                   theme.textTheme.bodyMedium?.copyWith(color: colors.inkDim),
             ),
           )
         else
-          for (var i = 0; i < swim.length; i++) ...[
+          for (var i = 0; i < filtered.length; i++) ...[
             if (i > 0) const SizedBox(height: 10),
-            SwimSessionRow(
-              workout: swim[i],
-              onTap: () => WorkoutDetailRoute.go(context, swim[i]),
+            WorkoutSessionRow(
+              workout: filtered[i],
+              thirdLabel: thirdLabel,
+              thirdValue: thirdValue(filtered[i]),
+              onTap: () => WorkoutDetailRoute.go(context, filtered[i]),
             ),
           ],
       ],
-    );
-  }
-}
-
-class _EmptySportPanel extends StatelessWidget {
-  const _EmptySportPanel({required this.title, required this.body});
-
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = FathomColors.of(context);
-    final theme = Theme.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 28, 18, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              color: colors.ink,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            body,
-            style: theme.textTheme.bodyMedium?.copyWith(color: colors.inkDim),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: colors.bgElev,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: colors.line),
-            ),
-            child: Text(
-              'Empty · OK',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: colors.inkFaint,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
