@@ -99,6 +99,8 @@ Battery (session UX): **Done** — `POC-2026-07-18-gate-a-battery`.
 | Night 2 preferred before absent | **Pending** | Max 2 nights |
 | Optional TruSleep OFF night if no stages | **Pending** | |
 | FileDownload sleep_state / sleep_data | **Init present** `POC-2026-08-11-trusleep-fd` | state=528 B, data=694564 B; transfer SM live; Health-match intervals pending |
+| Physio dict/file inventory (U1) | **Done** `2026-08-14` | See `gt5-a07-physio-dict-file-inventory.md` — product Sync = `sleep_state` only; no in-repo dict client; ≤3 invent candidates (`FD-0x2c-pull`×2 + `FU-0x28-receive`); caps dump still Pending; DataSync `0x37:0x04` excluded |
+| Caps dump (file/dict-like + `truSleepNewSync`) | **Pending** | Required before minting hard `ABSENT-dict-route` / overnight-summary `ABSENT-…` after disproof budget |
 
 ---
 
