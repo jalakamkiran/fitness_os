@@ -22,6 +22,7 @@ dependencies:
   fl_chart: ^1.2.0
   sentry_flutter: ^8.14.2
   share_plus: ^13.3.0
+  flutter_svg: ^2.2.3
 
 dev_dependencies:
   flutter_test:
@@ -33,3 +34,4 @@ flutter:
   assets:
     # Splash-only Discobolus mark (letter T in wordmark). App icon stays F.
     - assets/brand/discobolus.png
+    - assets/icons/swim/
