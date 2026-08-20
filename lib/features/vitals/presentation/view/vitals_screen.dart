@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fitness_os/core/di/injector.dart';
@@ -60,6 +61,7 @@ class _VitalsBody extends StatelessWidget {
       builder: (context, state) {
         final enabling = state.phase == VitalsPhase.enabling;
         final syncing = state.phase == VitalsPhase.syncing;
+        final probing = state.phase == VitalsPhase.probing;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -114,6 +116,26 @@ class _VitalsBody extends StatelessWidget {
                         : const Icon(Icons.sync),
                     label: Text(syncing ? 'Syncing…' : 'Sync'),
                   ),
+                  if (kDebugMode) ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: state.probeDisabled
+                          ? null
+                          : () => context
+                              .read<VitalsBloc>()
+                              .add(const VitalsPhysioProbeRequested()),
+                      icon: probing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.science_outlined),
+                      label: Text(
+                        probing ? 'Probing physio…' : 'Probe physio (debug)',
+                      ),
+                    ),
+                  ],
                   if (state.message != null) ...[
                     const SizedBox(height: 8),
                     Text(

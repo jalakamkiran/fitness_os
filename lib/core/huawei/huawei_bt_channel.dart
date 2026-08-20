@@ -123,6 +123,26 @@ class HuaweiBtChannel {
     return Map<String, dynamic>.from(raw as Map? ?? const {});
   }
 
+  /// Debug-only post-Sync physio capture probe (dict / sleep_data / path-2).
+  /// Never merges into product TruSleep SoT. Bound to FLAG_DEBUGGABLE on native.
+  Future<Map<String, dynamic>> probePhysioCapture({
+    bool includeDict = true,
+    bool includeSleepData = true,
+    bool includePath2Intervals = false,
+    int? startUnix,
+    int? endUnix,
+  }) async {
+    assert(kDebugMode, 'probePhysioCapture is debug-only');
+    final raw = await _method.invokeMethod<dynamic>('probePhysioCapture', {
+      'includeDict': includeDict,
+      'includeSleepData': includeSleepData,
+      'includePath2Intervals': includePath2Intervals,
+      if (startUnix != null) 'startUnix': startUnix,
+      if (endUnix != null) 'endUnix': endUnix,
+    });
+    return Map<String, dynamic>.from(raw as Map? ?? const {});
+  }
+
   static bool matchesGt5Name(String name) {
     final n = name.toLowerCase().trim();
     return n.contains('huawei') && n.contains('gt 5');

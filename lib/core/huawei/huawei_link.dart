@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:fitness_os/core/huawei/fos_huawei_log.dart';
 import 'package:fitness_os/core/huawei/huawei_bt_channel.dart';
 import 'package:fitness_os/core/observability/sentry_sync_instrumentation.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
@@ -457,6 +458,56 @@ class HuaweiLink {
         message: e.message ?? 'enable failed',
         overall: AutoTrackingOverall.noneArmed,
       );
+    } finally {
+      _syncInFlight = false;
+    }
+  }
+
+  /// Debug-only physio capture probe (dict / sleep_data / optional path-2).
+  /// Privacy-safe map only — never merges into TruSleep SoT.
+  Future<Map<String, dynamic>> probePhysioCapture({
+    bool includeDict = true,
+    bool includeSleepData = true,
+    bool includePath2Intervals = false,
+    int? startUnix,
+    int? endUnix,
+  }) async {
+    assert(kDebugMode, 'probePhysioCapture is debug-only');
+    if (_syncInFlight) {
+      return {
+        'status': 'busy',
+        'message': 'Another Sync is already in progress',
+        'feedsProductSleepSot': false,
+      };
+    }
+    if (!sessionReady) {
+      return {
+        'status': 'not_ready',
+        'message': 'Connect and authenticate first',
+        'feedsProductSleepSot': false,
+      };
+    }
+    _syncInFlight = true;
+    FosHuaweiLog.i(
+      'probePhysioCapture start dict=$includeDict sleepData=$includeSleepData '
+      'path2=$includePath2Intervals window=[$startUnix,$endUnix]',
+      op: 'physio-probe',
+    );
+    try {
+      return await _channel.probePhysioCapture(
+        includeDict: includeDict,
+        includeSleepData: includeSleepData,
+        includePath2Intervals: includePath2Intervals,
+        startUnix: startUnix,
+        endUnix: endUnix,
+      );
+    } on PlatformException catch (e) {
+      FosHuaweiLog.e('probePhysioCapture failed', error: e, op: 'physio-probe');
+      return {
+        'status': 'error',
+        'message': e.message ?? 'probe failed',
+        'feedsProductSleepSot': false,
+      };
     } finally {
       _syncInFlight = false;
     }

@@ -261,7 +261,7 @@ gate_a_passed + session_ready
   → emit DTO list to Flutter → persist prefs → update last_sync_cursor
 ```
 
-**Window (Gate B testing):** always `start=1654819200` (2022-06-10 UTC) → `end=now` so Sync pulls full stored history. Cursor is still written after success for a later incremental mode; Forget Device clears cursor + local workout rows.
+**Window:** delta-only — `start = last_sync_cursor − 1d overlap` when cursor exists, else last 14 local days (same span as activity Sync). Partials may extend start back to the earliest partial workout. Forget Device clears cursor + local workout rows.
 
 ### Product gate
 

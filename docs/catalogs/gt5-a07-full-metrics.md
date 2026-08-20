@@ -8,7 +8,7 @@
 
 Supersedes workout-only inventory intent from `docs/plans/2026-07-18-002-feat-gt5-workout-data-catalog-plan.md`.
 
-**Evidence session cut:** Scaffolded from Gate A/B POC captures (`capture:POC-2026-07-18-strength-totals`, Gate A battery). Must-seed Outdoor Run / Pool swim / overnight TruSleep / multi-hour vitals are **pending owner probe** — see `docs/experiments/gt5-a07-full-metrics-probe-matrix.md`.
+**Evidence session cut:** Includes Gate A/B POC (`capture:POC-2026-07-18-strength-totals`, Gate A battery) plus overnight physio diagnostic `capture:POC-2026-08-16-physio-probe`. Must-seed Outdoor Run / Pool swim remain **pending owner** — see `docs/experiments/gt5-a07-full-metrics-probe-matrix.md`.
 
 ---
 
@@ -108,8 +108,10 @@ Firmware string for freeze table: **not recorded in Gate A interrupt matrix** �
 | begin/end (`sleep_state.bin`) | FileDownload | **3** | `present` (`POC-2026-08-11-trusleep-fd`, 528 B) | Intervals parse pending Health match |
 | stages light/deep (TruSleep off) | `0x0D` | **2** | `unobserved` | |
 | stages REM+ (HarmonyOS 5 claim) | contested | **2** | `unobserved` | |
-| ACC ~1/min activity bytes | `sleep_data.bin` TAG_ACC | **3** | `present` (file 694564 B; tags unparsed) | **Not** high-rate IMU |
-| PPG compressed | `sleep_data.bin` TAG_PPG | **3** | `present` (file 694564 B; tags unparsed) | |
+| ACC ~1/min activity bytes | `sleep_data.bin` TAG_ACC | **3** | `present` (file sizes observed; tags unparsed) | **Not** high-rate IMU; `POC-2026-08-11-trusleep-fd` 694564 B init; `POC-2026-08-16-physio-probe` transfer 68172 B |
+| PPG compressed | `sleep_data.bin` TAG_PPG | **3** | `present` (file sizes observed; tags unparsed) | Overnight-summary **keys empty** on 2026-08-16 observe |
+| Overnight HRV / sleep HR / RR / sleep SpO₂ | dict / `SLEEP_DETAILS` / `sleep_data` keys | **2** | `absent-in-observed-sessions` | `ABSENT-overnight-summary` `ABSENT-companion` `capture:POC-2026-08-16-physio-probe`. Watch Sleep health tiles **present** (Health app not opened). Do not promote companion summaries |
+| Sleep score | watch Sleep tile | **2** | watch-ui `present` | Companion dict/sleep_data keys empty — not a companion SoT |
 | High-rate IMU/PPG dump | — | **0** | n/a | R11 |
 
 Enable: `0x07:0x16`. File svc: `0x2c` if `truSleepNewSync` else `0x0a`.
@@ -120,7 +122,7 @@ Enable: `0x07:0x16`. File svc: `0x2c` if `truSleepNewSync` else `0x0a`.
 
 | Stream | Codes | Score | Observation | Store (follow-on) |
 |--------|-------|------:|-------------|-------------------|
-| Daily interval HR | `0x07:0x0B` bitmap `0x40`; enable `0x07:0x17` | **2** | `unobserved` | vitals_history — notes: oracle 3 |
+| Daily interval HR | `0x07:0x0B` bitmap `0x40`; enable `0x07:0x17` | **2** | `present` (`interval-proxy`, diagnostic only) | `capture:POC-2026-08-16-physio-probe` — counts only; product Sync still skips `0x0B`; not overnight-summary |
 | Workout peaks | Totals TLV `0x0c` under `0x17:0x08` | **3** | `unobserved` | workout (Strength tag dump pending) |
 | Recovery HR blob | Totals TLV `0x66` | **2** | `unobserved` | workout |
 | Workout samples | Data bit0 | **3** | `unobserved` | workout samples |
@@ -143,7 +145,8 @@ SpO2 shares step containers (bitmap2 `0x01`); enable `0x07:0x24`.
 | Battery | `0x01:0x08` | **5** | `present` | **Must** | Gate A post-bind + reconnect; `capture:POC-2026-07-18-gate-a-battery` — level tag `0x01` |
 | Skin temperature | enable `0x2a` + P2P | **3** | `unobserved` | **Should** | Catalog only; no fetch this plan |
 | VO₂-like (maxMET `0x10`) | Workout Totals | **2** | `unobserved` | **Should** | Catalog only |
-| Stress / HRV / emotions / PAI / sleep RR | matrix only | **0** | `unobserved` | **Defer** | Avoid false companion claims |
+| Stress / emotions / PAI | matrix only | **0** | `unobserved` | **Defer** | Avoid false companion claims |
+| Overnight HRV / RR / sleep SpO₂ | dict + `sleep_data` keys | **2** | `absent-in-observed-sessions` | **Must (physio POC)** | `ABSENT-overnight-summary`; watch UI present. See S4 |
 | Raw high-rate IMU | — | **0** | n/a | Catalog only | Explicit non-goal |
 | Step unknownTVs | unmapped bits | **1** | `unobserved` | Probe | Future contract discovery |
 
@@ -167,10 +170,10 @@ Battery was inventoried as wire-spec **4** before POC level parse; on-device log
 | Strength Totals list | **Continue** — proven; enrichment tag dump still open |
 | Outdoor Run / Pool must-seeds | **Pending** — do not block catalog honesty SoT; block sport-specific wire-spec promotion |
 | Workout Data / Pace / Swim / GPS | **Totals-only follow-on** until hints + seeds observe non-zero counts / files |
-| Daily HR / SpO2 | **Pending** attempt budget (caps → enable → wear ≥4h → sync; max 2 cycles) |
-| Sleep files | **Deferred** until night budget; U6 follow-on only if `present` |
+| Daily HR / SpO2 | Interval HR **diagnostic present** (`interval-proxy`); product Sync still skips daily_hr; SpO2 interval companion still unobserved |
+| Sleep files | `sleep_state` product SoT; `sleep_data` diagnostic file-present without overnight-summary keys |
 | Indoor / Open water | **Explicit deferral** (opportunistic) — not a plan failure |
-| Stress / HRV / PAI / emotions | **Defer** — score **0** |
+| Overnight HRV / RR / sleep HR / sleep SpO₂ companion summaries | **ABSENT-overnight-summary** after dict + sleep_data + path-2; watch UI present; Health not opened |
 
 ---
 
