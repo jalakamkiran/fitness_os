@@ -707,6 +707,55 @@ class HuaweiFitnessDataSyncTest {
     }
 
     @Test
+    fun lastNightOverlap_countsMinutesWithoutValues() {
+        val begin = 1_700_000_000L
+        val intervals = listOf(begin to begin + 2 * 3600)
+        val hr = listOf(begin + 60, begin + 120, begin + 10 * 3600)
+        assertEquals(120, HuaweiFitnessDataSync.intervalMinutes(intervals))
+        assertEquals(2, HuaweiFitnessDataSync.countUnixInIntervals(hr, intervals))
+        val last = HuaweiFitnessDataSync.lastNightIntervals(
+            intervals,
+            nowUnix = begin + 3 * 3600,
+        )
+        assertEquals(1, last.size)
+    }
+
+    @Test
+    fun probeDailyHrIntervalProxy_overlapCounts_noSeries() {
+        val dayStart = 1_700_000_000L
+        val queue = ArrayDeque(
+            listOf(
+                countFrame(HuaweiFitnessDataSync.CMD_STEP_COUNT, 1),
+                stepHrFrame(
+                    index = 1,
+                    dayStart = dayStart,
+                    samples = listOf(
+                        MinuteSample(
+                            minute = 10,
+                            bitmap = HuaweiFitnessDataSync.BITMAP_HR,
+                            payloadAfterBitmap = byteArrayOf(72, 0x05),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
+        )
+        val sleep = listOf(dayStart to dayStart + 3600)
+        val out = sync.probeDailyHrIntervalProxy(
+            dayStart,
+            dayStart + 86400,
+            sleepIntervals = sleep,
+        )
+        assertEquals(60, out["lastNightSleepMinutes"])
+        assertEquals(1, out["lastNightHrMinutes"])
+        assertEquals(1, out["lastNightSpo2HintMinutes"])
+        assertEquals("extra_byte_after_hr_not_decoded", out["spo2Hint"])
+        assertFalse(out.toString().contains("72"))
+    }
+
+    @Test
     fun probeDailyHrIntervalProxy_timeout_absent() {
         val sync = HuaweiFitnessDataSync(
             exchangeEncrypted = { _, _, _, _ -> null },

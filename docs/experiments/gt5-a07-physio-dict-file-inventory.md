@@ -60,7 +60,7 @@ Survivors after excluding DataSync config-dict and Band-10-only assumptions that
 - `sleep_data.bin` (`TYPE_SLEEP_DATA=0x0f`) — TruSleep file observe (U3), not dict/sequence
 - FitnessData `0x0B` daily_hr / SpO₂ — path-2 contingency (U6)
 
-**ABSENT-dict-route:** **Not minted in U1.** Named FD invents + FU listen survive inventory. Mint `ABSENT-dict-route` only after all three one-shots fail (or caps explicitly block FD invents) during U2.
+**ABSENT-dict-route:** **Minted 2026-08-16** after all three one-shots returned absent (`capture:POC-2026-08-16-physio-probe`). U1 did not mint it.
 
 ---
 
@@ -78,18 +78,65 @@ In-band composition into product Sync’s `0x2c` init window is **not** required
 
 ---
 
-## Working availability matrix scaffold (pre-capture)
+## Live capture — `capture:POC-2026-08-16-physio-probe`
 
-| Metric | Class | Pipe | Status |
-|--------|-------|------|--------|
-| Overnight HRV | overnight-summary | dict candidates → sleep_data → path-2 | unmet — diagnostic ready; live night pending |
-| Overnight sleep HR | overnight-summary | same | unmet — diagnostic ready; live night pending |
-| Overnight RR | overnight-summary | same | unmet — diagnostic ready; live night pending |
-| Overnight sleep SpO₂ | overnight-summary | same | unmet — diagnostic ready; live night pending |
+**Device:** GT5-A07 VLI-B19, HarmonyOS 6.0.0.32  
+**Phone:** Pixel 8a, debug APK `probePhysioCapture` (dict + sleep_data + path-2)  
+**Privacy:** route + len + key/count maps only; no bodies, series, or watch numeric values in git.
 
-### Implementation note (2026-08-14)
+| Pipe | Status | Notes |
+|------|--------|-------|
+| `cand-fd-seq-path` | **absent** | `len=0`, overnightKeys empty |
+| `cand-fd-sleep-details` | **absent** | `len=0`, overnightKeys empty |
+| `cand-fu-sequence-listen` | **absent** | no sequence push in listen window |
+| `sleep_data.bin` | **file present** | `len=68172`; overnight-summary keys **empty**. Type `0x0f` ignores Band-10 filenames (same 68172 B). See tag hist below. |
+| Path-2 `0x0B` diagnostic | **interval-proxy present** | `indices=320`, `hrBitmapDays=306`, `sampleCount=419` (values redacted) |
 
-Native/debug surface landed: `HuaweiPhysioCaptureProbe` + Session/MethodChannel `probePhysioCapture` (debug-only). Synthetic unit tests cover AE1 privacy + AE3 fail-closed shapes. Terminal `capture:` / `ABSENT-…` still requires owner GT5-A07 night(s) + Health booleans (U4) before U5.
+**`ABSENT-dict-route`:** minted after all three U1 one-shots returned absent on this firmware. Retry with TruSleep type `0x0f` aliased to `sleep_data.bin` (not a new dict).
+
+### `sleep_data.bin` structure observe (same capture)
+
+TLV-like scan (tag + count + totalLen only). Two large tags hold ~85% of the file — sensor-blob class, not JSON `SLEEP_DETAILS`. ASCII `keyNames` were random letter runs (binary noise); not recorded.
+
+| Tag (dec) | Count | Total len | Read |
+|-----------|------:|----------:|------|
+| 188 | 1 | 32287 | Dominant blob (~32 KiB) |
+| 104 | 1 | 25962 | Dominant blob (~26 KiB) |
+| 34 | 1 | 6516 | Medium blob |
+| 2 | 17 | 1773 | Only repeated records (~104 B avg) — possible headers; not decoded |
+| 199 | 1 | 568 | Small |
+| 0 | 1 | 512 | Small (not proven as `sleep_state` clone) |
+
+Do **not** invent HRV/RR from tags 188/104.
+
+### U4 — same-night watch UI (Health not opened)
+
+Huawei Health was **not** opened (pairing would override the companion bind). Cross-check is **watch Sleep / Sleep health / HRV / SpO₂ / HR apps** for the same night. Boolean presence only:
+
+| Target | Watch UI | Companion overnight-summary |
+|--------|----------|-----------------------------|
+| Overnight HRV | **present** (Sleep health Avg HRV) | **ABSENT-companion** |
+| Overnight sleep HR | **present** (Sleep health Avg HR) | **ABSENT-companion** |
+| Overnight RR | **present** (Sleep health Avg respiratory rate) | **ABSENT-companion** |
+| Overnight sleep SpO₂ | **present** (Sleep health Avg SpO₂) | **ABSENT-companion** |
+| Sleep score | **present** (Sleep tile) | not a companion summary key this probe |
+| Sleep timing / stages graph | **present** | product `sleep_state.bin` SoT (separate) |
+
+Watch also shows interval-style HRV and SpO₂ charts (not overnight-summary class).
+
+## Terminal availability matrix (U5)
+
+| Metric | Class | Companion pipe | Observation | Score cap |
+|--------|-------|----------------|-------------|-----------|
+| Overnight HRV | `ABSENT-overnight-summary` | dict absent + sleep_data keys empty | `absent-in-observed-sessions` + watch-ui present | ≤2 |
+| Overnight sleep HR | `ABSENT-overnight-summary` | same | same | ≤2 |
+| Overnight RR | `ABSENT-overnight-summary` | same | same | ≤2 |
+| Overnight sleep SpO₂ | `ABSENT-overnight-summary` | same | same | ≤2 |
+| Interval HR | `interval-proxy` | diagnostic `0x0B` | `present` `capture:POC-2026-08-16-physio-probe` | not overnight-summary |
+
+### Implementation note (2026-08-14 / 2026-08-16)
+
+Native/debug surface: `HuaweiPhysioCaptureProbe` + Session/MethodChannel `probePhysioCapture` (debug-only). Live night 2026-08-16 closed U2/U3/U4/U6 evidence. Caps dump still pending (not required after named dict one-shots failed).
 
 ---
 

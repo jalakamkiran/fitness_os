@@ -19,6 +19,11 @@ final class VitalsEnableRequested extends VitalsEvent {
   const VitalsEnableRequested();
 }
 
+/// Debug-only dict / sleep_data / path-2 capture probe (never product SoT).
+final class VitalsPhysioProbeRequested extends VitalsEvent {
+  const VitalsPhysioProbeRequested();
+}
+
 final class VitalsReloadRequested extends VitalsEvent {
   const VitalsReloadRequested();
 }

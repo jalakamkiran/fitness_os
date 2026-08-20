@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 
-enum VitalsPhase { blocked, idle, syncing, enabling, stuck }
+enum VitalsPhase { blocked, idle, syncing, enabling, probing, stuck }
 
 class VitalsState extends Equatable {
   const VitalsState({
@@ -39,12 +39,21 @@ class VitalsState extends Equatable {
       !gateAPassed ||
       !sessionReady ||
       phase == VitalsPhase.enabling ||
-      phase == VitalsPhase.syncing;
+      phase == VitalsPhase.syncing ||
+      phase == VitalsPhase.probing;
 
   bool get syncDisabled =>
       !gateAPassed ||
       phase == VitalsPhase.enabling ||
-      phase == VitalsPhase.syncing;
+      phase == VitalsPhase.syncing ||
+      phase == VitalsPhase.probing;
+
+  bool get probeDisabled =>
+      !gateAPassed ||
+      !sessionReady ||
+      phase == VitalsPhase.enabling ||
+      phase == VitalsPhase.syncing ||
+      phase == VitalsPhase.probing;
 
   VitalsState copyWith({
     bool? gateAPassed,

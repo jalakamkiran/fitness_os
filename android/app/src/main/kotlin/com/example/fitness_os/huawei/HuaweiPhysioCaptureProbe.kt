@@ -16,9 +16,11 @@ class HuaweiPhysioCaptureProbe(
      */
     private val listenFeatureUploadSequence: (timeoutMs: Long) -> Map<String, Any?>? = { null },
     /**
-     * Optional path-2 diagnostic interval pull (tag+len histogram only).
+     * Optional path-2 diagnostic interval pull (tag+len + sleep-window overlap counts).
      */
-    private val pullIntervalProxy: ((startUnix: Int, endUnix: Int) -> Map<String, Any?>)? = null,
+    private val pullIntervalProxy: (
+        (startUnix: Int, endUnix: Int, sleepIntervals: List<Pair<Long, Long>>) -> Map<String, Any?>
+    )? = null,
 ) {
     companion object {
         private const val TAG = "FOS_HUAWEI"
@@ -61,29 +63,38 @@ class HuaweiPhysioCaptureProbe(
 
         if (options.includeDict) {
             val dl = fileDownload()
+            val fdTypePasses = listOf(
+                DICT_FILETYPE_PROBE to "",
+                HuaweiFileDownload.TYPE_SLEEP_DATA to "-type0f",
+            )
             for (cand in DICT_FD_CANDIDATES) {
-                val observed = dl.downloadDiagnosticNamedFileObserve(
-                    fileName = cand.route,
-                    fileType = DICT_FILETYPE_PROBE,
-                    shortId = cand.id,
-                    startUnix = options.startUnix,
-                    endUnix = options.endUnix,
-                )
-                val row = buildMap<String, Any?> {
-                    put("candidateId", cand.id)
-                    put("route", cand.route)
-                    put("transport", cand.transport)
-                    putAll(observed.toMap())
+                for ((fileType, idSuffix) in fdTypePasses) {
+                    val candidateId = cand.id + idSuffix
+                    val observed = dl.downloadDiagnosticNamedFileObserve(
+                        fileName = cand.route,
+                        fileType = fileType,
+                        shortId = candidateId,
+                        startUnix = options.startUnix,
+                        endUnix = options.endUnix,
+                    )
+                    val row = buildMap<String, Any?> {
+                        put("candidateId", candidateId)
+                        put("route", cand.route)
+                        put("fileType", fileType.toInt() and 0xFF)
+                        put("transport", cand.transport)
+                        putAll(observed.toMap())
+                    }
+                    dictAttempts.add(row)
+                    Log.i(
+                        TAG,
+                        "physio-probe dict candidate=$candidateId fileType=${fileType.toInt() and 0xFF} " +
+                            "status=${observed.status} len=${observed.len} " +
+                            "overnightKeys=${observed.overnightSummaryKeys}",
+                    )
+                    overnightKeys.addAll(observed.overnightSummaryKeys)
+                    // Typed overnight-summary present requires overnightSummaryKeys non-empty.
+                    // Huawhoop name equality alone (redactedKeys) is not enough.
                 }
-                dictAttempts.add(row)
-                Log.i(
-                    TAG,
-                    "physio-probe dict candidate=${cand.id} status=${observed.status} " +
-                        "len=${observed.len} overnightKeys=${observed.overnightSummaryKeys}",
-                )
-                overnightKeys.addAll(observed.overnightSummaryKeys)
-                // Typed overnight-summary present requires overnightSummaryKeys non-empty.
-                // Huawhoop name equality alone (redactedKeys) is not enough.
             }
 
             val fu = listenFeatureUploadSequence(FU_LISTEN_TIMEOUT_MS)
@@ -130,7 +141,8 @@ class HuaweiPhysioCaptureProbe(
             Log.i(
                 TAG,
                 "physio-probe sleep_data status=${observed.status} len=${observed.len} " +
-                    "overnightKeys=${observed.overnightSummaryKeys}",
+                    "overnightKeys=${observed.overnightSummaryKeys} " +
+                    observed.privacyInventoryLog(),
             )
         } else if (options.includeSleepData) {
             sleepData = mapOf(
@@ -142,16 +154,38 @@ class HuaweiPhysioCaptureProbe(
 
         var path2: Map<String, Any?>? = null
         if (options.includePath2Intervals) {
+            val sleepOutcome = fileDownload().downloadSleepFiles(
+                preferNewSync = true,
+                startUnix = options.startUnix,
+                endUnix = options.endUnix,
+            )
+            val sleepIntervals = sleepOutcome.stateIntervals.map {
+                it.beginUnix.toLong() to it.endUnix.toLong()
+            }
+            Log.i(
+                TAG,
+                "physio-probe sleep_state status=${sleepOutcome.status} " +
+                    "intervals=${sleepIntervals.size} " +
+                    "sleepMin=${HuaweiFitnessDataSync.intervalMinutes(sleepIntervals)}",
+            )
             val pull = pullIntervalProxy
             path2 = if (pull != null) {
-                pull(options.startUnix, options.endUnix)
+                pull(options.startUnix, options.endUnix, sleepIntervals)
             } else {
                 mapOf(
                     "status" to "skipped",
                     "reason" to "path2_not_wired",
+                    "sleepIntervalCount" to sleepIntervals.size,
                 )
             }
-            Log.i(TAG, "physio-probe path2 status=${path2["status"]}")
+            Log.i(
+                TAG,
+                "physio-probe path2 status=${path2["status"]} " +
+                    "lastNightSleepMin=${path2["lastNightSleepMinutes"]} " +
+                    "lastNightHrMin=${path2["lastNightHrMinutes"]} " +
+                    "lastNightSpo2HintMin=${path2["lastNightSpo2HintMinutes"]} " +
+                    "hrCoveragePct=${path2["lastNightHrCoveragePct"]}",
+            )
         }
 
         return buildMap {

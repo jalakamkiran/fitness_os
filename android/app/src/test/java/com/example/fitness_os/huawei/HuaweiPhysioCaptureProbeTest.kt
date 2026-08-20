@@ -54,7 +54,7 @@ class HuaweiPhysioCaptureProbeTest {
         )
         @Suppress("UNCHECKED_CAST")
         val attempts = out["dictAttempts"] as List<Map<String, Any?>>
-        assertEquals(3, attempts.size)
+        assertEquals(5, attempts.size)
         assertTrue(attempts.all { it["status"] == "absent" })
         @Suppress("UNCHECKED_CAST")
         val sleepData = out["sleepData"] as Map<String, Any?>
@@ -68,13 +68,17 @@ class HuaweiPhysioCaptureProbeTest {
         val probe = HuaweiPhysioCaptureProbe(
             fileDownload = { scriptedDownload(emptyMap()) },
             listenFeatureUploadSequence = { null },
-            pullIntervalProxy = { _, _ ->
+            pullIntervalProxy = { _, _, _ ->
                 mapOf(
                     "status" to "present",
                     "class" to "interval-proxy",
                     "hrBitmapDays" to 1,
                     "sampleCount" to 40,
                     "tagLenHistograms" to listOf("t=81:len=12x1"),
+                    "lastNightSleepMinutes" to 300,
+                    "lastNightHrMinutes" to 10,
+                    "lastNightSpo2HintMinutes" to 0,
+                    "lastNightHrCoveragePct" to 3,
                 )
             },
         )
