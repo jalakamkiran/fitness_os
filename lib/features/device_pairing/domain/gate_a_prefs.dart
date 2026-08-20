@@ -12,7 +12,7 @@ abstract final class GateAPrefs {
   /// Bumped when activity Sync merge rules change; forces one wide-window re-pull.
   static const activitySyncImplVersion = 'activity_sync_impl_version';
   static const lastR11Path = 'last_r11_winning_path';
-  /// Bumped when swim segment wire parse changes; forces one full-history re-sync.
+  /// Bumped when swim segment wire parse changes; stamped after successful Sync.
   static const swimSegmentParserVersion = 'swim_segment_parser_version';
   /// JSON list of synced workout summaries (Gate B local store).
   static const workoutsJson = 'workouts_json';

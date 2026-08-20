@@ -19,6 +19,7 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
     on<VitalsStarted>(_onStarted);
     on<VitalsSyncRequested>(_onSync);
     on<VitalsEnableRequested>(_onEnable);
+    on<VitalsPhysioProbeRequested>(_onPhysioProbe);
     on<VitalsReloadRequested>(_onReload);
     on<VitalsSessionReadyChanged>(_onSessionReady);
     if (invalidation != null) {
@@ -102,7 +103,8 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
     Emitter<VitalsState> emit,
   ) async {
     if (state.phase == VitalsPhase.syncing ||
-        state.phase == VitalsPhase.enabling) {
+        state.phase == VitalsPhase.enabling ||
+        state.phase == VitalsPhase.probing) {
       return;
     }
     if (!await _repository.isGateAPassed()) {
@@ -202,6 +204,49 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
           ),
         );
     }
+  }
+
+  Future<void> _onPhysioProbe(
+    VitalsPhysioProbeRequested event,
+    Emitter<VitalsState> emit,
+  ) async {
+    if (state.probeDisabled) return;
+    final link = _link;
+    if (link == null) {
+      emit(state.copyWith(message: 'Physio probe unavailable (no link)'));
+      return;
+    }
+    emit(
+      state.copyWith(
+        phase: VitalsPhase.probing,
+        clearMessage: true,
+      ),
+    );
+    final endUnix = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final startUnix = endUnix - HuaweiLink.activityWindowDays * 24 * 60 * 60;
+    final map = await link.probePhysioCapture(
+      includeDict: true,
+      includeSleepData: true,
+      includePath2Intervals: true,
+      startUnix: startUnix,
+      endUnix: endUnix,
+    );
+    emit(
+      state.copyWith(
+        phase: VitalsPhase.idle,
+        message: _probeCopy(map),
+      ),
+    );
+  }
+
+  String _probeCopy(Map<String, dynamic> map) {
+    final status = map['status']?.toString() ?? 'unknown';
+    final msg = map['message']?.toString();
+    final keys = map.keys.where((k) => k != 'message').join(',');
+    if (msg == null || msg.isEmpty) {
+      return 'Physio probe: $status ($keys)';
+    }
+    return 'Physio probe: $status — $msg ($keys)';
   }
 
   String _overallCopy(AutoTrackingEnableResult value) {
