@@ -350,7 +350,13 @@ class HuaweiSession(
                     listenForSequenceFeatureUpload(timeoutMs)
                 },
                 pullIntervalProxy = if (includePath2Intervals) {
-                    { s, e -> fitnessDataSync().probeDailyHrIntervalProxy(s.toLong(), e.toLong()) }
+                    { s, e, intervals ->
+                        fitnessDataSync().probeDailyHrIntervalProxy(
+                            s.toLong(),
+                            e.toLong(),
+                            sleepIntervals = intervals,
+                        )
+                    }
                 } else {
                     null
                 },

@@ -51,6 +51,7 @@ class HuaweiFitnessDataSync(
         private const val ENABLE_TIMEOUT_MS = 8_000L
         /** Bitmap bit for interval HR in step/activity samples (wire-spec). */
         const val BITMAP_HR = 0x40
+        /** Catalog: SpO₂ lives in a second bitmap (`0x01`). Layout after HR is unowned — hint only. */
         /** Drop sub-15m fragments (paging noise / empty tails). */
         private const val MIN_SESSION_SEC = 15 * 60L
         /** Match Flutter [TruSleepSleepSot.mergeGapSec] — near-adjacent file fragments. */
@@ -73,6 +74,23 @@ class HuaweiFitnessDataSync(
             if (value.size < offset + 2) return 0
             return ((value[offset].toInt() and 0xFF) shl 8) or
                 (value[offset + 1].toInt() and 0xFF)
+        }
+
+        fun intervalMinutes(intervals: List<Pair<Long, Long>>): Int =
+            intervals.sumOf { ((it.second - it.first).coerceAtLeast(0L) / 60L).toInt() }
+
+        fun lastNightIntervals(
+            intervals: List<Pair<Long, Long>>,
+            nowUnix: Long,
+            lookbackSec: Long = 36L * 3600L,
+        ): List<Pair<Long, Long>> =
+            intervals.filter { it.second >= nowUnix - lookbackSec }
+
+        fun countUnixInIntervals(
+            timestamps: Collection<Long>,
+            intervals: List<Pair<Long, Long>>,
+        ): Int = timestamps.count { ts ->
+            intervals.any { ts >= it.first && ts < it.second }
         }
 
         fun u32(value: ByteArray, offset: Int = 0): Long {
@@ -807,8 +825,15 @@ class HuaweiFitnessDataSync(
     /**
      * Diagnostic-only daily interval HR/SpO₂ presence pull (`0x0A`/`0x0B`).
      * Product [sync] still skips daily_hr. Returns tag+len histogram — never series.
+     *
+     * When [sleepIntervals] is non-empty, also returns last-night overlap counts
+     * (minutes only; no BPM / SpO₂ values).
      */
-    fun probeDailyHrIntervalProxy(startUnix: Long, endUnix: Long): Map<String, Any?> {
+    fun probeDailyHrIntervalProxy(
+        startUnix: Long,
+        endUnix: Long,
+        sleepIntervals: List<Pair<Long, Long>> = emptyList(),
+    ): Map<String, Any?> {
         if (!isConnected()) {
             return mapOf("status" to "skipped", "reason" to "disconnected", "class" to "interval-proxy")
         }
@@ -830,6 +855,8 @@ class HuaweiFitnessDataSync(
         val histograms = ArrayList<String>()
         var hrBitmapDays = 0
         var sampleCount = 0
+        val hrUnix = HashSet<Long>()
+        val spo2HintUnix = HashSet<Long>()
         for (index in indices) {
             val dataFrame = exchangeEncrypted(
                 buildIndexRequest(CMD_STEP_DATA, index),
@@ -841,12 +868,25 @@ class HuaweiFitnessDataSync(
             val parsed = parseStepDataHr(dataFrame)
             if (parsed.hrBitmapPresent) hrBitmapDays++
             sampleCount += parsed.samples.size
+            hrUnix.addAll(parsed.hrUnix)
+            spo2HintUnix.addAll(parsed.spo2HintUnix)
             // Do not retain BPM series in the result map.
+        }
+        val lastNight = lastNightIntervals(sleepIntervals, endUnix)
+        val lastNightSleepMin = intervalMinutes(lastNight)
+        val lastNightHrMin = countUnixInIntervals(hrUnix, lastNight)
+        val lastNightSpo2HintMin = countUnixInIntervals(spo2HintUnix, lastNight)
+        val coveragePct = if (lastNightSleepMin > 0) {
+            (lastNightHrMin * 100) / lastNightSleepMin
+        } else {
+            0
         }
         Log.i(
             TAG,
             "physio-probe path2 indices=${indices.size} hrBitmapDays=$hrBitmapDays " +
-                "sampleCount=$sampleCount (values redacted)",
+                "sampleCount=$sampleCount lastNightSleepMin=$lastNightSleepMin " +
+                "lastNightHrMin=$lastNightHrMin lastNightSpo2HintMin=$lastNightSpo2HintMin " +
+                "hrCoveragePct=$coveragePct (values redacted)",
         )
         return buildMap {
             put("status", if (hrBitmapDays > 0 || histograms.isNotEmpty()) "present" else "absent")
@@ -856,6 +896,16 @@ class HuaweiFitnessDataSync(
             put("sampleCount", sampleCount)
             put("tagLenHistograms", histograms.take(8))
             put("reason", if (hrBitmapDays > 0) "hr_bitmap_present" else "no_hr_bitmap")
+            put("sleepIntervalCount", sleepIntervals.size)
+            put("lastNightIntervalCount", lastNight.size)
+            put("lastNightSleepMinutes", lastNightSleepMin)
+            put("lastNightHrMinutes", lastNightHrMin)
+            put("lastNightSpo2HintMinutes", lastNightSpo2HintMin)
+            put("lastNightHrCoveragePct", coveragePct)
+            put(
+                "spo2Hint",
+                "extra_byte_after_hr_not_decoded",
+            )
         }
     }
 
@@ -1065,6 +1115,8 @@ class HuaweiFitnessDataSync(
         val samples: List<DailyHrSample>,
         val hrBitmapPresent: Boolean,
         val unknownTags: Int,
+        val hrUnix: List<Long> = emptyList(),
+        val spo2HintUnix: List<Long> = emptyList(),
     )
 
     /**
@@ -1087,6 +1139,8 @@ class HuaweiFitnessDataSync(
         var unknown = 0
         var sawHrBitmap = false
         val samples = ArrayList<DailyHrSample>()
+        val hrUnix = ArrayList<Long>()
+        val spo2HintUnix = ArrayList<Long>()
         for (tlv in tlvs) {
             when (tlv.tag) {
                 0x02 -> Unit // day index
@@ -1104,19 +1158,24 @@ class HuaweiFitnessDataSync(
                         }
                     }
                     val p = payload
-                    if (p != null && p.isNotEmpty()) {
+                    if (p != null && p.isNotEmpty() && dayStart > 0L) {
+                        val ts = dayStart + minute * 60L
                         val bitmap = u8(p)
                         if ((bitmap and BITMAP_HR) != 0) {
                             sawHrBitmap = true
                             val bpm = extractHrBpm(p)
-                            if (bpm != null && dayStart > 0L) {
+                            if (bpm != null) {
+                                hrUnix.add(ts)
                                 samples.add(
                                     DailyHrSample(
-                                        timestampUnix = dayStart + minute * 60L,
+                                        timestampUnix = ts,
                                         bpm = bpm,
                                     ),
                                 )
                             }
+                        }
+                        if (bytesAfterHr(p) >= 1) {
+                            spo2HintUnix.add(ts)
                         }
                     }
                 }
@@ -1127,6 +1186,8 @@ class HuaweiFitnessDataSync(
             samples = samples,
             hrBitmapPresent = sawHrBitmap,
             unknownTags = unknown,
+            hrUnix = hrUnix,
+            spo2HintUnix = spo2HintUnix,
         )
     }
 
@@ -1150,6 +1211,24 @@ class HuaweiFitnessDataSync(
         if (offset >= payload.size) return null
         val bpm = u8(payload, offset)
         return if (bpm in 30..220) bpm else null
+    }
+
+    /** Bytes remaining after bitmap-led HR (and lower 2B fields). Not a decoded SpO₂ value. */
+    fun bytesAfterHr(payload: ByteArray): Int {
+        if (payload.isEmpty()) return 0
+        val bitmap = u8(payload)
+        var offset = 1
+        var bit = 0x01
+        while (bit < BITMAP_HR) {
+            if ((bitmap and bit) != 0) {
+                offset += 2
+            }
+            bit = bit shl 1
+        }
+        if ((bitmap and BITMAP_HR) != 0) {
+            offset += 1
+        }
+        return (payload.size - offset).coerceAtLeast(0)
     }
 
     private fun resultMap(

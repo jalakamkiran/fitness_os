@@ -297,6 +297,10 @@ class HuaweiFileDownloadTest {
         assertTrue(obs.overnightSummaryKeys.any { it.contains("avgOxygen", ignoreCase = true) })
         assertTrue(!obs.redactedKeys.contains("AABBCCDDEEFF"))
         assertTrue(!obs.toMap().toString().contains("AABBCC"))
+        val inventory = obs.privacyInventoryLog()
+        assertTrue(inventory.contains("keyNames=["))
+        assertTrue(inventory.contains("avgOxygenSaturation"))
+        assertTrue(!inventory.contains("AABBCC"))
     }
 
     @Test

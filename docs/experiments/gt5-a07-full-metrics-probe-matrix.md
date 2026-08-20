@@ -35,8 +35,9 @@
 | `POC-2026-07-18-strength-totals` | 2026-07-18 | Workout Sync Count→Totals: `count=1`, `number=2`, `type=140`, `duration=112s` | No GPS/HR series |
 | `POC-2026-07-18-gate-a-battery` | 2026-07-18 | Post-bind `0x01:0x08` → log `battery ok level=<u8>` (tag `0x01`) | Level integer only |
 | `ABSENT-*` | — | Reserved for documented-absence after attempt budget | — |
+| `POC-2026-08-16-physio-probe` | 2026-08-16 | Debug `probePhysioCapture`: dict three-shot absent; `sleep_data` file present 68172 B keys empty; path-2 interval-proxy counts | No bodies/series; watch UI booleans only (Health not opened) |
 
-Firmware string: **fill on next probe** (blank in `gate-a-interrupt-matrix.md`).
+Firmware string: **HarmonyOS 6.0.0.32 / VLI-B19** (`capture:POC-2026-08-16-physio-probe`).
 
 ---
 
@@ -99,11 +100,11 @@ Battery (session UX): **Done** — `POC-2026-07-18-gate-a-battery`.
 | Night 2 preferred before absent | **Pending** | Max 2 nights |
 | Optional TruSleep OFF night if no stages | **Pending** | |
 | FileDownload sleep_state / sleep_data | **Init present** `POC-2026-08-11-trusleep-fd` | state=528 B, data=694564 B; transfer SM live; Health-match intervals pending |
-| Physio dict/file inventory (U1) | **Done** `2026-08-14` | See `gt5-a07-physio-dict-file-inventory.md` — product Sync = `sleep_state` only; no in-repo dict client; ≤3 invent candidates (`FD-0x2c-pull`×2 + `FU-0x28-receive`); caps dump still Pending; DataSync `0x37:0x04` excluded |
-| Physio diagnostic probe (U2/U3/U6 code) | **Ready** `2026-08-14` | Debug `probePhysioCapture` under SyncLock; product Sync unchanged; unit tests green |
-| Caps dump (file/dict-like + `truSleepNewSync`) | **Pending** | Required before minting hard `ABSENT-dict-route` / overnight-summary `ABSENT-…` after disproof budget |
-| Same-night Health presence (U4) | **Pending owner** | Boolean only for HRV / RR / sleep SpO₂ / sleep HR — no screenshots/values |
-| Terminal catalog promotion (U5) | **Blocked on capture night** | Needs U2–U4 (+ U6 if HRV/RR unmet) evidence before `capture:` / `ABSENT-…` |
+| Physio dict/file inventory (U1) | **Done** `2026-08-14` | See `gt5-a07-physio-dict-file-inventory.md` — product Sync = `sleep_state` only; no in-repo dict client; ≤3 invent candidates (`FD-0x2c-pull`×2 + `FU-0x28-receive`); DataSync `0x37:0x04` excluded |
+| Physio diagnostic probe (U2/U3/U6) | **Done** `capture:POC-2026-08-16-physio-probe` | Dict all absent (`ABSENT-dict-route`); `sleep_data` file present keys empty; path-2 interval-proxy present; product Sync unchanged |
+| Caps dump (file/dict-like + `truSleepNewSync`) | **Pending** | Not blocking: named dict one-shots already absent |
+| Same-night Health presence (U4) | **Watch UI** `2026-08-16` | Health **not opened** (pairing override). Watch Sleep health: Avg HR / Avg HRV / Avg RR / Avg SpO₂ **present**; sleep score tile **present**. Booleans only |
+| Terminal catalog promotion (U5) | **Done** `2026-08-16` | Overnight summaries `ABSENT-companion` / `ABSENT-overnight-summary`; interval HR `interval-proxy` |
 
 ---
 
@@ -125,7 +126,7 @@ Battery (session UX): **Done** — `POC-2026-07-18-gate-a-battery`.
 | When | Change |
 |------|--------|
 | 2026-07-18 | Initial scaffold: Strength list **5**/`present`; battery **5**/`present`; Running/Swim/Sleep/vitals mostly `unobserved`; IMU **0** |
-| _(next)_ | After Outdoor / Pool / vitals / sleep owner sessions |
+| 2026-08-16 | Physio POC: overnight HRV/RR/sleep HR/sleep SpO₂ companion `ABSENT-overnight-summary` (watch UI present); interval HR `interval-proxy` `present` |
 
 ---
 

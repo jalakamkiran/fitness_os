@@ -1,7 +1,7 @@
 ---
 title: "feat: GT5 overnight physio dict/file capture POC"
 type: feat
-status: active
+status: complete
 date: 2026-08-13
 origin: docs/handoffs/2026-08-13-gt5-physio-dict-file-capture-handoff.md
 ---

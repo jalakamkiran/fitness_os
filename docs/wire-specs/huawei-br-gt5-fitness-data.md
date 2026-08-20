@@ -109,6 +109,8 @@ FileDownload sleep_state / sleep_data: see sleep-files stub — **not** promoted
 
 Product activity Sync still **skips** `0x0A`/`0x0B` daily_hr. Debug `probePhysioCapture(includePath2Intervals: true)` may pull tag+len histograms only (`class: interval-proxy`). Never restores product continuous-HR charts; never mints overnight-summary `present` for HRV/RR.
 
+**Live:** `capture:POC-2026-08-16-physio-probe` — path-2 `status=present`; `indices=320`, `hrBitmapDays=306`, `sampleCount=419` (values redacted). Overnight HRV/RR remain `ABSENT-overnight-summary`.
+
 ---
 
 ## Daily HR / step samples (partial — capture)

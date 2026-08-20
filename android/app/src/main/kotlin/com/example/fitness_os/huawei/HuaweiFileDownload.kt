@@ -231,6 +231,15 @@ class HuaweiFileDownload(
         val overnightSummaryKeys: List<String> = emptyList(),
         val reason: String? = null,
     ) {
+        /** Tag+len histogram and identifier names only — never values or bodies. */
+        fun privacyInventoryLog(): String {
+            val hist = tagHistogram.joinToString(",") { row ->
+                "t=${row["tag"]}:n=${row["count"]}:len=${row["totalLen"]}"
+            }
+            val names = redactedKeys.joinToString(",")
+            return "tagHist=[$hist] keyNames=[$names]"
+        }
+
         fun toMap(): Map<String, Any?> = buildMap {
             put("status", status)
             put("serviceId", serviceId)
@@ -394,8 +403,7 @@ class HuaweiFileDownload(
                     Log.i(
                         TAG,
                         "file-download diagnostic ok name=$fileName len=${result.size} " +
-                            "keys=${observed.redactedKeys.size} " +
-                            "overnightKeys=${observed.overnightSummaryKeys.size}",
+                            observed.privacyInventoryLog(),
                     )
                     result.fill(0)
                     StructureObserve(
@@ -468,7 +476,7 @@ class HuaweiFileDownload(
                     Log.i(
                         TAG,
                         "file-download sleep_data observe len=${result.size} " +
-                            "tags=${observed.tagHistogram.size} keys=${observed.redactedKeys.size}",
+                            observed.privacyInventoryLog(),
                     )
                     try {
                         wipeBody?.invoke(result)

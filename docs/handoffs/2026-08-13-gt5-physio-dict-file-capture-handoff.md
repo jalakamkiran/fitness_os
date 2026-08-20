@@ -1,10 +1,11 @@
 # Handoff: GT5 overnight physio capture — dict / file path POC
 
 **Date:** 2026-08-13  
-**Status:** Ready to **plan** (then probe) — research digested; Band 10 lead ≠ GT5 proof  
+**Status:** Capture POC **complete** (U5 2026-08-16) — overnight summaries `ABSENT-companion`; watch UI present; Health not opened  
 **Research SoT:** `docs/learnings/2026-08-13-gt5-overnight-physio-capture-research.md`  
 **Branch likely:** `feat/recovery-sleep-detail` (TruSleep FileDownload + sleep SoT)  
-**Parallel (do not bundle):** Hooper-4 feel — `docs/handoffs/2026-08-13-hooper4-feel-upgrade-handoff.md`
+**Parallel (do not bundle):** Hooper-4 feel — `docs/handoffs/2026-08-13-hooper4-feel-upgrade-handoff.md`  
+**Product follow-on (review → feature):** `docs/handoffs/2026-08-20-recovery-v1-timing-hooper-handoff.md` + `docs/brainstorms/2026-08-20-recovery-v1-timing-hooper-requirements.md`
 
 Paste this doc + the research digest into a new chat. Prefer **`/ce-plan`** first, then implement/probe. Do not ship recovery charts in this cut.
 

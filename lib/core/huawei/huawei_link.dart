@@ -490,7 +490,7 @@ class HuaweiLink {
     _syncInFlight = true;
     FosHuaweiLog.i(
       'probePhysioCapture start dict=$includeDict sleepData=$includeSleepData '
-      'path2=$includePath2Intervals',
+      'path2=$includePath2Intervals window=[$startUnix,$endUnix]',
       op: 'physio-probe',
     );
     try {

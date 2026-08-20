@@ -102,7 +102,16 @@ Post-Sync debug MethodChannel `probePhysioCapture` may download `sleep_data.bin`
 | Classes | File-present by size ≠ overnight-summary fields present |
 | SoT | Probe map sets `feedsProductSleepSot=false` — never merges into TruSleep sleep_state SoT |
 
-Live structure inventory / `ABSENT-…` rows land after owner capture night(s) in U5.
+Live structure inventory (`capture:POC-2026-08-16-physio-probe`):
+
+| Item | Observation |
+|------|-------------|
+| Transfer | `status=present` `len=68172` |
+| Overnight-summary keys | **empty** (ASCII runs were noise, not JSON keys) |
+| Tag histogram | `t=188:n=1:len=32287`, `t=104:n=1:len=25962`, `t=34:n=1:len=6516`, `t=2:n=17:len=1773`, `t=199:n=1:len=568`, `t=0:n=1:len=512` |
+| Dict invents | name+type `0x00` absent; name+type `0x0f` **aliases** `sleep_data.bin` |
+| Product Sync | still `sleep_state.bin` only |
+| Class | file-present ≠ overnight-summary `present`; large tags = blob, not Huawhoop dict |
 
 ---
 

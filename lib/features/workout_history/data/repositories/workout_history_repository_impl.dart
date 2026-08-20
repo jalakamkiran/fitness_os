@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:fitness_os/core/error/failures.dart';
 import 'package:fitness_os/core/huawei/fos_huawei_log.dart';
@@ -31,15 +32,15 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   final CanonicalSwimStore _swimStore;
   final void Function()? _onSyncSettled;
 
-  /// Same empty-history floor as GB / native HuaweiWorkoutSync.
-  static const fallbackStartUnix = 1654819200;
-
   /// Overlap when advancing from [GateAPrefs.lastSyncCursor] so boundary
   /// workouts are not missed if the watch clocks slightly disagree.
   static const cursorOverlapSec = 86400;
 
+  /// Cold-start / no-cursor window — same span as activity Sync, not full history.
+  static const coldStartWindowDays = HuaweiLink.activityWindowDays;
+
   /// v2: swim/pace page index TLV 0x08 + GB 0x83 field map (strokes/time).
-  /// Pref below this → next Sync uses [fallbackStartUnix] once, then stamps.
+  /// Stamped after a successful Sync; does **not** force a full-history pull.
   /// (v3 one-shot force for stroke-style capability proof is complete — left at v2.)
   static const currentSwimSegmentParserVersion = 2;
 
@@ -163,26 +164,25 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     }
   }
 
-  /// Incremental when cursor exists and no local row is still partial;
-  /// otherwise full-history from [fallbackStartUnix] (plan invariant).
-  /// Also full-history once after [currentSwimSegmentParserVersion] bumps.
+  /// Delta-only Count window: cursor − overlap when present; otherwise last
+  /// [coldStartWindowDays]. Partials extend the window back to the earliest
+  /// partial start (still not a 2022 full-history dump).
   Future<int> _resolveSyncStartUnix(int endUnix) async {
-    final parserVer =
-        _prefs.getInt(GateAPrefs.swimSegmentParserVersion) ?? 0;
-    if (parserVer < currentSwimSegmentParserVersion) {
-      return fallbackStartUnix;
-    }
+    final coldStart = endUnix - coldStartWindowDays * 86400;
     final cursor = _prefs.getInt(GateAPrefs.lastSyncCursor);
+    var start = (cursor == null || cursor <= 0)
+        ? coldStart
+        : cursor - cursorOverlapSec;
+
     final local = await loadLocal();
-    final hasPartial =
-        local.any((w) => w.enrichmentStatus == 'partial');
-    if (cursor == null || cursor <= 0 || hasPartial) {
-      return fallbackStartUnix;
+    for (final w in local) {
+      if (w.enrichmentStatus == 'partial') {
+        start = math.min(start, w.startTime - cursorOverlapSec);
+      }
     }
-    final withOverlap = cursor - cursorOverlapSec;
-    if (withOverlap < fallbackStartUnix) return fallbackStartUnix;
-    if (withOverlap > endUnix) return endUnix;
-    return withOverlap;
+
+    if (start > endUnix) return endUnix;
+    return start;
   }
 
   Future<List<WorkoutSummary>> _mergeAndPersist(

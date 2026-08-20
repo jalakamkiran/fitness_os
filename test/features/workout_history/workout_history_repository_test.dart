@@ -93,7 +93,7 @@ void main() {
       expect(settled, 1);
     });
 
-    test('full-history sync when no cursor', () async {
+    test('cold-start sync uses last N days when no cursor', () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
       });
@@ -106,22 +106,29 @@ void main() {
       );
       final repo = WorkoutHistoryRepositoryImpl(link: link, prefs: prefs);
 
+      final before = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       await repo.syncFromWatch();
-      expect(
-        link.lastStartUnix,
-        WorkoutHistoryRepositoryImpl.fallbackStartUnix,
-      );
+      final after = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final start = link.lastStartUnix!;
+      final minExpected =
+          before - WorkoutHistoryRepositoryImpl.coldStartWindowDays * 86400;
+      final maxExpected =
+          after - WorkoutHistoryRepositoryImpl.coldStartWindowDays * 86400;
+      expect(start, greaterThanOrEqualTo(minExpected));
+      expect(start, lessThanOrEqualTo(maxExpected));
     });
 
-    test('full-history sync when any local workout is partial', () async {
+    test('partial local extends delta window to earliest partial', () async {
+      const cursor = 1_700_000_000;
+      const partialStart = 1_699_000_000;
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
-        GateAPrefs.lastSyncCursor: 1_800_000_000,
+        GateAPrefs.lastSyncCursor: cursor,
         GateAPrefs.swimSegmentParserVersion:
             WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
         GateAPrefs.workoutsJson:
-            '[{"number":1,"startTime":100,"endTime":200,"durationSec":100,'
-                '"type":6,"enrichmentStatus":"partial"}]',
+            '[{"number":1,"startTime":$partialStart,"endTime":${partialStart + 100},'
+                '"durationSec":100,"type":6,"enrichmentStatus":"partial"}]',
       });
       final prefs = await SharedPreferences.getInstance();
       final link = _StubLink(
@@ -135,15 +142,16 @@ void main() {
       await repo.syncFromWatch();
       expect(
         link.lastStartUnix,
-        WorkoutHistoryRepositoryImpl.fallbackStartUnix,
+        partialStart - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
       );
     });
 
-    test('full-history sync when swim segment parser version is stale',
+    test('stale swim segment parser version still uses delta cursor window',
         () async {
+      const cursor = 1_700_000_000;
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
-        GateAPrefs.lastSyncCursor: 1_800_000_000,
+        GateAPrefs.lastSyncCursor: cursor,
         GateAPrefs.swimSegmentParserVersion: 1,
       });
       final prefs = await SharedPreferences.getInstance();
@@ -174,7 +182,7 @@ void main() {
       expect(out, isA<Right>());
       expect(
         link.lastStartUnix,
-        WorkoutHistoryRepositoryImpl.fallbackStartUnix,
+        cursor - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
       );
       expect(
         prefs.getInt(GateAPrefs.swimSegmentParserVersion),
@@ -188,7 +196,7 @@ void main() {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
         GateAPrefs.lastSyncCursor: cursor,
-        // Stale vs current → first sync full-history.
+        // Stale vs current — still delta; no full-history force.
         GateAPrefs.swimSegmentParserVersion: 1,
       });
       final prefs = await SharedPreferences.getInstance();
@@ -221,7 +229,7 @@ void main() {
       expect(first, isA<Right>());
       expect(
         link.lastStartUnix,
-        WorkoutHistoryRepositoryImpl.fallbackStartUnix,
+        cursor - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
       );
       expect(
         prefs.getInt(GateAPrefs.swimSegmentParserVersion),
