@@ -166,11 +166,7 @@ class FoodDayExportService {
 
     final encoder = ZipEncoder();
     final bytes = encoder.encode(archive);
-    if (bytes != null) {
-      await file.writeAsBytes(bytes);
-    } else {
-      throw Exception('Failed to encode ZIP');
-    }
+    await file.writeAsBytes(bytes);
 
     return file;
   }
