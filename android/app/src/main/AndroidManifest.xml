@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    
+    <!-- Camera for meal photo capture -->
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <!-- Classic Bluetooth + BLE discovery for Huawei GT5 companion link -->
     <uses-feature
