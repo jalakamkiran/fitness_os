@@ -211,13 +211,9 @@ class _FoodTabScreenState extends State<FoodTabScreen> {
           _ActionButton(
             label: 'Set meal times',
             icon: Icons.schedule_outlined,
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Meal schedule coming soon'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
+            onTap: () async {
+              await Navigator.pushNamed(context, '/food/schedule');
+              _loadDay();
             },
           ),
         ],

@@ -92,23 +92,34 @@ void main() {
       expect(didAttemptNavigation, isTrue);
     });
 
-    testWidgets('FoodTabScreen shows snackbar when tapping Set meal times',
+    testWidgets('FoodTabScreen navigates to schedule route when tapping Set meal times',
         (tester) async {
+      bool didAttemptNavigation = false;
+      
       await tester.pumpWidget(
         MaterialApp(
           theme: BpTheme.light(),
           home: Scaffold(
             body: FoodTabScreen(store: store),
           ),
+          onGenerateRoute: (settings) {
+            if (settings.name == '/food/schedule') {
+              didAttemptNavigation = true;
+              return MaterialPageRoute(
+                builder: (_) => const Scaffold(body: Text('Schedule route')),
+              );
+            }
+            return null;
+          },
         ),
       );
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Set meal times'));
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 1));
-
-      expect(find.text('Meal schedule coming soon'), findsOneWidget);
+      await tester.pumpAndSettle();
+      
+      // Verify navigation was attempted
+      expect(didAttemptNavigation, isTrue);
     });
 
     testWidgets('FoodTabScreen has proper accessibility icons', (tester) async {

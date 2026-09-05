@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:fitness_os/app/routing/app_router.dart';
 import 'package:fitness_os/features/food/data/food_meal_store.dart';
+import 'package:fitness_os/features/food/data/food_notification_scheduler.dart';
 import 'package:fitness_os/features/food/presentation/view/food_capture_screen.dart';
 
 class FoodCaptureRoute {
@@ -16,16 +17,28 @@ class FoodCaptureRoute {
   static void register() {
     AppRouter.register(
       path,
-      (context) => FoodCaptureScreen(
-        store: GetIt.I<FoodMealStore>(),
-        imagePicker: ImagePicker(),
-        processImage: FoodCaptureRoute.stripExifAndCompress,
-      ),
+      (context) {
+        // Extract slot from route arguments if present
+        final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+        final slot = args?['slot'] as String?;
+        
+        return FoodCaptureScreen(
+          store: GetIt.I<FoodMealStore>(),
+          scheduler: GetIt.I<FoodNotificationScheduler>(),
+          imagePicker: ImagePicker(),
+          processImage: FoodCaptureRoute.stripExifAndCompress,
+          initialSlot: slot,
+        );
+      },
     );
   }
 
-  static void go(BuildContext context) {
-    Navigator.pushNamed(context, path);
+  static void go(BuildContext context, {String? slot}) {
+    Navigator.pushNamed(
+      context, 
+      path,
+      arguments: slot != null ? {'slot': slot} : null,
+    );
   }
 
   /// Strip EXIF data and re-compress JPEG to remove metadata.
