@@ -195,6 +195,9 @@ class FoodMealStore {
     } catch (_) {
       // Best-effort wipe
     }
+    
+    // Note: notification cancellation handled by diagnostics_di wipe body
+    // which calls scheduler.cancelAll() after store.clearLocal()
   }
 
   Future<void> _saveIndex(List<FoodMeal> meals) async {

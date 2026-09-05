@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:fitness_os/features/food/data/food_meal_store.dart';
+import 'package:fitness_os/features/food/data/food_notification_scheduler.dart';
 import 'package:fitness_os/features/food/domain/food_meal.dart';
 
 /// Food capture screen: camera/gallery → optional fields → save.
@@ -14,15 +15,18 @@ class FoodCaptureScreen extends StatefulWidget {
     required this.store,
     required this.imagePicker,
     required this.processImage,
+    this.scheduler,
     this.pickOverride,
     this.syncPickOverride,
     this.imageBuilder,
+    this.initialSlot,
     super.key,
   });
 
   final FoodMealStore store;
   final ImagePicker imagePicker;
   final Future<Uint8List> Function(File) processImage;
+  final FoodNotificationScheduler? scheduler;
 
   /// Async pick override (production-like). Prefer [syncPickOverride] in widget tests.
   final Future<File?> Function(ImageSource source)? pickOverride;
@@ -32,6 +36,9 @@ class FoodCaptureScreen extends StatefulWidget {
 
   /// Test seam: bypass [Image.file] decode in widget tests.
   final Widget Function(File)? imageBuilder;
+  
+  /// Initial slot from notification payload.
+  final String? initialSlot;
 
   @override
   State<FoodCaptureScreen> createState() => _FoodCaptureScreenState();
@@ -46,6 +53,24 @@ class _FoodCaptureScreenState extends State<FoodCaptureScreen> {
   bool _isSaving = false;
 
   static const _mealSlots = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+
+  @override
+  void initState() {
+    super.initState();
+    // Set initial slot from notification if provided
+    if (widget.initialSlot != null) {
+      final normalized = _normalizeSlot(widget.initialSlot!);
+      if (_mealSlots.map((s) => s.toLowerCase()).contains(normalized.toLowerCase())) {
+        _selectedSlot = normalized.substring(0, 1).toUpperCase() + normalized.substring(1);
+      }
+    }
+  }
+
+  String _normalizeSlot(String slot) {
+    // Handle snack1/snack2 -> snack
+    if (slot.startsWith('snack')) return 'snack';
+    return slot;
+  }
 
   @override
   void dispose() {
@@ -117,6 +142,11 @@ class _FoodCaptureScreenState extends State<FoodCaptureScreen> {
       );
 
       await widget.store.save(meal, processedBytes);
+      
+      // Cancel today's reminder for this slot (if enabled)
+      if (meal.slot != null && widget.scheduler != null) {
+        await widget.scheduler!.cancelSlotForToday(meal.slot!);
+      }
 
       if (!mounted) return;
       Navigator.pop(context);

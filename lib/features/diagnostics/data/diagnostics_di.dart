@@ -6,6 +6,8 @@ import 'package:fitness_os/features/device_pairing/data/repositories/device_pair
 import 'package:fitness_os/features/device_pairing/domain/repositories/device_pairing_repository.dart';
 import 'package:fitness_os/features/diagnostics/data/app_data_export_service.dart';
 import 'package:fitness_os/features/food/data/food_meal_store.dart';
+import 'package:fitness_os/features/food/data/food_notification_scheduler.dart';
+import 'package:fitness_os/features/food/domain/food_capture_intent.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
 
@@ -14,7 +16,7 @@ import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.d
 /// Call **after** [initVitalsDependencies] and [initFoodDependencies] so wipe
 /// extras compose rather than overwrite.
 ///
-/// Last-writer composition pattern: vitals clear → app export prune → food clear.
+/// Last-writer composition pattern: vitals clear → app export prune → food clear → cancel notifs.
 /// DO NOT assign onForgetWipeExtras from food_di alone; this is the only site.
 Future<void> initDiagnosticsDependencies(GetIt sl) async {
   if (sl.isRegistered<AppDataExportService>()) return;
@@ -40,13 +42,20 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
     final vitals = sl<VitalsRepository>();
     final export = sl<AppDataExportService>();
     final foodStore = sl.isRegistered<FoodMealStore>() ? sl<FoodMealStore>() : null;
+    final foodScheduler = sl.isRegistered<FoodNotificationScheduler>() 
+        ? sl<FoodNotificationScheduler>() 
+        : null;
 
-    // Last-writer composition: vitals → export → food
+    // Last-writer composition: vitals → export → food → cancel notifs
     pairing.onForgetWipeExtras = () async {
       await vitals.clearLocal();
       await export.pruneExportCache();
       if (foodStore != null) {
         await foodStore.clearLocal();
+      }
+      if (foodScheduler != null) {
+        await foodScheduler.cancelAll();
+        FoodCaptureIntent.clearPending();
       }
     };
 
