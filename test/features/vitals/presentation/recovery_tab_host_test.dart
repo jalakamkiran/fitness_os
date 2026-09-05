@@ -1,10 +1,15 @@
+import 'dart:io';
+
 import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get_it/get_it.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fitness_os/core/error/failures.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
+import 'package:fitness_os/features/food/data/food_meal_store.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_bloc.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_event.dart';
@@ -95,6 +100,24 @@ class _FakeRepo implements VitalsRepository {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  setUp(() async {
+    // Set up minimal Food DI for RecoveryTabHost tests
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final tempDir = await Directory.systemTemp.createTemp('recovery_test');
+    final store = FoodMealStore(prefs: prefs, rootOverride: () => tempDir);
+    
+    if (!GetIt.I.isRegistered<FoodMealStore>()) {
+      GetIt.I.registerSingleton<FoodMealStore>(store);
+    }
+  });
+
+  tearDown(() async {
+    if (GetIt.I.isRegistered<FoodMealStore>()) {
+      await GetIt.I.unregister<FoodMealStore>();
+    }
+  });
+
   testWidgets('Recovery host switches Vitals | Sleep without second nav',
       (tester) async {
     final repo = _FakeRepo();
@@ -174,7 +197,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Food Logging'), findsOneWidget);
+    expect(find.text('Today'), findsOneWidget);
+    expect(find.text('No meals logged'), findsOneWidget);
     expect(find.text('Log meal'), findsOneWidget);
     expect(find.text('Set meal times'), findsOneWidget);
   });
