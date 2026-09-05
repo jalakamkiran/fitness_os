@@ -2,6 +2,7 @@
 title: "feat: Food logging photo AI (v0 habit → v0.5 estimate)"
 type: feat
 status: active
+phase_a_complete: 2026-09-05
 date: 2026-09-05
 origin: docs/brainstorms/2026-09-05-food-logging-photo-ai-prd.md
 deepened: 2026-09-05
