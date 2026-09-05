@@ -1,6 +1,8 @@
 import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 
+import 'package:fitness_os/features/food/presentation/view/food_capture_route.dart';
+
 /// Food subtab screen: empty state with soft CTAs for logging and schedule.
 class FoodTabScreen extends StatelessWidget {
   const FoodTabScreen({super.key});
@@ -42,14 +44,7 @@ class FoodTabScreen extends StatelessWidget {
           _ActionButton(
             label: 'Log meal',
             icon: Icons.add_a_photo_outlined,
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Meal logging coming soon'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
+            onTap: () => FoodCaptureRoute.go(context),
           ),
           const SizedBox(height: 16),
           _ActionButton(

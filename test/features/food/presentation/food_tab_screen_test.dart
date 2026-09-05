@@ -24,22 +24,35 @@ void main() {
     expect(find.text('Getting started'), findsOneWidget);
   });
 
-  testWidgets('FoodTabScreen shows snackbar when tapping Log meal',
+  testWidgets('FoodTabScreen navigates to capture route when tapping Log meal',
       (tester) async {
+    bool didAttemptNavigation = false;
+    
     await tester.pumpWidget(
       MaterialApp(
         theme: BpTheme.light(),
         home: const Scaffold(
           body: FoodTabScreen(),
         ),
+        onGenerateRoute: (settings) {
+          if (settings.name == '/food_capture') {
+            didAttemptNavigation = true;
+            return MaterialPageRoute(
+              builder: (_) => const Scaffold(body: Text('Capture route')),
+            );
+          }
+          return null;
+        },
       ),
     );
 
+    // Tap Log meal button
     await tester.tap(find.text('Log meal'));
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 1));
-
-    expect(find.text('Meal logging coming soon'), findsOneWidget);
+    await tester.pumpAndSettle();
+    
+    // Verify navigation was attempted
+    expect(didAttemptNavigation, isTrue);
+    expect(find.text('Capture route'), findsOneWidget);
   });
 
   testWidgets('FoodTabScreen shows snackbar when tapping Set meal times',
