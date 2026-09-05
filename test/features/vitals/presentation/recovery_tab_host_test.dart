@@ -133,4 +133,49 @@ void main() {
     expect(find.text('View historic sleep data'), findsOneWidget);
     expect(find.text('Advanced sleep metrics — unlock soon'), findsOneWidget);
   });
+
+  testWidgets('Recovery host includes Food subtab in IndexedStack',
+      (tester) async {
+    final repo = _FakeRepo();
+    final bloc = VitalsBloc(repository: repo)..add(const VitalsStarted());
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: BpTheme.light(),
+        home: RecoveryTabHost(bloc: bloc, repository: repo),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Food'), findsOneWidget);
+
+    final indexedStack = tester.widget<IndexedStack>(
+      find.byType(IndexedStack),
+    );
+    expect(indexedStack.children.length, 3);
+  });
+
+  testWidgets('Food subtab displays Food home without vitals data',
+      (tester) async {
+    final repo = _FakeRepo();
+    final bloc = VitalsBloc(repository: repo)..add(const VitalsStarted());
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: BpTheme.light(),
+        home: RecoveryTabHost(bloc: bloc, repository: repo),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await tester.tap(find.text('Food'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Food Logging'), findsOneWidget);
+    expect(find.text('Log meal'), findsOneWidget);
+    expect(find.text('Set meal times'), findsOneWidget);
+  });
 }

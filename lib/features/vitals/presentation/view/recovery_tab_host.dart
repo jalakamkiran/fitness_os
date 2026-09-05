@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:fitness_os/core/di/injector.dart';
+import 'package:fitness_os/features/food/presentation/view/food_tab_screen.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_bloc.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_event.dart';
@@ -89,10 +90,15 @@ class _RecoveryViewState extends State<_RecoveryView> {
           ),
           Expanded(
             child: IndexedStack(
-              index: _subtab == RecoverySubtab.vitals ? 0 : 1,
+              index: _subtab == RecoverySubtab.vitals
+                  ? 0
+                  : _subtab == RecoverySubtab.sleep
+                      ? 1
+                      : 2,
               children: [
                 const VitalsScreen(embedded: true),
                 SleepTabScreen(repository: widget.repository),
+                const FoodTabScreen(),
               ],
             ),
           ),
