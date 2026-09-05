@@ -5,6 +5,7 @@ import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/device_pairing/data/repositories/device_pairing_repository_impl.dart';
 import 'package:fitness_os/features/device_pairing/domain/repositories/device_pairing_repository.dart';
 import 'package:fitness_os/features/diagnostics/data/app_data_export_service.dart';
+import 'package:fitness_os/features/food/data/food_day_export_service.dart';
 import 'package:fitness_os/features/food/data/food_meal_store.dart';
 import 'package:fitness_os/features/food/data/food_notification_scheduler.dart';
 import 'package:fitness_os/features/food/domain/food_capture_intent.dart';
@@ -16,7 +17,7 @@ import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.d
 /// Call **after** [initVitalsDependencies] and [initFoodDependencies] so wipe
 /// extras compose rather than overwrite.
 ///
-/// Last-writer composition pattern: vitals clear → app export prune → food clear → cancel notifs.
+/// Last-writer composition pattern: vitals clear → app export prune → food clear → food export prune → cancel notifs.
 /// DO NOT assign onForgetWipeExtras from food_di alone; this is the only site.
 Future<void> initDiagnosticsDependencies(GetIt sl) async {
   if (sl.isRegistered<AppDataExportService>()) return;
@@ -45,13 +46,19 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
     final foodScheduler = sl.isRegistered<FoodNotificationScheduler>() 
         ? sl<FoodNotificationScheduler>() 
         : null;
+    final foodExport = sl.isRegistered<FoodDayExportService>()
+        ? sl<FoodDayExportService>()
+        : null;
 
-    // Last-writer composition: vitals → export → food → cancel notifs
+    // Last-writer composition: vitals → export → food → food export → cancel notifs
     pairing.onForgetWipeExtras = () async {
       await vitals.clearLocal();
       await export.pruneExportCache();
       if (foodStore != null) {
         await foodStore.clearLocal();
+      }
+      if (foodExport != null) {
+        await foodExport.pruneFoodExportCache();
       }
       if (foodScheduler != null) {
         await foodScheduler.cancelAll();
@@ -59,8 +66,9 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
       }
     };
 
-    // TODO U6: OR foodExportInFlight into isForgetBlocked (stub false for now)
-    pairing.isForgetBlocked =
-        () => vitals.isSyncOrMergeInFlight || export.exportInFlight;
+    pairing.isForgetBlocked = () =>
+        vitals.isSyncOrMergeInFlight ||
+        export.exportInFlight ||
+        (foodExport?.exportInFlight ?? false);
   }
 }

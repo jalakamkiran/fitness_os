@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
+import 'package:share_plus/share_plus.dart';
 
+import 'package:fitness_os/features/food/data/food_day_export_service.dart';
 import 'package:fitness_os/features/food/data/food_meal_store.dart';
 import 'package:fitness_os/features/food/domain/daily_food_totals.dart';
 import 'package:fitness_os/features/food/domain/food_meal.dart';
@@ -15,12 +17,20 @@ import 'package:fitness_os/features/food/presentation/widgets/food_meal_row.dart
 class FoodTabScreen extends StatefulWidget {
   const FoodTabScreen({
     this.store,
+    this.exportService,
+    this.shareExport,
     this.imageBuilder,
     super.key,
   });
 
   /// Optional store for tests; defaults to GetIt.
   final FoodMealStore? store;
+
+  /// Optional export service for tests; defaults to GetIt.
+  final FoodDayExportService? exportService;
+
+  /// Test seam — production uses [SharePlus].
+  final Future<void> Function(File file)? shareExport;
   
   /// Test seam: bypass async Image.file in tests.
   final Widget Function(File)? imageBuilder;
@@ -31,14 +41,17 @@ class FoodTabScreen extends StatefulWidget {
 
 class _FoodTabScreenState extends State<FoodTabScreen> {
   late FoodMealStore _store;
+  late FoodDayExportService _exportService;
   String _selectedDayKey = '';
   DailyFoodTotals? _dayTotals;
   bool _isLoading = true;
+  bool _exportBusy = false;
 
   @override
   void initState() {
     super.initState();
     _store = widget.store ?? GetIt.I<FoodMealStore>();
+    _exportService = widget.exportService ?? GetIt.I<FoodDayExportService>();
     _selectedDayKey = _formatDayKey(DateTime.now());
     _loadDay();
   }
@@ -90,6 +103,126 @@ class _FoodTabScreenState extends State<FoodTabScreen> {
     }
   }
 
+  Future<void> _onExportDay() async {
+    if (_exportBusy) return;
+
+    final meals = _dayTotals?.meals ?? [];
+    if (meals.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Export day meals?'),
+        content: const Text(
+          'This creates a ZIP file of meal photos and metadata for this day. '
+          'It contains sensitive health data and is not anonymized. '
+          'After you share it, recipients may keep copies — deleting the '
+          'export cache does not revoke shared copies.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Export'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    setState(() => _exportBusy = true);
+
+    final result = await _exportService.exportDayToCache(_selectedDayKey);
+
+    if (!mounted) return;
+
+    if (!result.isSuccess || result.file == null) {
+      setState(() => _exportBusy = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message ?? 'Export failed')),
+      );
+      return;
+    }
+
+    final file = result.file!;
+    final bytes = result.byteLength ?? await file.length();
+    if (!mounted) return;
+
+    if (bytes > FoodDayExportService.softWarnBytes) {
+      final mb = (bytes / (1024 * 1024)).toStringAsFixed(1);
+      final cont = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Large export'),
+          content: Text(
+            'Export is about $mb MB. Continue to the share sheet?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      );
+      if (cont != true) {
+        if (!mounted) return;
+        setState(() => _exportBusy = false);
+        return;
+      }
+    }
+
+    if (!mounted) return;
+    final sharePath = file.absolute.path;
+    if (!sharePath.contains('/day_food_exports/')) {
+      setState(() => _exportBusy = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Export path refused — not under export cache'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final share = widget.shareExport;
+      if (share != null) {
+        await share(file);
+      } else {
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(file.path, mimeType: 'application/zip')],
+            subject: 'Food day export',
+          ),
+        );
+      }
+      if (!mounted) return;
+      setState(() => _exportBusy = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Export ready')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _exportBusy = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Share failed: $e')),
+      );
+    }
+  }
+
   String _formatDayKey(DateTime date) {
     return '${date.year.toString().padLeft(4, '0')}-'
         '${date.month.toString().padLeft(2, '0')}-'
@@ -137,6 +270,9 @@ class _FoodTabScreenState extends State<FoodTabScreen> {
     final dateText = isToday
         ? 'Today'
         : '${_monthName(date.month)} ${date.day}, ${date.year}';
+    
+    final meals = _dayTotals?.meals ?? [];
+    final canExport = meals.isNotEmpty && !_exportBusy;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -159,6 +295,14 @@ class _FoodTabScreenState extends State<FoodTabScreen> {
                 color: colors.ink,
               ),
             ),
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.ios_share,
+              color: canExport ? colors.ink : colors.inkFaint,
+            ),
+            onPressed: canExport ? _onExportDay : null,
+            tooltip: 'Export day',
           ),
           IconButton(
             icon: Icon(
