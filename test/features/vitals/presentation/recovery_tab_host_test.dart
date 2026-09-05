@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fitness_os/core/error/failures.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
+import 'package:fitness_os/features/food/data/food_day_export_service.dart';
 import 'package:fitness_os/features/food/data/food_meal_store.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_bloc.dart';
@@ -110,9 +111,22 @@ void main() {
     if (!GetIt.I.isRegistered<FoodMealStore>()) {
       GetIt.I.registerSingleton<FoodMealStore>(store);
     }
+    
+    if (!GetIt.I.isRegistered<FoodDayExportService>()) {
+      final exportService = FoodDayExportService(
+        store: store,
+        isForgetInFlight: () => false,
+        sideFileRootOverride: () => tempDir,
+        exportCacheRootOverride: () => tempDir,
+      );
+      GetIt.I.registerSingleton<FoodDayExportService>(exportService);
+    }
   });
 
   tearDown(() async {
+    if (GetIt.I.isRegistered<FoodDayExportService>()) {
+      await GetIt.I.unregister<FoodDayExportService>();
+    }
     if (GetIt.I.isRegistered<FoodMealStore>()) {
       await GetIt.I.unregister<FoodMealStore>();
     }

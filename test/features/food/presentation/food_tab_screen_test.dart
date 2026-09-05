@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:fitness_os/features/food/data/food_day_export_service.dart';
 import 'package:fitness_os/features/food/data/food_meal_store.dart';
 import 'package:fitness_os/features/food/presentation/view/food_tab_screen.dart';
 
@@ -13,6 +14,7 @@ void main() {
 
   group('FoodTabScreen basic functionality', () {
     late FoodMealStore store;
+    late FoodDayExportService exportService;
     late Directory tempDir;
 
     setUp(() async {
@@ -20,6 +22,12 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       tempDir = await Directory.systemTemp.createTemp('food_tab_screen');
       store = FoodMealStore(prefs: prefs, rootOverride: () => tempDir);
+      exportService = FoodDayExportService(
+        store: store,
+        isForgetInFlight: () => false,
+        sideFileRootOverride: () => tempDir,
+        exportCacheRootOverride: () => tempDir,
+      );
     });
 
     tearDown(() async {
@@ -33,7 +41,7 @@ void main() {
         MaterialApp(
           theme: BpTheme.light(),
           home: Scaffold(
-            body: FoodTabScreen(store: store),
+            body: FoodTabScreen(store: store, exportService: exportService),
           ),
         ),
       );
@@ -50,7 +58,7 @@ void main() {
         MaterialApp(
           theme: BpTheme.light(),
           home: Scaffold(
-            body: FoodTabScreen(store: store),
+            body: FoodTabScreen(store: store, exportService: exportService),
           ),
         ),
       );
@@ -69,7 +77,7 @@ void main() {
         MaterialApp(
           theme: BpTheme.light(),
           home: Scaffold(
-            body: FoodTabScreen(store: store),
+            body: FoodTabScreen(store: store, exportService: exportService),
           ),
           onGenerateRoute: (settings) {
             if (settings.name == '/food_capture') {
@@ -100,7 +108,7 @@ void main() {
         MaterialApp(
           theme: BpTheme.light(),
           home: Scaffold(
-            body: FoodTabScreen(store: store),
+            body: FoodTabScreen(store: store, exportService: exportService),
           ),
           onGenerateRoute: (settings) {
             if (settings.name == '/food/schedule') {
@@ -127,7 +135,7 @@ void main() {
         MaterialApp(
           theme: BpTheme.light(),
           home: Scaffold(
-            body: FoodTabScreen(store: store),
+            body: FoodTabScreen(store: store, exportService: exportService),
           ),
         ),
       );
