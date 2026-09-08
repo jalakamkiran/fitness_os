@@ -1,7 +1,7 @@
 import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 
-enum RecoverySubtab { vitals, sleep }
+enum RecoverySubtab { vitals, sleep, food }
 
 /// SportTabs-style segmented switcher for Recovery: Vitals | Sleep.
 class RecoverySubtabs extends StatelessWidget {
@@ -42,6 +42,13 @@ class RecoverySubtabs extends StatelessWidget {
                 label: 'Sleep',
                 selected: selected == RecoverySubtab.sleep,
                 onTap: () => onSelected(RecoverySubtab.sleep),
+              ),
+            ),
+            Expanded(
+              child: _Tab(
+                label: 'Food',
+                selected: selected == RecoverySubtab.food,
+                onTap: () => onSelected(RecoverySubtab.food),
               ),
             ),
           ],

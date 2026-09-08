@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    
+    <!-- Camera for meal photo capture -->
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <!-- Classic Bluetooth + BLE discovery for Huawei GT5 companion link -->
     <uses-feature
@@ -59,6 +63,19 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        
+        <!-- flutter_local_notifications: scheduled notification receiver -->
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        
+        <!-- flutter_local_notifications: boot receiver to reschedule -->
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
     </application>
     <queries>
         <intent>
