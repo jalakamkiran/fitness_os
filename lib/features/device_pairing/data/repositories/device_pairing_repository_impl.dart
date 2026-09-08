@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:fitness_os/core/error/failures.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/device_pairing/domain/repositories/device_pairing_repository.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class DevicePairingRepositoryImpl implements DevicePairingRepository {
@@ -185,6 +188,37 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
             fileSotLeft) {
           return const Left(
             ValidationFailure('Forget verify failed — vitals residue remains'),
+          );
+        }
+
+        // Verify food keys and files gone
+        final foodIndexLeft = _prefs.containsKey(GateAPrefs.foodMealsIndexJson);
+        if (foodIndexLeft) {
+          return const Left(
+            ValidationFailure('Forget verify failed — food prefs residue remains'),
+          );
+        }
+
+        // Verify no meal files under food/meals
+        try {
+          final root = await getApplicationSupportDirectory();
+          final mealsDir = Directory('${root.path}/${GateAPrefs.foodMealsDir}');
+          if (await mealsDir.exists()) {
+            final hasFiles = await mealsDir
+                .list(recursive: true)
+                .any((entity) => entity is File);
+            if (hasFiles) {
+              return const Left(
+                ValidationFailure(
+                  'Forget verify failed — food meal files residue remains',
+                ),
+              );
+            }
+          }
+        } catch (_) {
+          // If we can't check, fail safe
+          return const Left(
+            ValidationFailure('Forget verify failed — could not verify food residue'),
           );
         }
       }

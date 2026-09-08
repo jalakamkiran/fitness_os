@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:fitness_os/core/di/injector.dart';
+import 'package:fitness_os/features/food/domain/food_capture_intent.dart';
+import 'package:fitness_os/features/food/presentation/view/food_tab_screen.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_bloc.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_event.dart';
@@ -10,7 +12,7 @@ import 'package:fitness_os/features/vitals/presentation/view/sleep_tab_screen.da
 import 'package:fitness_os/features/vitals/presentation/view/vitals_screen.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/recovery_subtabs.dart';
 
-/// Recovery bottom-tab host: shared [VitalsBloc] + Vitals | Sleep subtabs.
+/// Recovery bottom-tab host: shared [VitalsBloc] + Vitals | Sleep | Food subtabs.
 class RecoveryTabHost extends StatelessWidget {
   const RecoveryTabHost({super.key, this.bloc, this.repository});
 
@@ -48,6 +50,51 @@ class _RecoveryView extends StatefulWidget {
 
 class _RecoveryViewState extends State<_RecoveryView> {
   RecoverySubtab _subtab = RecoverySubtab.sleep;
+
+  @override
+  void initState() {
+    super.initState();
+    // Check for pending food capture intent
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _consumePendingIntent();
+    });
+  }
+
+  void _consumePendingIntent() {
+    if (!mounted) return;
+    
+    final intent = FoodCaptureIntent.consumePending();
+    if (intent != null) {
+      // Switch to Food tab
+      setState(() => _subtab = RecoverySubtab.food);
+      
+      // Open capture with slot
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.pushNamed(
+            context,
+            '/food_capture',
+            arguments: {'slot': intent.slot},
+          );
+        }
+      });
+    }
+  }
+
+  /// Public API to select Food and open capture (called from AppShell deep link).
+  void selectFoodAndOpenCapture({String? slot}) {
+    setState(() => _subtab = RecoverySubtab.food);
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Navigator.pushNamed(
+          context,
+          '/food_capture',
+          arguments: slot != null ? {'slot': slot} : null,
+        );
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -89,10 +136,15 @@ class _RecoveryViewState extends State<_RecoveryView> {
           ),
           Expanded(
             child: IndexedStack(
-              index: _subtab == RecoverySubtab.vitals ? 0 : 1,
+              index: _subtab == RecoverySubtab.vitals
+                  ? 0
+                  : _subtab == RecoverySubtab.sleep
+                      ? 1
+                      : 2,
               children: [
                 const VitalsScreen(embedded: true),
                 SleepTabScreen(repository: widget.repository),
+                const FoodTabScreen(),
               ],
             ),
           ),

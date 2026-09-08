@@ -46,4 +46,14 @@ abstract final class GateAPrefs {
 
   /// Unix ms of last Home-observed successful sync pass.
   static const homeLastSyncAtMs = 'home_last_sync_at_ms';
+
+  /// JSON list of meal metadata (FoodMeal index).
+  static const foodMealsIndexJson = 'food_meals_index_json';
+  /// Side-file subdir for meal photos: {dayKey}/{mealId}.jpg
+  static const foodMealsDir = 'food/meals';
+  
+  /// JSON map of meal schedule config (slots/times/enabled).
+  static const foodScheduleJson = 'food_schedule_json';
+  /// Reminders globally enabled (default false until user opts in).
+  static const foodRemindersEnabled = 'food_reminders_enabled';
 }

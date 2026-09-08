@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Camera access is required to capture meal photos for food logging</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Photo library access is required to select meal photos for food logging</string>
 </dict>
 </plist>

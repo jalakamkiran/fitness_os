@@ -5,13 +5,20 @@ import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/device_pairing/data/repositories/device_pairing_repository_impl.dart';
 import 'package:fitness_os/features/device_pairing/domain/repositories/device_pairing_repository.dart';
 import 'package:fitness_os/features/diagnostics/data/app_data_export_service.dart';
+import 'package:fitness_os/features/food/data/food_day_export_service.dart';
+import 'package:fitness_os/features/food/data/food_meal_store.dart';
+import 'package:fitness_os/features/food/data/food_notification_scheduler.dart';
+import 'package:fitness_os/features/food/domain/food_capture_intent.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
 
-/// Registers export service and composes Forget wipe/busy with vitals.
+/// Registers export service and composes Forget wipe/busy with vitals + food.
 ///
-/// Call **after** [initVitalsDependencies] so wipe extras compose rather than
-/// overwrite.
+/// Call **after** [initVitalsDependencies] and [initFoodDependencies] so wipe
+/// extras compose rather than overwrite.
+///
+/// Last-writer composition pattern: vitals clear → app export prune → food clear → food export prune → cancel notifs.
+/// DO NOT assign onForgetWipeExtras from food_di alone; this is the only site.
 Future<void> initDiagnosticsDependencies(GetIt sl) async {
   if (sl.isRegistered<AppDataExportService>()) return;
 
@@ -35,11 +42,33 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
   if (pairing is DevicePairingRepositoryImpl) {
     final vitals = sl<VitalsRepository>();
     final export = sl<AppDataExportService>();
+    final foodStore = sl.isRegistered<FoodMealStore>() ? sl<FoodMealStore>() : null;
+    final foodScheduler = sl.isRegistered<FoodNotificationScheduler>() 
+        ? sl<FoodNotificationScheduler>() 
+        : null;
+    final foodExport = sl.isRegistered<FoodDayExportService>()
+        ? sl<FoodDayExportService>()
+        : null;
+
+    // Last-writer composition: vitals → export → food → food export → cancel notifs
     pairing.onForgetWipeExtras = () async {
       await vitals.clearLocal();
       await export.pruneExportCache();
+      if (foodStore != null) {
+        await foodStore.clearLocal();
+      }
+      if (foodExport != null) {
+        await foodExport.pruneFoodExportCache();
+      }
+      if (foodScheduler != null) {
+        await foodScheduler.cancelAll();
+        FoodCaptureIntent.clearPending();
+      }
     };
-    pairing.isForgetBlocked =
-        () => vitals.isSyncOrMergeInFlight || export.exportInFlight;
+
+    pairing.isForgetBlocked = () =>
+        vitals.isSyncOrMergeInFlight ||
+        export.exportInFlight ||
+        (foodExport?.exportInFlight ?? false);
   }
 }
