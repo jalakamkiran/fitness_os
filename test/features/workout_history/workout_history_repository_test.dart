@@ -316,6 +316,189 @@ void main() {
       expect(prefs.getString(GateAPrefs.workoutsJson), isNotNull);
     });
 
+    test(
+      'partial_batch persists Totals+leftover; sampleFetch stays timeout',
+      () async {
+        // AE6: sample timeout must not drop native Totals / leftovers.
+        const cursor = 1_700_000_000;
+        SharedPreferences.setMockInitialValues({
+          GateAPrefs.gateAPassed: true,
+          GateAPrefs.lastSyncCursor: cursor,
+          GateAPrefs.swimSegmentParserVersion:
+              WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
+          GateAPrefs.workoutsJson:
+              '[{"number":1,"startTime":100,"endTime":200,"durationSec":100,"type":1}]',
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final tmp = await Directory.systemTemp.createTemp('fos_partial_batch_');
+        addTearDown(() => tmp.delete(recursive: true));
+
+        final leftoverBytes =
+            Uint8List.fromList(List.generate(24, (i) => i + 10));
+        final link = _StubLink(
+          result: WorkoutSyncResult(
+            status: WorkoutSyncStatus.partialBatch,
+            message: 'Workout Sync incomplete — sample enrich timed out',
+            workouts: [
+              WorkoutSummary(
+                number: 1408,
+                startTime: 1_700_200_000,
+                endTime: 1_700_200_900,
+                durationSec: 900,
+                type: 140,
+                calories: 180,
+                load: 33,
+                dataCount: 2,
+                enrichmentStatus: 'partial',
+                sampleFetch: 'timeout',
+                leftoverBytes: leftoverBytes,
+                leftoverLen: leftoverBytes.length,
+              ),
+              // Totals-only historical must not keep enrichmentStatus=partial
+              // (clock 3 must not reopen wide windows).
+              const WorkoutSummary(
+                number: 9,
+                startTime: 1_650_000_000,
+                endTime: 1_650_000_600,
+                durationSec: 600,
+                type: 140,
+                calories: 50,
+                enrichmentStatus: 'partial',
+                sampleFetch: 'none',
+              ),
+            ],
+          ),
+        );
+        final leftoverStore = WorkoutLeftoverStore(rootOverride: () => tmp);
+        final repo = WorkoutHistoryRepositoryImpl(
+          link: link,
+          prefs: prefs,
+          leftoverStore: leftoverStore,
+          leftoverRootOverride: () => tmp,
+          sideFileRootOverride: () => tmp,
+        );
+
+        final out = await repo.syncFromWatch();
+        expect(out, isA<Right>());
+        final list = (out as Right).value;
+        expect(list.map((w) => w.number), containsAll([1, 1408, 9]));
+
+        final strength = list.firstWhere((w) => w.number == 1408);
+        expect(strength.load, 33);
+        expect(strength.calories, 180);
+        expect(strength.sampleFetch, 'timeout');
+        expect(strength.enrichmentStatus, 'partial');
+        expect(strength.leftoverLen, 24);
+        expect(strength.leftoverPath, isNotNull);
+
+        final totalsOnly = list.firstWhere((w) => w.number == 9);
+        expect(totalsOnly.enrichmentStatus, 'none');
+
+        final rel = WorkoutLeftoverStore.relativePathFor(
+          workoutNumber: 1408,
+          startTime: 1_700_200_000,
+        );
+        expect(await File('${tmp.path}/$rel').exists(), isTrue);
+        expect(await leftoverStore.loadAtRelativePath(rel), leftoverBytes);
+
+        // Totals complete on partial_batch → cursor may advance.
+        expect(prefs.getInt(GateAPrefs.lastSyncCursor), 1_700_200_901);
+        // Pre-sync row 1 kept (Right replaces list with merge, not drop).
+        expect(list.firstWhere((w) => w.number == 1).type, 1);
+      },
+    );
+
+    test(
+      'stuck with Totals prefix persists maps but does not advance cursor',
+      () async {
+        const cursor = 1_700_000_000;
+        SharedPreferences.setMockInitialValues({
+          GateAPrefs.gateAPassed: true,
+          GateAPrefs.lastSyncCursor: cursor,
+          GateAPrefs.swimSegmentParserVersion:
+              WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final tmp = await Directory.systemTemp.createTemp('fos_stuck_prefix_');
+        addTearDown(() => tmp.delete(recursive: true));
+
+        final leftoverBytes = Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8]);
+        final link = _StubLink(
+          result: WorkoutSyncResult(
+            status: WorkoutSyncStatus.stuck,
+            message: 'Workout totals timed out at #42',
+            workouts: [
+              WorkoutSummary(
+                number: 41,
+                startTime: 1_700_300_000,
+                endTime: 1_700_300_500,
+                durationSec: 500,
+                type: 140,
+                calories: 90,
+                load: 12,
+                leftoverBytes: leftoverBytes,
+                leftoverLen: leftoverBytes.length,
+                sampleFetch: 'none',
+                enrichmentStatus: 'none',
+              ),
+            ],
+          ),
+        );
+        final leftoverStore = WorkoutLeftoverStore(rootOverride: () => tmp);
+        final repo = WorkoutHistoryRepositoryImpl(
+          link: link,
+          prefs: prefs,
+          leftoverStore: leftoverStore,
+          leftoverRootOverride: () => tmp,
+          sideFileRootOverride: () => tmp,
+        );
+
+        final out = await repo.syncFromWatch();
+        expect(out, isA<Right>());
+        final list = (out as Right).value;
+        expect(list, hasLength(1));
+        expect(list.single.number, 41);
+        expect(list.single.load, 12);
+        expect(list.single.leftoverLen, 8);
+
+        final rel = WorkoutLeftoverStore.relativePathFor(
+          workoutNumber: 41,
+          startTime: 1_700_300_000,
+        );
+        expect(await File('${tmp.path}/$rel').exists(), isTrue);
+
+        // Count-incomplete stuck must not advance past unfetched numbers.
+        expect(prefs.getInt(GateAPrefs.lastSyncCursor), cursor);
+      },
+    );
+
+    test('stuck with empty workouts does not merge; prior rows kept', () async {
+      // AE7: empty Dart-abandon stuck stays blocked.
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.lastSyncCursor: 1_700_000_000,
+        GateAPrefs.workoutsJson:
+            '[{"number":7,"startTime":100,"endTime":200,"durationSec":100,"type":140,"load":9}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.stuck,
+          message: 'Sync stuck — disconnect and reconnect',
+          workouts: [],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(link: link, prefs: prefs);
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Left>());
+      final local = await repo.loadLocal();
+      expect(local, hasLength(1));
+      expect(local.single.number, 7);
+      expect(local.single.load, 9);
+      expect(prefs.getInt(GateAPrefs.lastSyncCursor), 1_700_000_000);
+    });
+
     test('ok sync persists canonical swim side-file for pool workout', () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,

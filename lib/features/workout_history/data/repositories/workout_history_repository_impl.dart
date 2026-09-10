@@ -145,8 +145,6 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
       switch (result.status) {
         case WorkoutSyncStatus.notReady:
         case WorkoutSyncStatus.busy:
-        case WorkoutSyncStatus.stuck:
-        case WorkoutSyncStatus.partialBatch:
         case WorkoutSyncStatus.error:
           // Soft Sync failure — not a capability Pass or Blocked-empty claim.
           FosHuaweiLog.i(
@@ -161,14 +159,54 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
                       'Session not ready — reconnect',
                     WorkoutSyncStatus.busy =>
                       'Another Sync is already in progress',
-                    WorkoutSyncStatus.stuck =>
-                      'Sync stuck — disconnect and reconnect',
-                    WorkoutSyncStatus.partialBatch =>
-                      'Workout Sync incomplete — retry after reconnect',
                     _ => 'Sync failed',
                   },
             ),
           );
+        case WorkoutSyncStatus.stuck:
+          // Totals-prefix stuck: persist maps that arrived (AE6/R5). Empty
+          // stuck stays blocked (AE7) — do not merge or advance cursor.
+          FosHuaweiLog.i(
+            syncNotOkSwimStyleOutcomeLine(result.status),
+            op: 'sync',
+          );
+          if (result.workouts.isEmpty) {
+            return Left(
+              ServerFailure(
+                result.message ?? 'Sync stuck — disconnect and reconnect',
+              ),
+            );
+          }
+          final stuckMerged = await _mergeAndPersist(
+            result.workouts,
+            advanceCursor: false,
+          );
+          emitSwimStyleCapabilityLogs(
+            result.workouts,
+            log: (message) => FosHuaweiLog.i(message, op: 'sync'),
+          );
+          // Right so Strength list shows prefix; do not stamp leftover-keep (U4).
+          return Right(stuckMerged);
+        case WorkoutSyncStatus.partialBatch:
+          // Sample enrich incomplete but Totals landed — commit maps (R5/AE6).
+          FosHuaweiLog.i(
+            syncNotOkSwimStyleOutcomeLine(result.status),
+            op: 'sync',
+          );
+          if (result.workouts.isEmpty) {
+            final local = await loadLocal();
+            return Right(local);
+          }
+          final partialMerged = await _mergeAndPersist(
+            result.workouts,
+            advanceCursor: true,
+          );
+          emitSwimStyleCapabilityLogs(
+            result.workouts,
+            log: (message) => FosHuaweiLog.i(message, op: 'sync'),
+          );
+          // Cursor may advance (Totals complete). No leftover-keep stamp (U4).
+          return Right(partialMerged);
         case WorkoutSyncStatus.empty:
           // Keep prior rows; empty window is success.
           final local = await loadLocal();
@@ -212,8 +250,9 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   }
 
   Future<List<WorkoutSummary>> _mergeAndPersist(
-    List<WorkoutSummary> incoming,
-  ) async {
+    List<WorkoutSummary> incoming, {
+    bool advanceCursor = true,
+  }) async {
     _mergeInFlight = true;
     _lastLeftoverPersistLanded = true;
     try {
@@ -225,7 +264,9 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
       final prepared = <WorkoutSummary>[];
       for (final w in incoming) {
         final prior = byNumber[w.number];
-        final united = _unionWorkout(prior, w);
+        // Do not let totals-only rows carry enrichmentStatus=partial — that
+        // widens _resolveSyncStartUnix (clock 3) and can reopen 2022.
+        final united = _unionWorkout(prior, _sanitizeEnrichmentStatus(w));
         prepared.add(await _persistSideArtifacts(united));
       }
 
@@ -261,17 +302,32 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
         await _swimStore.saveAll(swimSessions);
       }
 
-      var maxEnd = 0;
-      for (final w in merged) {
-        if (w.endTime > maxEnd) maxEnd = w.endTime;
-      }
-      if (maxEnd > 0) {
-        await _prefs.setInt(GateAPrefs.lastSyncCursor, maxEnd + 1);
+      // Totals-prefix stuck must not advance past unfetched Count numbers.
+      if (advanceCursor) {
+        var maxEnd = 0;
+        for (final w in merged) {
+          if (w.endTime > maxEnd) maxEnd = w.endTime;
+        }
+        if (maxEnd > 0) {
+          await _prefs.setInt(GateAPrefs.lastSyncCursor, maxEnd + 1);
+        }
       }
       return merged;
     } finally {
       _mergeInFlight = false;
     }
+  }
+
+  /// Keep [enrichmentStatus]=partial only when sample (or other hint-gated)
+  /// enrich is incomplete. Totals-only rows must stay non-partial so clock 3
+  /// does not widen the next Count window to historical starts.
+  WorkoutSummary _sanitizeEnrichmentStatus(WorkoutSummary w) {
+    if (w.enrichmentStatus != 'partial') return w;
+    final totalsOnly = (w.dataCount ?? 0) == 0 &&
+        (w.paceCount ?? 0) == 0 &&
+        (w.segmentsCount ?? 0) == 0;
+    if (!totalsOnly) return w;
+    return w.copyWith(enrichmentStatus: 'none');
   }
 
   /// Presence-preserving union for the same workout number.
