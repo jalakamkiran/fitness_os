@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:get_it/get_it.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fitness_os/core/huawei/huawei_link.dart';
@@ -10,15 +13,21 @@ import 'package:fitness_os/features/food/data/food_meal_store.dart';
 import 'package:fitness_os/features/food/data/food_notification_scheduler.dart';
 import 'package:fitness_os/features/food/domain/food_capture_intent.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
+import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
+import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 
-/// Registers export service and composes Forget wipe/busy with vitals + food.
+/// Registers export service and composes Forget wipe/busy with vitals + food +
+/// workouts.
 ///
-/// Call **after** [initVitalsDependencies] and [initFoodDependencies] so wipe
-/// extras compose rather than overwrite.
+/// Call **after** [initVitalsDependencies], [initFoodDependencies], and
+/// [initWorkoutHistoryDependencies] so wipe extras compose rather than overwrite.
 ///
-/// Last-writer composition pattern: vitals clear → app export prune → food clear → food export prune → cancel notifs.
-/// DO NOT assign onForgetWipeExtras from food_di alone; this is the only site.
+/// Last-writer composition: vitals clear → app export prune → food clear →
+/// food export prune → workout clearLocal → strength export prune →
+/// share_plus prune → cancel notifs.
+/// DO NOT assign onForgetWipeExtras from food_di or workout_history_di;
+/// this is the only site.
 Future<void> initDiagnosticsDependencies(GetIt sl) async {
   if (sl.isRegistered<AppDataExportService>()) return;
 
@@ -42,15 +51,23 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
   if (pairing is DevicePairingRepositoryImpl) {
     final vitals = sl<VitalsRepository>();
     final export = sl<AppDataExportService>();
-    final foodStore = sl.isRegistered<FoodMealStore>() ? sl<FoodMealStore>() : null;
-    final foodScheduler = sl.isRegistered<FoodNotificationScheduler>() 
-        ? sl<FoodNotificationScheduler>() 
+    final foodStore =
+        sl.isRegistered<FoodMealStore>() ? sl<FoodMealStore>() : null;
+    final foodScheduler = sl.isRegistered<FoodNotificationScheduler>()
+        ? sl<FoodNotificationScheduler>()
         : null;
     final foodExport = sl.isRegistered<FoodDayExportService>()
         ? sl<FoodDayExportService>()
         : null;
+    final workouts = sl.isRegistered<WorkoutHistoryRepository>()
+        ? sl<WorkoutHistoryRepository>()
+        : null;
+    final strengthExport = sl.isRegistered<StrengthSessionExportService>()
+        ? sl<StrengthSessionExportService>()
+        : null;
 
-    // Last-writer composition: vitals → export → food → food export → cancel notifs
+    // Last-writer composition — optional stores must not silently overwrite
+    // the vitals/food wipe body when workout DI is missing.
     pairing.onForgetWipeExtras = () async {
       await vitals.clearLocal();
       await export.pruneExportCache();
@@ -60,6 +77,14 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
       if (foodExport != null) {
         await foodExport.pruneFoodExportCache();
       }
+      if (workouts != null) {
+        await workouts.clearLocal();
+      }
+      if (strengthExport != null) {
+        await strengthExport.pruneStrengthExportCache();
+      }
+      // Explicit share_plus prune even if app-data prune were skipped.
+      await pruneSharePlusCache();
       if (foodScheduler != null) {
         await foodScheduler.cancelAll();
         FoodCaptureIntent.clearPending();
@@ -69,6 +94,21 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
     pairing.isForgetBlocked = () =>
         vitals.isSyncOrMergeInFlight ||
         export.exportInFlight ||
-        (foodExport?.exportInFlight ?? false);
+        (foodExport?.exportInFlight ?? false) ||
+        (strengthExport?.exportInFlight ?? false) ||
+        (workouts?.isSyncOrMergeInFlight ?? false);
+  }
+}
+
+/// Removes `getTemporaryDirectory()/share_plus` residue (Forget wipe).
+Future<void> pruneSharePlusCache() async {
+  try {
+    final temp = await getTemporaryDirectory();
+    final shareCache = Directory('${temp.path}/share_plus');
+    if (await shareCache.exists()) {
+      await shareCache.delete(recursive: true);
+    }
+  } catch (_) {
+    // Best-effort prune.
   }
 }

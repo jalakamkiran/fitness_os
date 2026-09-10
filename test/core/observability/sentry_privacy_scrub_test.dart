@@ -50,6 +50,31 @@ void main() {
       expect(out?['status'], 'ok');
     });
 
+    test('drops leftover / HR points / recovery-HR aliases', () {
+      final out = SentryPrivacyScrub.scrubMap({
+        'status': 'ok',
+        'leftover': 'deadbeef',
+        'leftoverBytes': 'aabb',
+        'hrPoints': [70, 72],
+        'recoveryHr': 'blob',
+        'recoveryHeartRates': 'blob2',
+        'pointsBytesBase64': 'YQ==',
+        'nested': {
+          'leftoverBytesHex': 'ff00',
+          'safe': true,
+        },
+      });
+      expect(out?.containsKey('leftover'), isFalse);
+      expect(out?.containsKey('leftoverBytes'), isFalse);
+      expect(out?.containsKey('hrPoints'), isFalse);
+      expect(out?.containsKey('recoveryHr'), isFalse);
+      expect(out?.containsKey('recoveryHeartRates'), isFalse);
+      expect(out?.containsKey('pointsBytesBase64'), isFalse);
+      expect(out?['nested']?.containsKey('leftoverBytesHex'), isFalse);
+      expect(out?['nested']?['safe'], isTrue);
+      expect(out?['status'], 'ok');
+    });
+
     test('drops PlatformException-shaped details', () {
       final out = SentryPrivacyScrub.scrubMap({
         'code': 'sync_failed',

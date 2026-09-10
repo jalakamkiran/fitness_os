@@ -53,6 +53,7 @@ class WorkoutDetailScreen extends StatefulWidget {
 class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   bool _exportBusy = false;
   String? _exportStatus;
+  bool _sessionRemoved = false;
 
   WorkoutSummary get workout => widget.workout;
 
@@ -69,7 +70,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       _export.exportSessionToCache(number);
 
   Future<void> _onExportThisSession() async {
-    if (_exportBusy) return;
+    if (_sessionRemoved || _exportBusy) return;
     if (_serviceBusy) {
       setState(() {
         _exportStatus =
@@ -116,9 +117,13 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     if (!mounted) return;
 
     if (!result.isSuccess || result.file == null) {
+      final gone = (result.message ?? '')
+          .toLowerCase()
+          .contains('no longer on this device');
       setState(() {
         _exportBusy = false;
         _exportStatus = result.message ?? 'Export failed.';
+        if (gone) _sessionRemoved = true;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_exportStatus!)),
@@ -226,7 +231,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.ios_share),
-              onPressed: _exportBusy ? null : _onExportThisSession,
+              onPressed: (_exportBusy || _sessionRemoved)
+                  ? null
+                  : _onExportThisSession,
             )
           else
             IconButton(
@@ -236,7 +243,18 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
             ),
         ],
       ),
-      body: ListView(
+      body: _sessionRemoved
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Session removed',
+                  style: theme.textTheme.titleMedium,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          : ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
           _CountHintsCard(workout: workout),

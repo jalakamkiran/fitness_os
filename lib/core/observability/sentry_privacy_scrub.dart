@@ -21,6 +21,18 @@ abstract final class SentryPrivacyScrub {
     'fitnessTotals',
     'hrSeries',
     'samples',
+    // Strength leftover / sample prove payloads (defense in depth).
+    'leftover',
+    'leftoverBytes',
+    'leftoverbytes',
+    'hrPoints',
+    'hrpoints',
+    'recoveryHr',
+    'recoveryhr',
+    'recoveryHeartRates',
+    'recoveryheartrates',
+    'pointsBytesBase64',
+    'pointsbytesbase64',
     'mac',
     'userId',
     'phoneMac',
@@ -53,7 +65,8 @@ abstract final class SentryPrivacyScrub {
     for (final e in input.entries) {
       final key = e.key;
       if (forbiddenKeys.contains(key) ||
-          forbiddenKeys.contains(key.toLowerCase())) {
+          forbiddenKeys.contains(key.toLowerCase()) ||
+          _isForbiddenPayloadKey(key)) {
         continue;
       }
       final value = e.value;
@@ -68,7 +81,9 @@ abstract final class SentryPrivacyScrub {
             key.toLowerCase().contains('sleep') ||
             key.toLowerCase().contains('hr') ||
             key.toLowerCase().contains('sample') ||
-            key.toLowerCase().contains('segment')) {
+            key.toLowerCase().contains('segment') ||
+            key.toLowerCase().contains('leftover') ||
+            key.toLowerCase().contains('recovery')) {
           continue;
         }
         out[key] = value;
@@ -77,6 +92,20 @@ abstract final class SentryPrivacyScrub {
       }
     }
     return out;
+  }
+
+  /// Drop leftover / HR / recovery-HR aliases even when not exact-cased in
+  /// [forbiddenKeys] (compact encodings must not rely on space/colon hex regex).
+  static bool _isForbiddenPayloadKey(String key) {
+    final lower = key.toLowerCase();
+    return lower.contains('leftover') ||
+        lower.contains('hrpoints') ||
+        lower.contains('hr_points') ||
+        lower == 'hrpoints' ||
+        lower.contains('recoveryhr') ||
+        lower.contains('recovery_hr') ||
+        lower.contains('recoveryheartrate') ||
+        lower.contains('pointsbytes');
   }
 
   static SentryEvent? beforeSend(SentryEvent event, Hint hint) {

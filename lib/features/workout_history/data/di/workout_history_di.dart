@@ -64,6 +64,11 @@ Future<void> initWorkoutHistoryDependencies(GetIt sl) async {
   }
 
   sl.registerFactory(
-    () => WorkoutHistoryBloc(repository: sl()),
+    () => WorkoutHistoryBloc(
+      repository: sl(),
+      invalidation: sl.isRegistered<StoreInvalidation>()
+          ? sl<StoreInvalidation>()
+          : null,
+    ),
   );
 }
