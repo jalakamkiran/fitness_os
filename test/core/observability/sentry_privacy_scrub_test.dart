@@ -75,6 +75,28 @@ void main() {
       expect(out?['status'], 'ok');
     });
 
+    test('drops strength prove envelope sessions / bytesBase64', () {
+      final out = SentryPrivacyScrub.scrubMap({
+        'status': 'ok',
+        'kind': 'strength_session',
+        'sessionCount': 1,
+        'sessions': [
+          {
+            'number': 42,
+            'leftover': {'bytesBase64': 'YQ=='},
+            'samples': {'pointsBytesBase64': 'Yg=='},
+          },
+        ],
+        'flat': {'bytesBase64': 'Yw=='},
+      });
+      expect(out?.containsKey('sessions'), isFalse);
+      expect(out?.containsKey('sessionCount'), isFalse);
+      // Nested map with only forbidden keys is dropped entirely.
+      expect(out?.containsKey('flat'), isFalse);
+      expect(out?['status'], 'ok');
+      expect(out?['kind'], 'strength_session');
+    });
+
     test('drops PlatformException-shaped details', () {
       final out = SentryPrivacyScrub.scrubMap({
         'code': 'sync_failed',

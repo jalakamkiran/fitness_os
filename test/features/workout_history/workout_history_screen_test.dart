@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get_it/get_it.dart';
 
+import 'dart:io';
+
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/error/failures.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
+import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
@@ -151,11 +154,22 @@ void main() {
     await GetIt.I.reset();
   });
 
-  Future<void> pumpScreen(WidgetTester tester) async {
+  Future<void> pumpScreen(
+    WidgetTester tester, {
+    Future<StrengthSessionExportResult> Function()? exportAllOverride,
+    bool Function()? exportBusyOverride,
+    Future<void> Function(File file)? shareExport,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: BpTheme.light(),
-        home: WorkoutHistoryScreen(bloc: bloc),
+        home: WorkoutHistoryScreen(
+          bloc: bloc,
+          exportAllOverride: exportAllOverride,
+          // Avoid GetIt StrengthSessionExportService in widget tests.
+          exportBusyOverride: exportBusyOverride ?? () => false,
+          shareExport: shareExport,
+        ),
         onGenerateRoute: (settings) {
           if (settings.name == WorkoutDetailRoute.path) {
             final args = settings.arguments;
@@ -239,5 +253,144 @@ void main() {
     expect(find.text('220'), findsOneWidget);
     expect(find.text('Indoor run · #35'), findsNothing);
     expect(find.text('Pool swim · #11'), findsNothing);
+  });
+
+  testWidgets('Export all strength: confirm → export+share; cancel → no share',
+      (tester) async {
+    var exportCalls = 0;
+    var shareCalls = 0;
+    final tempDir = Directory(
+      'build/strength_export_all_${DateTime.now().microsecondsSinceEpoch}',
+    )..createSync(recursive: true);
+    addTearDown(() {
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    });
+    final file = File(
+      '${tempDir.path}/${StrengthSessionExportService.exportCacheDirName}/'
+      'strength_all_test.json',
+    );
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync('{"schemaVersion":1,"sessions":[{"number":34}]}');
+
+    await pumpScreen(
+      tester,
+      exportAllOverride: () async {
+        exportCalls++;
+        return StrengthSessionExportResult.success(
+          file: file,
+          byteLength: file.lengthSync(),
+        );
+      },
+      exportBusyOverride: () => false,
+      shareExport: (_) async {
+        shareCalls++;
+      },
+    );
+
+    await tester.tap(find.text('Strength'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Export all strength sessions'), findsOneWidget);
+
+    // Cancel → no export/share.
+    await tester.tap(find.text('Export all strength sessions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Export all strength sessions?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(exportCalls, 0);
+    expect(shareCalls, 0);
+
+    // Confirm → export + share.
+    await tester.tap(find.text('Export all strength sessions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export'));
+    await tester.pumpAndSettle();
+    expect(exportCalls, 1);
+    expect(shareCalls, 1);
+  });
+
+  testWidgets('Export all strength blocked when sync/merge busy',
+      (tester) async {
+    var exportCalls = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: BpTheme.light(),
+        home: WorkoutHistoryScreen(
+          bloc: bloc,
+          exportAllOverride: () async {
+            exportCalls++;
+            return const StrengthSessionExportResult.failed('should not run');
+          },
+          // Busy shows an indeterminate spinner — avoid pumpAndSettle.
+          exportBusyOverride: () => true,
+          shareExport: (_) async {},
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Strength'));
+    await tester.pump();
+
+    final exportBtn = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'Export all strength sessions'),
+    );
+    expect(exportBtn.onPressed, isNull);
+    expect(exportCalls, 0);
+  });
+
+  group('Export all strength — empty device', () {
+    late WorkoutHistoryBloc emptyBloc;
+
+    setUp(() async {
+      await GetIt.I.reset();
+      final swimOnly = [
+        _workout(
+          number: 11,
+          type: 6,
+          startTime:
+              DateTime(2026, 7, 24, 7, 12).millisecondsSinceEpoch ~/ 1000,
+          durationSec: 42 * 60,
+          distanceM: 1250,
+        ),
+      ];
+      final repo = _FakeRepo(swimOnly);
+      sl.registerLazySingleton<WorkoutHistoryRepository>(() => repo);
+      emptyBloc = WorkoutHistoryBloc(repository: repo);
+      final loaded =
+          emptyBloc.stream.firstWhere((s) => s.workouts.isNotEmpty);
+      emptyBloc.add(const WorkoutHistoryStarted());
+      await loaded;
+    });
+
+    tearDown(() async {
+      await emptyBloc.close();
+      await GetIt.I.reset();
+    });
+
+    testWidgets('Export CTA disabled when no type=140 sessions',
+        (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BpTheme.light(),
+          home: WorkoutHistoryScreen(
+            bloc: emptyBloc,
+            exportBusyOverride: () => false,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.text('Strength'));
+      await tester.pump();
+
+      final exportBtn = tester.widget<OutlinedButton>(
+        find.widgetWithText(OutlinedButton, 'Export all strength sessions'),
+      );
+      expect(exportBtn.onPressed, isNull);
+      expect(
+        find.text('No strength sessions on this device to export.'),
+        findsOneWidget,
+      );
+    });
   });
 }

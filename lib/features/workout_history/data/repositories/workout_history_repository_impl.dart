@@ -280,7 +280,10 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
 
     final local = await loadLocal();
     for (final w in local) {
-      if (w.enrichmentStatus == 'partial') {
+      // Sanitize totals-only "partial" before clock-3 widening so legacy prefs
+      // rows cannot reopen historical windows (incoming maps already sanitized).
+      final status = _sanitizeEnrichmentStatus(w).enrichmentStatus;
+      if (status == 'partial') {
         start = math.min(start, w.startTime - cursorOverlapSec);
       }
     }
@@ -309,14 +312,21 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
 
       final prepared = <WorkoutSummary>[];
       for (final w in incoming) {
+        // Gate before side-file writes — late merge after Forget is a no-op.
         if (!_gateStillPassed()) {
           _lastLeftoverPersistLanded = false;
           return const [];
         }
         final prior = byNumber[w.number];
+        // Same number + new startTime: drop prior leftover/sample side-files
+        // so orphans do not accumulate across session reuse.
+        if (prior != null && prior.startTime != w.startTime) {
+          await _deleteSideArtifactsBestEffort(prior);
+        }
         // Do not let totals-only rows carry enrichmentStatus=partial — that
         // widens _resolveSyncStartUnix (clock 3) and can reopen 2022.
-        final united = _unionWorkout(prior, _sanitizeEnrichmentStatus(w));
+        final united =
+            await _unionWorkout(prior, _sanitizeEnrichmentStatus(w));
         prepared.add(await _persistSideArtifacts(united));
       }
 
@@ -326,6 +336,7 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
       final merged = byNumber.values.toList()
         ..sort((a, b) => b.startTime.compareTo(a.startTime));
 
+      // TOCTOU vs Forget: re-check immediately before prefs commit.
       if (!_gateStillPassed()) {
         _lastLeftoverPersistLanded = false;
         return const [];
@@ -336,9 +347,20 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
         jsonEncode(merged.map((w) => w.toJson()).toList()),
       );
 
+      // If Forget cleared Gate A during setString, roll back the index write.
+      if (!_gateStillPassed()) {
+        await _prefs.remove(GateAPrefs.workoutsJson);
+        _lastLeftoverPersistLanded = false;
+        return const [];
+      }
+
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       final swimSessions = <CanonicalSwimSession>[];
       for (final w in prepared) {
+        if (!_gateStillPassed()) {
+          _lastLeftoverPersistLanded = false;
+          return const [];
+        }
         final session = CanonicalSwimSession.fromWorkoutSummary(
           w,
           builtAtUnix: now,
@@ -354,11 +376,19 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
         swimSessions.add(session);
       }
       if (swimSessions.isNotEmpty) {
+        if (!_gateStillPassed()) {
+          _lastLeftoverPersistLanded = false;
+          return const [];
+        }
         await _swimStore.saveAll(swimSessions);
       }
 
       // Totals-prefix stuck must not advance past unfetched Count numbers.
       if (advanceCursor) {
+        if (!_gateStillPassed()) {
+          _lastLeftoverPersistLanded = false;
+          return const [];
+        }
         var maxEnd = 0;
         for (final w in merged) {
           if (w.endTime > maxEnd) maxEnd = w.endTime;
@@ -390,12 +420,15 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   /// Same [startTime]: keep present leftover / sample refs when incoming is
   /// empty or header-only; named scalars use null ≠ 0 (absent leaves prior).
   /// Different [startTime]: treat as a new session — take incoming as-is.
-  WorkoutSummary _unionWorkout(WorkoutSummary? local, WorkoutSummary incoming) {
+  Future<WorkoutSummary> _unionWorkout(
+    WorkoutSummary? local,
+    WorkoutSummary incoming,
+  ) async {
     if (local == null || local.startTime != incoming.startTime) {
       return incoming;
     }
 
-    final leftover = _unionLeftover(local, incoming);
+    final leftover = await _unionLeftover(local, incoming);
     final sample = _unionSampleRefs(local, incoming);
     final segments = _unionSegments(local, incoming);
 
@@ -448,19 +481,22 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
 
   /// Leftover: keep present local when incoming empty; take incoming when local
   /// empty; if both have bodies, keep local (do not compare lengths).
-  ({
-    int? leftoverLen,
-    bool? leftoverPresent,
-    String? leftoverPath,
-    Uint8List? leftoverBytes,
-  }) _unionLeftover(WorkoutSummary local, WorkoutSummary incoming) {
+  /// Ghost index (present/path/len but missing file) + incoming body → adopt
+  /// incoming so a failed persist cannot permanently block rewrite.
+  Future<
+      ({
+        int? leftoverLen,
+        bool? leftoverPresent,
+        String? leftoverPath,
+        Uint8List? leftoverBytes,
+      })> _unionLeftover(WorkoutSummary local, WorkoutSummary incoming) async {
     final incomingHasBody =
         incoming.leftoverBytes != null && incoming.leftoverBytes!.isNotEmpty;
-    final localHasPresent = local.leftoverPresent == true ||
+    final localHasIndex = local.leftoverPresent == true ||
         (local.leftoverPath != null && local.leftoverPath!.isNotEmpty) ||
         (local.leftoverLen != null && local.leftoverLen! > 0);
 
-    if (incomingHasBody && !localHasPresent) {
+    if (incomingHasBody && !localHasIndex) {
       return (
         leftoverLen: incoming.leftoverLen ?? incoming.leftoverBytes!.length,
         leftoverPresent: true,
@@ -468,8 +504,23 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
         leftoverBytes: incoming.leftoverBytes,
       );
     }
-    if (localHasPresent) {
-      // Keep local — including when both have bodies.
+    if (localHasIndex) {
+      if (incomingHasBody) {
+        final path = local.leftoverPath;
+        final onDisk = path != null && path.isNotEmpty
+            ? await _leftoverStore.loadAtRelativePath(path)
+            : null;
+        if (onDisk == null || onDisk.isEmpty) {
+          // Ghost index — file missing; rewrite from incoming body.
+          return (
+            leftoverLen: incoming.leftoverLen ?? incoming.leftoverBytes!.length,
+            leftoverPresent: true,
+            leftoverPath: incoming.leftoverPath,
+            leftoverBytes: incoming.leftoverBytes,
+          );
+        }
+      }
+      // Keep local — including when both have bodies and the file exists.
       return (
         leftoverLen: local.leftoverLen,
         leftoverPresent: local.leftoverPresent ?? true,
@@ -553,6 +604,12 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
 
   /// Write leftover bytes to side-file; attach relative sample path; strip bodies.
   Future<WorkoutSummary> _persistSideArtifacts(WorkoutSummary w) async {
+    // Late Forget / Gate A clear — do not create new side-files.
+    if (!_gateStillPassed()) {
+      _lastLeftoverPersistLanded = false;
+      return w.copyWith(clearLeftoverBytes: true);
+    }
+
     final samplePath = w.samplePath; // already relative via fromMap
     var leftoverPath = w.leftoverPath;
     var leftoverLen = w.leftoverLen;
@@ -585,7 +642,11 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
       }
     } else {
       // Empty leftover (all TLVs named / none unmatched) is a valid landed outcome.
-      leftoverPresent ??= false;
+      // Native may have spilled a large body to leftoverPath already.
+      leftoverPresent ??=
+          leftoverPath != null && leftoverPath.isNotEmpty && (leftoverLen ?? 0) > 0
+              ? true
+              : false;
       if (leftoverLen == null || leftoverLen == 0) {
         leftoverPath = null;
       }
@@ -608,6 +669,32 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
       clearLeftoverBytes: true,
       samplePath: samplePath,
     );
+  }
+
+  /// Best-effort delete leftover + sample side-files for a replaced session.
+  Future<void> _deleteSideArtifactsBestEffort(WorkoutSummary prior) async {
+    final leftoverPath = prior.leftoverPath;
+    if (leftoverPath != null && leftoverPath.isNotEmpty) {
+      await _leftoverStore.deleteAtRelativePath(leftoverPath);
+    } else if ((prior.leftoverLen ?? 0) > 0 || prior.leftoverPresent == true) {
+      // Index without path — try conventional identity path.
+      await _leftoverStore.delete(
+        workoutNumber: prior.number,
+        startTime: prior.startTime,
+      );
+    }
+    final samplePath = prior.samplePath;
+    if (samplePath != null && samplePath.isNotEmpty) {
+      try {
+        final root = await _sideFileRoot();
+        if (root != null) {
+          final file = File('${root.path}/$samplePath');
+          if (await file.exists()) await file.delete();
+        }
+      } catch (_) {
+        // Best-effort orphan cleanup.
+      }
+    }
   }
 
   Future<void> _wipeSampleDir() async {

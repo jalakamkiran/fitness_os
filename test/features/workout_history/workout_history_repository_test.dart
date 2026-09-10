@@ -141,7 +141,8 @@ void main() {
             WorkoutHistoryRepositoryImpl.currentLeftoverKeepImplVersion,
         GateAPrefs.workoutsJson:
             '[{"number":1,"startTime":$partialStart,"endTime":${partialStart + 100},'
-                '"durationSec":100,"type":6,"enrichmentStatus":"partial"}]',
+                '"durationSec":100,"type":6,"dataCount":2,'
+                '"enrichmentStatus":"partial"}]',
       });
       final prefs = await SharedPreferences.getInstance();
       final link = _StubLink(
@@ -156,6 +157,37 @@ void main() {
       expect(
         link.lastStartUnix,
         partialStart - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
+      );
+    });
+
+    test('totals-only local partial does not widen delta window', () async {
+      const cursor = 1_700_000_000;
+      const partialStart = 1_699_000_000;
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.lastSyncCursor: cursor,
+        GateAPrefs.swimSegmentParserVersion:
+            WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
+        GateAPrefs.leftoverKeepImplVersion:
+            WorkoutHistoryRepositoryImpl.currentLeftoverKeepImplVersion,
+        // Legacy/corrupt totals-only "partial" must not reopen clock 3.
+        GateAPrefs.workoutsJson:
+            '[{"number":1,"startTime":$partialStart,"endTime":${partialStart + 100},'
+                '"durationSec":100,"type":140,"enrichmentStatus":"partial"}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.empty,
+          workouts: [],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(link: link, prefs: prefs);
+
+      await repo.syncFromWatch();
+      expect(
+        link.lastStartUnix,
+        cursor - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
       );
     });
 
@@ -1128,6 +1160,11 @@ void main() {
       addTearDown(() => tmp.delete(recursive: true));
 
       final oldBytes = Uint8List.fromList([1, 1, 1, 1]);
+      final oldSampleRel =
+          '${GateAPrefs.workoutHrSamplesDir}/1503_1700600000.bin';
+      await File('${tmp.path}/$oldSampleRel').parent.create(recursive: true);
+      await File('${tmp.path}/$oldSampleRel').writeAsBytes([4, 5, 6]);
+
       final link = _StubLink(
         result: WorkoutSyncResult(
           status: WorkoutSyncStatus.ok,
@@ -1141,8 +1178,7 @@ void main() {
               load: 11,
               leftoverBytes: oldBytes,
               leftoverLen: oldBytes.length,
-              samplePath:
-                  '${GateAPrefs.workoutHrSamplesDir}/1503_1700600000.bin',
+              samplePath: oldSampleRel,
               sampleCount: 40,
               sampleFetch: 'ok',
             ),
@@ -1183,6 +1219,18 @@ void main() {
       );
       expect(await leftoverStore.loadAtRelativePath(newRel), newBytes);
 
+      final oldRel = WorkoutLeftoverStore.relativePathFor(
+        workoutNumber: 1503,
+        startTime: 1_700_600_000,
+      );
+      expect(await File('${tmp.path}/$oldRel').exists(), isFalse);
+      expect(
+        await File(
+          '${tmp.path}/${GateAPrefs.workoutHrSamplesDir}/1503_1700600000.bin',
+        ).exists(),
+        isFalse,
+      );
+
       final local = await repo.loadLocal();
       expect(local, hasLength(1));
       expect(local.single.startTime, 1_700_700_000);
@@ -1191,6 +1239,123 @@ void main() {
       expect(local.single.leftoverLen, 6);
       expect(local.single.samplePath, isNull);
       expect(local.single.sampleCount, isNull);
+    });
+
+    test(
+        'ghost leftover index + missing file adopts incoming body',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_ghost_leftover_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final ghostRel = WorkoutLeftoverStore.relativePathFor(
+        workoutNumber: 1601,
+        startTime: 1_701_000_000,
+      );
+      // Index claims leftover present but side-file was never written / deleted.
+      await prefs.setString(
+        GateAPrefs.workoutsJson,
+        jsonEncode([
+          {
+            'number': 1601,
+            'startTime': 1_701_000_000,
+            'endTime': 1_701_000_600,
+            'durationSec': 600,
+            'type': 140,
+            'leftoverPresent': true,
+            'leftoverLen': 16,
+            'leftoverPath': ghostRel,
+          },
+        ]),
+      );
+
+      final incomingBytes = Uint8List.fromList(List.generate(24, (i) => i + 3));
+      final link = _StubLink(
+        result: WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 1601,
+              startTime: 1_701_000_000,
+              endTime: 1_701_000_600,
+              durationSec: 600,
+              type: 140,
+              leftoverBytes: incomingBytes,
+              leftoverLen: incomingBytes.length,
+            ),
+          ],
+        ),
+      );
+      final leftoverStore = WorkoutLeftoverStore(rootOverride: () => tmp);
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        leftoverStore: leftoverStore,
+        leftoverRootOverride: () => tmp,
+        sideFileRootOverride: () => tmp,
+      );
+
+      expect(await repo.syncFromWatch(), isA<Right>());
+      expect(await leftoverStore.loadAtRelativePath(ghostRel), incomingBytes);
+      final local = await repo.loadLocal();
+      expect(local.single.leftoverLen, 24);
+      expect(local.single.leftoverPresent, isTrue);
+      expect(local.single.leftoverPath, ghostRel);
+    });
+
+    test(
+        'gate clear mid-merge does not leave workoutsJson after Forget race',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_toctou_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      var gateCleared = false;
+      final link = _StubLink(
+        result: WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 1602,
+              startTime: 1_701_100_000,
+              endTime: 1_701_100_300,
+              durationSec: 300,
+              type: 140,
+              leftoverBytes: Uint8List.fromList([1, 2, 3, 4]),
+              leftoverLen: 4,
+            ),
+          ],
+        ),
+      );
+      final leftoverStore = WorkoutLeftoverStore(
+        rootOverride: () {
+          // Simulate Forget clearing Gate A during side-file persist.
+          if (!gateCleared) {
+            gateCleared = true;
+            prefs.remove(GateAPrefs.gateAPassed);
+          }
+          return tmp;
+        },
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        leftoverStore: leftoverStore,
+        leftoverRootOverride: () => tmp,
+        sideFileRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      expect((out as Right).value, isEmpty);
+      expect(prefs.getString(GateAPrefs.workoutsJson), isNull);
+      expect(prefs.getBool(GateAPrefs.gateAPassed), isNull);
     });
 
     test(

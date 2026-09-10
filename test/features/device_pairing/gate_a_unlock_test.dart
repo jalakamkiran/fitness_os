@@ -110,7 +110,11 @@ void main() {
     });
     final prefs = await SharedPreferences.getInstance();
     final link = _StubLink();
-    final repo = DevicePairingRepositoryImpl(link: link, prefs: prefs);
+    final repo = DevicePairingRepositoryImpl(
+      link: link,
+      prefs: prefs,
+      onForgetWipeExtras: () async {},
+    );
 
     await repo.forgetDevice();
     expect(prefs.getString(GateAPrefs.rememberedMac), isNull);
@@ -118,6 +122,65 @@ void main() {
     expect(prefs.getString(GateAPrefs.lastSyncCursor), isNull);
     expect(prefs.getInt(GateAPrefs.lastActivitySyncCursor), isNull);
     expect(prefs.getInt(GateAPrefs.activitySyncImplVersion), isNull);
+  });
+
+  test('Forget fails closed when wipe extras callback unset', () async {
+    SharedPreferences.setMockInitialValues({
+      GateAPrefs.rememberedMac: 'AA:BB:CC:DD:EE:FF',
+      GateAPrefs.gateAPassed: true,
+      GateAPrefs.workoutsJson:
+          '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final leftover = File(
+      '${supportRoot.path}/${GateAPrefs.workoutLeftoversDir}/1.bin',
+    );
+    await leftover.parent.create(recursive: true);
+    await leftover.writeAsBytes([9, 9, 9]);
+
+    final repo = DevicePairingRepositoryImpl(
+      link: _StubLink(),
+      prefs: prefs,
+    );
+
+    final out = await repo.forgetDevice();
+    expect(out.isLeft, isTrue);
+    expect(prefs.getString(GateAPrefs.rememberedMac), isNotNull);
+    expect(prefs.getBool(GateAPrefs.gateAPassed), isTrue);
+    expect(await leftover.exists(), isTrue);
+  });
+
+  test('Forget mid-flight busy re-check aborts before wipe', () async {
+    SharedPreferences.setMockInitialValues({
+      GateAPrefs.rememberedMac: 'AA:BB:CC:DD:EE:FF',
+      GateAPrefs.gateAPassed: true,
+      GateAPrefs.workoutsJson:
+          '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
+    });
+    final prefs = await SharedPreferences.getInstance();
+    var busyChecks = 0;
+    var wipeCalls = 0;
+    final repo = DevicePairingRepositoryImpl(
+      link: _StubLink(),
+      prefs: prefs,
+      onForgetWipeExtras: () async {
+        wipeCalls++;
+      },
+      isForgetBlocked: () {
+        busyChecks++;
+        // First (entry) check passes; second (mid-flight) blocks — simulates
+        // export/sync starting after Forget began.
+        return busyChecks > 1;
+      },
+    );
+
+    final out = await repo.forgetDevice();
+    expect(out.isLeft, isTrue);
+    expect(busyChecks, greaterThanOrEqualTo(2));
+    expect(wipeCalls, 0);
+    // Prefs must remain — mid-flight abort happens before destructive mutation.
+    expect(prefs.getString(GateAPrefs.rememberedMac), isNotNull);
+    expect(prefs.getString(GateAPrefs.workoutsJson), isNotNull);
   });
 
   test('Forget clears vitals keys via wipe callback and is idempotent', () async {

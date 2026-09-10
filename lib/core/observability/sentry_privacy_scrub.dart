@@ -25,6 +25,8 @@ abstract final class SentryPrivacyScrub {
     'leftover',
     'leftoverBytes',
     'leftoverbytes',
+    'bytesBase64',
+    'bytesbase64',
     'hrPoints',
     'hrpoints',
     'recoveryHr',
@@ -33,6 +35,10 @@ abstract final class SentryPrivacyScrub {
     'recoveryheartrates',
     'pointsBytesBase64',
     'pointsbytesbase64',
+    // Strength prove envelope keys (list values are not keyword-filtered).
+    'sessions',
+    'sessionCount',
+    'sessioncount',
     'mac',
     'userId',
     'phoneMac',
@@ -105,7 +111,10 @@ abstract final class SentryPrivacyScrub {
         lower.contains('recoveryhr') ||
         lower.contains('recovery_hr') ||
         lower.contains('recoveryheartrate') ||
-        lower.contains('pointsbytes');
+        lower.contains('pointsbytes') ||
+        lower.contains('bytesbase64') ||
+        lower == 'sessions' ||
+        lower == 'sessioncount';
   }
 
   static SentryEvent? beforeSend(SentryEvent event, Hint hint) {

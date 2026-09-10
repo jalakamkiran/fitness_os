@@ -325,9 +325,27 @@ class StrengthSessionExportService {
     final file = File('${root.path}/$sanitized');
     try {
       if (!await file.exists()) return null;
+      if (!await _isUnderSampleRoot(root, file)) return null;
       return await file.readAsBytes();
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Canonical path boundary — reject symlink escapes outside hr_samples.
+  static Future<bool> _isUnderSampleRoot(Directory root, File file) async {
+    try {
+      final samples =
+          Directory('${root.path}/${GateAPrefs.workoutHrSamplesDir}');
+      if (!await samples.exists()) return false;
+      final rootCanon = await samples.resolveSymbolicLinks();
+      final fileCanon = await file.resolveSymbolicLinks();
+      if (fileCanon == rootCanon) return false;
+      final sep = Platform.pathSeparator;
+      final prefix = rootCanon.endsWith(sep) ? rootCanon : '$rootCanon$sep';
+      return fileCanon.startsWith(prefix);
+    } catch (_) {
+      return false;
     }
   }
 
@@ -393,12 +411,18 @@ class StrengthSessionExportService {
   bool _isUnderExportCache(File file) {
     final path = file.absolute.path;
     final override = _exportCacheRootOverride?.call();
-    if (override != null) {
-      final cache = '${override.absolute.path}/$exportCacheDirName';
-      return path == cache || path.startsWith('$cache/');
+    final rootPath = override?.absolute.path;
+    // Prefer exact cache-dir prefix when root is known (override / same call).
+    // Fallback substring only when temp root cannot be resolved synchronously.
+    if (rootPath != null) {
+      final cache = '$rootPath/$exportCacheDirName';
+      return path == cache ||
+          path.startsWith('$cache/') ||
+          path.startsWith('$cache\\');
     }
     final marker = '/$exportCacheDirName/';
-    return path.contains(marker);
+    final winMarker = '\\$exportCacheDirName\\';
+    return path.contains(marker) || path.contains(winMarker);
   }
 
   static const strengthWorkoutType = 140;

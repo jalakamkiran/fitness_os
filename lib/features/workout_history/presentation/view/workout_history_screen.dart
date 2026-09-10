@@ -304,7 +304,7 @@ class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
                           w.calories == null ? '—' : '${w.calories}',
                       allSessionsExport: _StrengthAllSessionsExport(
                         workouts: state.workouts,
-                        exportBusy: _exportBusy,
+                        exportBusy: _exportBusy || _serviceBusy,
                         onExport: _onExportAllStrength,
                       ),
                     ),
