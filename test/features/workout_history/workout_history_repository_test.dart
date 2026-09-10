@@ -624,6 +624,386 @@ void main() {
         isFalse,
       );
     });
+
+    // --- U7: presence-preserving merge (replaces replace-by-number contract) ---
+
+    test(
+        'Totals-only re-sync same number+startTime keeps leftover file and sample refs',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u7_keep_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final leftoverBytes = Uint8List.fromList(List.generate(32, (i) => i + 7));
+      final sampleRel =
+          '${GateAPrefs.workoutHrSamplesDir}/1501_1700500000.bin';
+      final sampleFile = File('${tmp.path}/$sampleRel');
+      await sampleFile.parent.create(recursive: true);
+      await sampleFile.writeAsBytes([1, 2, 3, 4, 5]);
+
+      final link = _StubLink(
+        result: WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 1501,
+              startTime: 1_700_500_000,
+              endTime: 1_700_500_900,
+              durationSec: 900,
+              type: 140,
+              load: 42,
+              leftoverBytes: leftoverBytes,
+              leftoverLen: leftoverBytes.length,
+              samplePath: sampleRel,
+              sampleCount: 80,
+              sampleFetch: 'ok',
+            ),
+          ],
+        ),
+      );
+      final leftoverStore = WorkoutLeftoverStore(rootOverride: () => tmp);
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        leftoverStore: leftoverStore,
+        leftoverRootOverride: () => tmp,
+        sideFileRootOverride: () => tmp,
+      );
+
+      expect(await repo.syncFromWatch(), isA<Right>());
+      final rel = WorkoutLeftoverStore.relativePathFor(
+        workoutNumber: 1501,
+        startTime: 1_700_500_000,
+      );
+      expect(await leftoverStore.loadAtRelativePath(rel), leftoverBytes);
+
+      // Count-overlap Totals-only re-fetch: same identity, no leftover/samples.
+      link.result = const WorkoutSyncResult(
+        status: WorkoutSyncStatus.ok,
+        workouts: [
+          WorkoutSummary(
+            number: 1501,
+            startTime: 1_700_500_000,
+            endTime: 1_700_500_900,
+            durationSec: 900,
+            type: 140,
+            calories: 200,
+            // load absent this pull — must leave prior 42
+            sampleFetch: 'none',
+          ),
+        ],
+      );
+      expect(await repo.syncFromWatch(), isA<Right>());
+
+      expect(await leftoverStore.loadAtRelativePath(rel), leftoverBytes);
+      expect(await sampleFile.exists(), isTrue);
+
+      final local = await repo.loadLocal();
+      expect(local, hasLength(1));
+      expect(local.single.load, 42);
+      expect(local.single.calories, 200);
+      expect(local.single.leftoverPresent, isTrue);
+      expect(local.single.leftoverPath, rel);
+      expect(local.single.leftoverLen, 32);
+      expect(local.single.samplePath, sampleRel);
+      expect(local.single.sampleCount, 80);
+      expect(local.single.sampleFetch, 'ok');
+    });
+
+    test(
+        'incoming more complete sample series replaces thinner local sample refs',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u7_richer_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final thinRel =
+          '${GateAPrefs.workoutHrSamplesDir}/1502_1700500100.bin';
+      await File('${tmp.path}/$thinRel').parent.create(recursive: true);
+      await File('${tmp.path}/$thinRel').writeAsBytes([9]);
+
+      final link = _StubLink(
+        result: WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 1502,
+              startTime: 1_700_500_100,
+              endTime: 1_700_500_400,
+              durationSec: 300,
+              type: 140,
+              samplePath: thinRel,
+              sampleCount: 10,
+              sampleFetch: 'partial',
+            ),
+          ],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        leftoverRootOverride: () => tmp,
+        sideFileRootOverride: () => tmp,
+      );
+      expect(await repo.syncFromWatch(), isA<Right>());
+
+      final richRel =
+          '${GateAPrefs.workoutHrSamplesDir}/1502_1700500100_full.bin';
+      await File('${tmp.path}/$richRel').parent.create(recursive: true);
+      await File('${tmp.path}/$richRel').writeAsBytes(List.filled(40, 1));
+
+      link.result = WorkoutSyncResult(
+        status: WorkoutSyncStatus.ok,
+        workouts: [
+          WorkoutSummary(
+            number: 1502,
+            startTime: 1_700_500_100,
+            endTime: 1_700_500_400,
+            durationSec: 300,
+            type: 140,
+            samplePath: richRel,
+            sampleCount: 120,
+            sampleFetch: 'ok',
+          ),
+        ],
+      );
+      expect(await repo.syncFromWatch(), isA<Right>());
+
+      final local = await repo.loadLocal();
+      expect(local.single.samplePath, richRel);
+      expect(local.single.sampleCount, 120);
+      expect(local.single.sampleFetch, 'ok');
+    });
+
+    test(
+        'same number different startTime replaces leftover blobs — no glue',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u7_new_session_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final oldBytes = Uint8List.fromList([1, 1, 1, 1]);
+      final link = _StubLink(
+        result: WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 1503,
+              startTime: 1_700_600_000,
+              endTime: 1_700_600_300,
+              durationSec: 300,
+              type: 140,
+              load: 11,
+              leftoverBytes: oldBytes,
+              leftoverLen: oldBytes.length,
+              samplePath:
+                  '${GateAPrefs.workoutHrSamplesDir}/1503_1700600000.bin',
+              sampleCount: 40,
+              sampleFetch: 'ok',
+            ),
+          ],
+        ),
+      );
+      final leftoverStore = WorkoutLeftoverStore(rootOverride: () => tmp);
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        leftoverStore: leftoverStore,
+        leftoverRootOverride: () => tmp,
+        sideFileRootOverride: () => tmp,
+      );
+      expect(await repo.syncFromWatch(), isA<Right>());
+
+      final newBytes = Uint8List.fromList([9, 9, 9, 9, 9, 9]);
+      link.result = WorkoutSyncResult(
+        status: WorkoutSyncStatus.ok,
+        workouts: [
+          WorkoutSummary(
+            number: 1503,
+            startTime: 1_700_700_000,
+            endTime: 1_700_700_500,
+            durationSec: 500,
+            type: 140,
+            // load absent — new session must not inherit old 11
+            leftoverBytes: newBytes,
+            leftoverLen: newBytes.length,
+          ),
+        ],
+      );
+      expect(await repo.syncFromWatch(), isA<Right>());
+
+      final newRel = WorkoutLeftoverStore.relativePathFor(
+        workoutNumber: 1503,
+        startTime: 1_700_700_000,
+      );
+      expect(await leftoverStore.loadAtRelativePath(newRel), newBytes);
+
+      final local = await repo.loadLocal();
+      expect(local, hasLength(1));
+      expect(local.single.startTime, 1_700_700_000);
+      expect(local.single.load, isNull);
+      expect(local.single.leftoverPath, newRel);
+      expect(local.single.leftoverLen, 6);
+      expect(local.single.samplePath, isNull);
+      expect(local.single.sampleCount, isNull);
+    });
+
+    test(
+        'Totals-only swim re-pull does not empty richer canonical lap file',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u7_swim_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 1510,
+              startTime: 1_700_800_000,
+              endTime: 1_700_803_600,
+              durationSec: 3600,
+              type: 6,
+              distanceM: 500,
+              strokes: 350,
+              avgSwolf: 165,
+              poolLength: 2500,
+              laps: 20,
+              segments: [
+                WorkoutSegment(
+                  index: 0,
+                  distanceM: 25,
+                  durationSec: 40,
+                  strokes: 18,
+                  avgSwolf: 140,
+                  style: 2,
+                ),
+                WorkoutSegment(
+                  index: 1,
+                  distanceM: 25,
+                  durationSec: 42,
+                  strokes: 19,
+                  avgSwolf: 142,
+                  style: 4,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        swimRootOverride: () => tmp,
+      );
+      expect(await repo.syncFromWatch(), isA<Right>());
+      final before = await repo.loadCanonicalSwim(1510);
+      expect(before, isNotNull);
+      expect(before!.p0.laps, hasLength(2));
+
+      // Full-history Totals re-pull: looksLikeSwim but no segments/laps bodies.
+      link.result = const WorkoutSyncResult(
+        status: WorkoutSyncStatus.ok,
+        workouts: [
+          WorkoutSummary(
+            number: 1510,
+            startTime: 1_700_800_000,
+            endTime: 1_700_803_600,
+            durationSec: 3600,
+            type: 6,
+            distanceM: 500,
+            strokes: 350,
+            avgSwolf: 165,
+            poolLength: 2500,
+            laps: 20,
+          ),
+        ],
+      );
+      expect(await repo.syncFromWatch(), isA<Right>());
+
+      final after = await repo.loadCanonicalSwim(1510);
+      expect(after, isNotNull);
+      expect(after!.p0.laps, hasLength(2));
+      expect(after.p0.laps.map((l) => l.style).toList(), [2, 4]);
+    });
+
+    test('header-only Data must not wipe persisted sample points refs', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u7_header_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final sampleRel =
+          '${GateAPrefs.workoutHrSamplesDir}/1504_1700900000.bin';
+      final sampleFile = File('${tmp.path}/$sampleRel');
+      await sampleFile.parent.create(recursive: true);
+      await sampleFile.writeAsBytes(List.filled(24, 3));
+
+      final link = _StubLink(
+        result: WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 1504,
+              startTime: 1_700_900_000,
+              endTime: 1_700_900_600,
+              durationSec: 600,
+              type: 140,
+              dataCount: 1,
+              samplePath: sampleRel,
+              sampleCount: 90,
+              sampleFetch: 'ok',
+            ),
+          ],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        leftoverRootOverride: () => tmp,
+        sideFileRootOverride: () => tmp,
+      );
+      expect(await repo.syncFromWatch(), isA<Right>());
+
+      // Header-only Data: dataCount hint, no points path / zero count.
+      link.result = const WorkoutSyncResult(
+        status: WorkoutSyncStatus.ok,
+        workouts: [
+          WorkoutSummary(
+            number: 1504,
+            startTime: 1_700_900_000,
+            endTime: 1_700_900_600,
+            durationSec: 600,
+            type: 140,
+            dataCount: 1,
+            sampleCount: 0,
+            sampleFetch: 'none',
+          ),
+        ],
+      );
+      expect(await repo.syncFromWatch(), isA<Right>());
+
+      expect(await sampleFile.exists(), isTrue);
+      final local = await repo.loadLocal();
+      expect(local.single.samplePath, sampleRel);
+      expect(local.single.sampleCount, 90);
+      expect(local.single.sampleFetch, 'ok');
+    });
   });
 }
 

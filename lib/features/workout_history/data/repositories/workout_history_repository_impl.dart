@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:fitness_os/core/error/failures.dart';
 import 'package:fitness_os/core/huawei/fos_huawei_log.dart';
@@ -216,15 +217,18 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     _mergeInFlight = true;
     _lastLeftoverPersistLanded = true;
     try {
-      final prepared = <WorkoutSummary>[];
-      for (final w in incoming) {
-        prepared.add(await _persistSideArtifacts(w));
-      }
-
       final existing = await loadLocal();
       final byNumber = <int, WorkoutSummary>{
         for (final w in existing) w.number: w,
       };
+
+      final prepared = <WorkoutSummary>[];
+      for (final w in incoming) {
+        final prior = byNumber[w.number];
+        final united = _unionWorkout(prior, w);
+        prepared.add(await _persistSideArtifacts(united));
+      }
+
       for (final w in prepared) {
         byNumber[w.number] = w;
       }
@@ -243,7 +247,15 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
           w,
           builtAtUnix: now,
         );
-        if (session != null) swimSessions.add(session);
+        if (session == null) continue;
+        final priorSwim = await _swimStore.load(session.workoutNumber);
+        if (priorSwim != null &&
+            priorSwim.startTime == session.startTime &&
+            _swimIncomingThinner(session, priorSwim)) {
+          // Totals-only re-pull must not empty richer lap files.
+          continue;
+        }
+        swimSessions.add(session);
       }
       if (swimSessions.isNotEmpty) {
         await _swimStore.saveAll(swimSessions);
@@ -260,6 +272,172 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     } finally {
       _mergeInFlight = false;
     }
+  }
+
+  /// Presence-preserving union for the same workout number.
+  ///
+  /// Same [startTime]: keep present leftover / sample refs when incoming is
+  /// empty or header-only; named scalars use null ≠ 0 (absent leaves prior).
+  /// Different [startTime]: treat as a new session — take incoming as-is.
+  WorkoutSummary _unionWorkout(WorkoutSummary? local, WorkoutSummary incoming) {
+    if (local == null || local.startTime != incoming.startTime) {
+      return incoming;
+    }
+
+    final leftover = _unionLeftover(local, incoming);
+    final sample = _unionSampleRefs(local, incoming);
+    final segments = _unionSegments(local, incoming);
+
+    return WorkoutSummary(
+      number: incoming.number,
+      startTime: incoming.startTime,
+      endTime: incoming.endTime,
+      durationSec: incoming.durationSec,
+      type: incoming.type,
+      calories: incoming.calories ?? local.calories,
+      distanceM: incoming.distanceM ?? local.distanceM,
+      steps: incoming.steps ?? local.steps,
+      dataCount: incoming.dataCount ?? local.dataCount,
+      paceCount: incoming.paceCount ?? local.paceCount,
+      segmentsCount: segments != null
+          ? (incoming.segmentsCount ??
+              local.segmentsCount ??
+              segments.length)
+          : (incoming.segmentsCount ?? local.segmentsCount),
+      sampleCount: sample.sampleCount,
+      enrichmentStatus: incoming.enrichmentStatus ?? local.enrichmentStatus,
+      hrMin: incoming.hrMin ?? local.hrMin,
+      hrMax: incoming.hrMax ?? local.hrMax,
+      hrPeak: incoming.hrPeak ?? local.hrPeak,
+      swimType: incoming.swimType ?? local.swimType,
+      strokes: incoming.strokes ?? local.strokes,
+      strokeRate: incoming.strokeRate ?? local.strokeRate,
+      avgSwolf: incoming.avgSwolf ?? local.avgSwolf,
+      sessionFlag: incoming.sessionFlag ?? local.sessionFlag,
+      poolLength: incoming.poolLength ?? local.poolLength,
+      laps: incoming.laps ?? local.laps,
+      load: incoming.load ?? local.load,
+      aerobicEffect: incoming.aerobicEffect ?? local.aerobicEffect,
+      anaerobicEffect: incoming.anaerobicEffect ?? local.anaerobicEffect,
+      recoveryTime: incoming.recoveryTime ?? local.recoveryTime,
+      trainingPoints: incoming.trainingPoints ?? local.trainingPoints,
+      leftoverLen: leftover.leftoverLen,
+      leftoverPresent: leftover.leftoverPresent,
+      leftoverPath: leftover.leftoverPath,
+      leftoverBytes: leftover.leftoverBytes,
+      samplePath: sample.samplePath,
+      sampleFetch: sample.sampleFetch,
+      enrichmentTags: (incoming.enrichmentTags != null &&
+              incoming.enrichmentTags!.isNotEmpty)
+          ? incoming.enrichmentTags
+          : local.enrichmentTags,
+      segments: segments,
+    );
+  }
+
+  /// Leftover: keep present local when incoming empty; take incoming when local
+  /// empty; if both have bodies, keep local (do not compare lengths).
+  ({
+    int? leftoverLen,
+    bool? leftoverPresent,
+    String? leftoverPath,
+    Uint8List? leftoverBytes,
+  }) _unionLeftover(WorkoutSummary local, WorkoutSummary incoming) {
+    final incomingHasBody =
+        incoming.leftoverBytes != null && incoming.leftoverBytes!.isNotEmpty;
+    final localHasPresent = local.leftoverPresent == true ||
+        (local.leftoverPath != null && local.leftoverPath!.isNotEmpty) ||
+        (local.leftoverLen != null && local.leftoverLen! > 0);
+
+    if (incomingHasBody && !localHasPresent) {
+      return (
+        leftoverLen: incoming.leftoverLen ?? incoming.leftoverBytes!.length,
+        leftoverPresent: true,
+        leftoverPath: incoming.leftoverPath,
+        leftoverBytes: incoming.leftoverBytes,
+      );
+    }
+    if (localHasPresent) {
+      // Keep local — including when both have bodies.
+      return (
+        leftoverLen: local.leftoverLen,
+        leftoverPresent: local.leftoverPresent ?? true,
+        leftoverPath: local.leftoverPath,
+        leftoverBytes: null, // already on disk; do not re-write / clobber
+      );
+    }
+    // Neither present: adopt incoming index (may be explicit empty).
+    return (
+      leftoverLen: incoming.leftoverLen,
+      leftoverPresent: incoming.leftoverPresent,
+      leftoverPath: incoming.leftoverPath,
+      leftoverBytes: incoming.leftoverBytes,
+    );
+  }
+
+  /// HR sample refs: keep when incoming is header-only; replace only when
+  /// incoming has a more complete series (higher sampleCount / new path).
+  ({
+    String? samplePath,
+    int? sampleCount,
+    String? sampleFetch,
+  }) _unionSampleRefs(WorkoutSummary local, WorkoutSummary incoming) {
+    final localCount = local.sampleCount ?? 0;
+    final incomingCount = incoming.sampleCount ?? 0;
+    final localHasPath =
+        local.samplePath != null && local.samplePath!.isNotEmpty;
+    final incomingHasPath =
+        incoming.samplePath != null && incoming.samplePath!.isNotEmpty;
+
+    // Header-only Data: no path and no positive point count.
+    if (!incomingHasPath && incomingCount <= 0) {
+      return (
+        samplePath: local.samplePath,
+        sampleCount: local.sampleCount,
+        sampleFetch: local.sampleFetch,
+      );
+    }
+
+    final incomingRicher =
+        incomingCount > localCount || (incomingHasPath && !localHasPath);
+    if (incomingRicher) {
+      return (
+        samplePath: incoming.samplePath,
+        sampleCount: incoming.sampleCount,
+        sampleFetch: incoming.sampleFetch,
+      );
+    }
+
+    return (
+      samplePath: local.samplePath,
+      sampleCount: local.sampleCount,
+      sampleFetch: local.sampleFetch,
+    );
+  }
+
+  List<WorkoutSegment>? _unionSegments(
+    WorkoutSummary local,
+    WorkoutSummary incoming,
+  ) {
+    final incomingSegs = incoming.segments;
+    final localSegs = local.segments;
+    final incomingHas =
+        incomingSegs != null && incomingSegs.isNotEmpty;
+    final localHas = localSegs != null && localSegs.isNotEmpty;
+    if (incomingHas) return incomingSegs;
+    if (localHas) return localSegs;
+    return incomingSegs ?? localSegs;
+  }
+
+  /// Incoming swim JSON is thinner when it lacks lap/segment rows the local
+  /// file already has (Totals-only re-pull).
+  bool _swimIncomingThinner(
+    CanonicalSwimSession incoming,
+    CanonicalSwimSession local,
+  ) {
+    final localLaps = local.p0.laps.length;
+    final incomingLaps = incoming.p0.laps.length;
+    return localLaps > incomingLaps;
   }
 
   /// Write leftover bytes to side-file; attach relative sample path; strip bodies.
