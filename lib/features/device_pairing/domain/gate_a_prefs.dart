@@ -38,6 +38,8 @@ abstract final class GateAPrefs {
   static const canonicalSwimDir = 'workouts/canonical_swim';
   /// Native-persisted workout HR sample point files (path+counts on channel; never series).
   static const workoutHrSamplesDir = 'workouts/hr_samples';
+  /// Dart-persisted Totals leftover / recovery-HR opaque blobs (len+path in prefs; never bodies).
+  static const workoutLeftoversDir = 'workouts/leftovers';
   /// Gemini API key for W4 coach (device-local; never commit).
   static const geminiApiKey = 'gemini_api_key';
   /// Last explicit Enable auto-tracking result (outcomes-only allowlist).

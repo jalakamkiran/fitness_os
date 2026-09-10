@@ -38,6 +38,15 @@ class _EmptyWorkouts implements WorkoutHistoryRepository {
       const Right([]);
 
   @override
+  bool get isSyncOrMergeInFlight => false;
+
+  @override
+  bool get lastLeftoverPersistLanded => true;
+
+  @override
+  Future<void> clearLocal() async {}
+
+  @override
   Future<CanonicalSwimSession?> loadCanonicalSwim(int workoutNumber) async =>
       null;
 

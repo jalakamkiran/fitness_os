@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,6 +9,7 @@ import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/workout_history/data/repositories/workout_history_repository_impl.dart';
+import 'package:fitness_os/features/workout_history/data/workout_leftover_store.dart';
 
 class _StubLink extends HuaweiLink {
   _StubLink({this.result});
@@ -366,5 +369,273 @@ void main() {
       expect(swim.p0.lengthCoveragePartial, isTrue);
       expect(repo.canonicalSwimFromSummary((out as Right).value.first), isNotNull);
     });
+
+    test('ok strength sync writes leftover side-file; prefs have len not body',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_leftover_ok_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final leftoverBytes = Uint8List.fromList(List.generate(48, (i) => i + 1));
+      final link = _StubLink(
+        result: WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 1401,
+              startTime: 1_700_100_000,
+              endTime: 1_700_100_900,
+              durationSec: 900,
+              type: 140,
+              calories: 220,
+              hrMin: 88,
+              hrMax: 152,
+              load: 42,
+              aerobicEffect: 3,
+              recoveryTime: 720,
+              trainingPoints: 15,
+              leftoverBytes: leftoverBytes,
+              leftoverLen: leftoverBytes.length,
+              sampleFetch: 'none',
+            ),
+          ],
+        ),
+      );
+      final leftoverStore = WorkoutLeftoverStore(rootOverride: () => tmp);
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        leftoverStore: leftoverStore,
+        leftoverRootOverride: () => tmp,
+        sideFileRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      expect(repo.lastLeftoverPersistLanded, isTrue);
+
+      final rel = WorkoutLeftoverStore.relativePathFor(
+        workoutNumber: 1401,
+        startTime: 1_700_100_000,
+      );
+      expect(await File('${tmp.path}/$rel').exists(), isTrue);
+      expect(await leftoverStore.loadAtRelativePath(rel), leftoverBytes);
+
+      final prefsRaw = prefs.getString(GateAPrefs.workoutsJson)!;
+      expect(prefsRaw.contains('"leftover"'), isFalse);
+      expect(prefsRaw.contains(leftoverBytes.toString()), isFalse);
+      final decoded = jsonDecode(prefsRaw) as List<dynamic>;
+      final row = Map<String, dynamic>.from(decoded.single as Map);
+      expect(row['leftoverLen'], 48);
+      expect(row['leftoverPresent'], isTrue);
+      expect(row['leftoverPath'], rel);
+      expect(row.containsKey('leftover'), isFalse);
+      expect(row['load'], 42);
+      expect(row['aerobicEffect'], 3);
+      expect(row['recoveryTime'], 720);
+      expect(row['trainingPoints'], 15);
+      expect(row.containsKey('anaerobicEffect'), isFalse);
+
+      final local = await repo.loadLocal();
+      expect(local.single.load, 42);
+      expect(local.single.leftoverBytes, isNull);
+      expect(local.single.leftoverPath, rel);
+      expect(local.single.leftoverLen, 48);
+    });
+
+    test('ok sync attaches relative samplePath only; no HR series in prefs',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_sample_ref_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final absoluteNative =
+          '/data/user/0/com.example.fitness_os/files/'
+          '${GateAPrefs.workoutHrSamplesDir}/1401_1700100000.bin';
+      final link = _StubLink(
+        result: WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary.fromMap({
+              'number': 1402,
+              'startTime': 1_700_100_000,
+              'endTime': 1_700_100_600,
+              'durationSec': 600,
+              'type': 140,
+              'sampleCount': 120,
+              'sampleFetch': 'ok',
+              'samplePath': absoluteNative,
+            }),
+          ],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        leftoverRootOverride: () => tmp,
+        sideFileRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      final local = await repo.loadLocal();
+      expect(
+        local.single.samplePath,
+        '${GateAPrefs.workoutHrSamplesDir}/1401_1700100000.bin',
+      );
+      expect(local.single.sampleFetch, 'ok');
+
+      final prefsRaw = prefs.getString(GateAPrefs.workoutsJson)!;
+      expect(prefsRaw.contains('/data/user'), isFalse);
+      expect(prefsRaw.contains('hrSeries'), isFalse);
+      expect(prefsRaw.contains('dataPages'), isFalse);
+      final row = Map<String, dynamic>.from(
+        (jsonDecode(prefsRaw) as List).single as Map,
+      );
+      expect(row['samplePath'], startsWith('${GateAPrefs.workoutHrSamplesDir}/'));
+      expect(row.containsKey('leftover'), isFalse);
+    });
+
+    test('leftover write failure clears present and blocks leftover-keep land',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_leftover_fail_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final link = _StubLink(
+        result: WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 1403,
+              startTime: 1_700_200_000,
+              endTime: 1_700_200_300,
+              durationSec: 300,
+              type: 140,
+              load: 10,
+              leftoverBytes: Uint8List.fromList([1, 2, 3, 4]),
+            ),
+          ],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        leftoverStore: _FailingLeftoverStore(rootOverride: () => tmp),
+        leftoverRootOverride: () => tmp,
+        sideFileRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      expect(repo.lastLeftoverPersistLanded, isFalse);
+
+      final local = await repo.loadLocal();
+      expect(local.single.load, 10);
+      expect(local.single.leftoverPresent, isFalse);
+      expect(local.single.leftoverPath, isNull);
+      expect(local.single.leftoverBytes, isNull);
+
+      final prefsRaw = prefs.getString(GateAPrefs.workoutsJson)!;
+      expect(prefsRaw.contains('"leftover"'), isFalse);
+      final row = Map<String, dynamic>.from(
+        (jsonDecode(prefsRaw) as List).single as Map,
+      );
+      expect(row['leftoverPresent'], isFalse);
+      expect(row.containsKey('leftoverPath'), isFalse);
+    });
+
+    test('WorkoutSummary.toJson never embeds leftover bodies or HR series',
+        () {
+      final summary = WorkoutSummary(
+        number: 9,
+        startTime: 100,
+        endTime: 200,
+        durationSec: 100,
+        type: 140,
+        load: 7,
+        leftoverBytes: Uint8List.fromList([9, 9, 9]),
+        leftoverLen: 3,
+        leftoverPresent: true,
+        leftoverPath: '${GateAPrefs.workoutLeftoversDir}/9_100.bin',
+        samplePath: '${GateAPrefs.workoutHrSamplesDir}/9_100.bin',
+        sampleFetch: 'ok',
+        sampleCount: 12,
+      );
+      final json = summary.toJson();
+      expect(json.containsKey('leftover'), isFalse);
+      expect(json.containsKey('leftoverBytes'), isFalse);
+      expect(json.containsKey('dataPages'), isFalse);
+      expect(json.containsKey('hrSeries'), isFalse);
+      expect(json['leftoverLen'], 3);
+      expect(json['leftoverPath'], endsWith('9_100.bin'));
+      expect(json['samplePath'], endsWith('9_100.bin'));
+      expect(json['load'], 7);
+
+      final encoded = jsonEncode(json);
+      expect(encoded.contains('[9, 9, 9]'), isFalse);
+    });
+
+    test('clearLocal wipes leftover and sample side-file dirs', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_clear_local_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final leftoverStore = WorkoutLeftoverStore(rootOverride: () => tmp);
+      await leftoverStore.save(
+        workoutNumber: 1,
+        startTime: 10,
+        bytes: [1, 2, 3],
+      );
+      final sampleFile = File(
+        '${tmp.path}/${GateAPrefs.workoutHrSamplesDir}/1_10.bin',
+      );
+      await sampleFile.parent.create(recursive: true);
+      await sampleFile.writeAsBytes([4, 5, 6]);
+
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: _StubLink(),
+        prefs: prefs,
+        leftoverStore: leftoverStore,
+        sideFileRootOverride: () => tmp,
+      );
+      await repo.clearLocal();
+
+      expect(
+        await Directory('${tmp.path}/${GateAPrefs.workoutLeftoversDir}')
+            .exists(),
+        isFalse,
+      );
+      expect(
+        await Directory('${tmp.path}/${GateAPrefs.workoutHrSamplesDir}')
+            .exists(),
+        isFalse,
+      );
+    });
   });
+}
+
+class _FailingLeftoverStore extends WorkoutLeftoverStore {
+  _FailingLeftoverStore({super.rootOverride});
+
+  @override
+  Future<String> save({
+    required int workoutNumber,
+    required int startTime,
+    required List<int> bytes,
+  }) async {
+    throw const FileSystemException('simulated leftover write failure');
+  }
 }

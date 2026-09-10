@@ -13,6 +13,7 @@ import 'package:fitness_os/features/workout_history/domain/swim_session_analytic
 import 'package:fitness_os/features/workout_history/domain/swim_stroke_label.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/coach_settings_route.dart';
+import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_session_charts.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_stroke_icon.dart';
 
@@ -134,7 +135,7 @@ class WorkoutDetailScreen extends StatelessWidget {
               ],
             ),
           ],
-          if (!_hasEnrichment(workout)) ...[
+          if (!_hasEnrichment(workout) && !isStrengthWorkout(workout.type)) ...[
             const SizedBox(height: 12),
             BpContainer(
               padding: EdgeInsets.zero,
