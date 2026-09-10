@@ -222,6 +222,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(find.textContaining('no longer on this device'), findsOneWidget);
+    expect(find.text('Session removed'), findsOneWidget);
     expect(shareCalls, 0);
   });
 

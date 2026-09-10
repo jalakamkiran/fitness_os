@@ -195,6 +195,9 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
               ),
             );
           }
+          if (!_gateStillPassed()) {
+            return const Left(ServerFailure('Gate cleared — sync discarded'));
+          }
           final stuckMerged = await _mergeAndPersist(
             result.workouts,
             advanceCursor: false,
@@ -214,6 +217,9 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
             final local = await loadLocal();
             return Right(local);
           }
+          if (!_gateStillPassed()) {
+            return const Left(ServerFailure('Gate cleared — sync discarded'));
+          }
           final partialMerged = await _mergeAndPersist(
             result.workouts,
             advanceCursor: true,
@@ -229,6 +235,9 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
           final local = await loadLocal();
           return Right(local);
         case WorkoutSyncStatus.ok:
+          if (!_gateStillPassed()) {
+            return const Left(ServerFailure('Gate cleared — sync discarded'));
+          }
           final merged = await _mergeAndPersist(result.workouts);
           emitSwimStyleCapabilityLogs(
             result.workouts,
@@ -249,12 +258,15 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   /// Stamp leftover-keep only after leftover persist was attempted for every
   /// workout in the native list and [lastLeftoverPersistLanded] is true.
   Future<void> _maybeStampLeftoverKeepVersion() async {
-    if (!_lastLeftoverPersistLanded) return;
+    if (!_lastLeftoverPersistLanded || !_gateStillPassed()) return;
     await _prefs.setInt(
       GateAPrefs.leftoverKeepImplVersion,
       currentLeftoverKeepImplVersion,
     );
   }
+
+  /// Late merge after Forget / Gate A clear is a no-op (identity wiped).
+  bool _gateStillPassed() => _prefs.getBool(GateAPrefs.gateAPassed) ?? false;
 
   /// Delta-only Count window: cursor − overlap when present; otherwise last
   /// [coldStartWindowDays]. Partials extend the window back to the earliest
@@ -284,6 +296,12 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     _mergeInFlight = true;
     _lastLeftoverPersistLanded = true;
     try {
+      // Forget may clear Gate A while native Sync was still in flight.
+      if (!_gateStillPassed()) {
+        _lastLeftoverPersistLanded = false;
+        return const [];
+      }
+
       final existing = await loadLocal();
       final byNumber = <int, WorkoutSummary>{
         for (final w in existing) w.number: w,
@@ -291,6 +309,10 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
 
       final prepared = <WorkoutSummary>[];
       for (final w in incoming) {
+        if (!_gateStillPassed()) {
+          _lastLeftoverPersistLanded = false;
+          return const [];
+        }
         final prior = byNumber[w.number];
         // Do not let totals-only rows carry enrichmentStatus=partial — that
         // widens _resolveSyncStartUnix (clock 3) and can reopen 2022.
@@ -303,6 +325,11 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
       }
       final merged = byNumber.values.toList()
         ..sort((a, b) => b.startTime.compareTo(a.startTime));
+
+      if (!_gateStillPassed()) {
+        _lastLeftoverPersistLanded = false;
+        return const [];
+      }
 
       await _prefs.setString(
         GateAPrefs.workoutsJson,
