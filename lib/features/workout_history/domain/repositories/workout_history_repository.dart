@@ -9,6 +9,17 @@ abstract class WorkoutHistoryRepository {
   Future<List<WorkoutSummary>> loadLocal();
   Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch();
 
+  /// True while channel Sync or local merge/persist is in flight (Forget busy gate).
+  bool get isSyncOrMergeInFlight;
+
+  /// After the latest `ok` persist: every incoming leftover write landed (or was
+  /// empty). False when a leftover body was present but the side-file write failed
+  /// — U4 must not stamp leftover-keep.
+  bool get lastLeftoverPersistLanded;
+
+  /// Wipe leftover + sample side-file dirs (and prefs leftovers when composed by U6).
+  Future<void> clearLocal();
+
   /// Load persisted canonical swim for a workout number (side-file).
   Future<CanonicalSwimSession?> loadCanonicalSwim(int workoutNumber);
 

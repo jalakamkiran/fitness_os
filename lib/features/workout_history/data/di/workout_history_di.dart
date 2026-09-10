@@ -6,14 +6,20 @@ import 'package:fitness_os/features/workout_history/data/gemini_coach_client.dar
 import 'package:fitness_os/features/workout_history/data/qwen3_swim_reasoner.dart';
 import 'package:fitness_os/features/workout_history/data/repositories/workout_history_repository_impl.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
+import 'package:fitness_os/features/workout_history/data/workout_leftover_store.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_bloc.dart';
 
 Future<void> initWorkoutHistoryDependencies(GetIt sl) async {
+  if (!sl.isRegistered<WorkoutLeftoverStore>()) {
+    sl.registerLazySingleton<WorkoutLeftoverStore>(WorkoutLeftoverStore.new);
+  }
+
   sl.registerLazySingleton<WorkoutHistoryRepository>(
     () => WorkoutHistoryRepositoryImpl(
       link: sl(),
       prefs: sl<SharedPreferences>(),
+      leftoverStore: sl<WorkoutLeftoverStore>(),
       onSyncSettled: () => sl<StoreInvalidation>().notify(),
     ),
   );

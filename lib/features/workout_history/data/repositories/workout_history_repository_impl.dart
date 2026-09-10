@@ -8,10 +8,12 @@ import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/workout_history/data/canonical_swim_store.dart';
+import 'package:fitness_os/features/workout_history/data/workout_leftover_store.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_style_capability_log.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
@@ -19,18 +21,29 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     required HuaweiLink link,
     required SharedPreferences prefs,
     CanonicalSwimStore? swimStore,
+    WorkoutLeftoverStore? leftoverStore,
     Directory? Function()? swimRootOverride,
+    Directory? Function()? leftoverRootOverride,
+    Directory? Function()? sideFileRootOverride,
     void Function()? onSyncSettled,
   })  : _link = link,
         _prefs = prefs,
         _swimStore = swimStore ??
             CanonicalSwimStore(rootOverride: swimRootOverride),
+        _leftoverStore = leftoverStore ??
+            WorkoutLeftoverStore(rootOverride: leftoverRootOverride),
+        _sideFileRootOverride = sideFileRootOverride,
         _onSyncSettled = onSyncSettled;
 
   final HuaweiLink _link;
   final SharedPreferences _prefs;
   final CanonicalSwimStore _swimStore;
+  final WorkoutLeftoverStore _leftoverStore;
+  final Directory? Function()? _sideFileRootOverride;
   final void Function()? _onSyncSettled;
+
+  bool _mergeInFlight = false;
+  bool _lastLeftoverPersistLanded = true;
 
   /// Overlap when advancing from [GateAPrefs.lastSyncCursor] so boundary
   /// workouts are not missed if the watch clocks slightly disagree.
@@ -43,6 +56,12 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   /// Stamped after a successful Sync; does **not** force a full-history pull.
   /// (v3 one-shot force for stroke-style capability proof is complete — left at v2.)
   static const currentSwimSegmentParserVersion = 2;
+
+  @override
+  bool get isSyncOrMergeInFlight => _link.syncInFlight || _mergeInFlight;
+
+  @override
+  bool get lastLeftoverPersistLanded => _lastLeftoverPersistLanded;
 
   @override
   Future<bool> isGateAPassed() async =>
@@ -62,6 +81,12 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     } catch (_) {
       return const [];
     }
+  }
+
+  @override
+  Future<void> clearLocal() async {
+    await _leftoverStore.clearLocal();
+    await _wipeSampleDir();
   }
 
   @override
@@ -188,41 +213,134 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   Future<List<WorkoutSummary>> _mergeAndPersist(
     List<WorkoutSummary> incoming,
   ) async {
-    final existing = await loadLocal();
-    final byNumber = <int, WorkoutSummary>{
-      for (final w in existing) w.number: w,
-    };
-    for (final w in incoming) {
-      byNumber[w.number] = w;
-    }
-    final merged = byNumber.values.toList()
-      ..sort((a, b) => b.startTime.compareTo(a.startTime));
+    _mergeInFlight = true;
+    _lastLeftoverPersistLanded = true;
+    try {
+      final prepared = <WorkoutSummary>[];
+      for (final w in incoming) {
+        prepared.add(await _persistSideArtifacts(w));
+      }
 
-    await _prefs.setString(
-      GateAPrefs.workoutsJson,
-      jsonEncode(merged.map((w) => w.toJson()).toList()),
-    );
+      final existing = await loadLocal();
+      final byNumber = <int, WorkoutSummary>{
+        for (final w in existing) w.number: w,
+      };
+      for (final w in prepared) {
+        byNumber[w.number] = w;
+      }
+      final merged = byNumber.values.toList()
+        ..sort((a, b) => b.startTime.compareTo(a.startTime));
 
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final swimSessions = <CanonicalSwimSession>[];
-    for (final w in incoming) {
-      final session = CanonicalSwimSession.fromWorkoutSummary(
-        w,
-        builtAtUnix: now,
+      await _prefs.setString(
+        GateAPrefs.workoutsJson,
+        jsonEncode(merged.map((w) => w.toJson()).toList()),
       );
-      if (session != null) swimSessions.add(session);
+
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final swimSessions = <CanonicalSwimSession>[];
+      for (final w in prepared) {
+        final session = CanonicalSwimSession.fromWorkoutSummary(
+          w,
+          builtAtUnix: now,
+        );
+        if (session != null) swimSessions.add(session);
+      }
+      if (swimSessions.isNotEmpty) {
+        await _swimStore.saveAll(swimSessions);
+      }
+
+      var maxEnd = 0;
+      for (final w in merged) {
+        if (w.endTime > maxEnd) maxEnd = w.endTime;
+      }
+      if (maxEnd > 0) {
+        await _prefs.setInt(GateAPrefs.lastSyncCursor, maxEnd + 1);
+      }
+      return merged;
+    } finally {
+      _mergeInFlight = false;
     }
-    if (swimSessions.isNotEmpty) {
-      await _swimStore.saveAll(swimSessions);
+  }
+
+  /// Write leftover bytes to side-file; attach relative sample path; strip bodies.
+  Future<WorkoutSummary> _persistSideArtifacts(WorkoutSummary w) async {
+    final samplePath = w.samplePath; // already relative via fromMap
+    var leftoverPath = w.leftoverPath;
+    var leftoverLen = w.leftoverLen;
+    var leftoverPresent = w.leftoverPresent;
+    final bytes = w.leftoverBytes;
+
+    if (bytes != null && bytes.isNotEmpty) {
+      leftoverLen = bytes.length;
+      try {
+        leftoverPath = await _leftoverStore.save(
+          workoutNumber: w.number,
+          startTime: w.startTime,
+          bytes: bytes,
+        );
+        leftoverPresent = true;
+        FosHuaweiLog.i(
+          'workout leftover number=${w.number} start=${w.startTime} '
+          'len=${bytes.length} path=$leftoverPath',
+          op: 'sync',
+        );
+      } catch (e) {
+        _lastLeftoverPersistLanded = false;
+        leftoverPath = null;
+        leftoverPresent = false;
+        FosHuaweiLog.w(
+          'workout leftover write failed number=${w.number} '
+          'len=${bytes.length} | $e',
+          op: 'sync',
+        );
+      }
+    } else {
+      // Empty leftover (all TLVs named / none unmatched) is a valid landed outcome.
+      leftoverPresent ??= false;
+      if (leftoverLen == null || leftoverLen == 0) {
+        leftoverPath = null;
+      }
     }
 
-    var maxEnd = 0;
-    for (final w in merged) {
-      if (w.endTime > maxEnd) maxEnd = w.endTime;
+    if (samplePath != null) {
+      FosHuaweiLog.i(
+        'workout sample ref number=${w.number} path=$samplePath '
+        'sampleFetch=${w.sampleFetch ?? '—'} '
+        'sampleCount=${w.sampleCount ?? 0}',
+        op: 'sync',
+      );
     }
-    if (maxEnd > 0) {
-      await _prefs.setInt(GateAPrefs.lastSyncCursor, maxEnd + 1);
+
+    return w.copyWith(
+      leftoverLen: leftoverLen,
+      leftoverPresent: leftoverPresent,
+      leftoverPath: leftoverPath,
+      clearLeftoverPath: leftoverPath == null,
+      clearLeftoverBytes: true,
+      samplePath: samplePath,
+    );
+  }
+
+  Future<void> _wipeSampleDir() async {
+    final root = await _sideFileRoot();
+    if (root == null) return;
+    final dir = Directory('${root.path}/${GateAPrefs.workoutHrSamplesDir}');
+    try {
+      if (await dir.exists()) {
+        await dir.delete(recursive: true);
+      }
+    } catch (_) {
+      // Best-effort wipe.
     }
-    return merged;
+  }
+
+  Future<Directory?> _sideFileRoot() async {
+    final override = _sideFileRootOverride?.call();
+    if (override != null) return override;
+    try {
+      return await getApplicationSupportDirectory();
+    } catch (_) {
+      return null;
+    }
   }
 }
