@@ -230,12 +230,20 @@ class HuaweiWorkoutSync(
     }
 
     /**
-     * @return status: ok | empty | stuck | error; workouts: list of totals maps
+     * @param enrichStartUnix floor for hint-gated Data/Pace/Swim. During leftover-keep
+     * one-shot, Count uses [startUnix] (2022 floor) while enrich stays incremental.
+     * Strength (`type=140` with `dataCount>0`) is always enrich-eligible.
+     * @return status: ok | empty | stuck | error | partial_batch; workouts: totals maps
      */
-    fun sync(startUnix: Long, endUnix: Long): Map<String, Any?> {
+    fun sync(
+        startUnix: Long,
+        endUnix: Long,
+        enrichStartUnix: Long = startUnix,
+    ): Map<String, Any?> {
         val start = startUnix.coerceAtLeast(0)
         val end = endUnix.coerceAtLeast(start)
-        Log.i(TAG, "workout-sync start window=[$start,$end]")
+        val enrichFloor = enrichStartUnix.coerceAtLeast(0)
+        Log.i(TAG, "workout-sync start window=[$start,$end] enrichStart=$enrichFloor")
 
         val countFrame = exchangeEncrypted(
             buildCountRequest(start, end),
@@ -290,11 +298,19 @@ class HuaweiWorkoutSync(
                     "data=${totals.dataCount} pace=${totals.paceCount} seg=${totals.segmentsCount}",
             )
             val workoutMap = LinkedHashMap(totals.toMap())
-            if (totals.segmentsCount > 0 || totals.dataCount > 0 || totals.paceCount > 0) {
+            val hasHints =
+                totals.segmentsCount > 0 || totals.dataCount > 0 || totals.paceCount > 0
+            val strengthWithData = totals.type == 140 && totals.dataCount > 0
+            val inEnrichWindow = totals.startTime >= enrichFloor
+            // One-shot: Count+Totals for history; hint-gated enrich only for
+            // strength-with-data or already-recent rows — not years of swim/run Data.
+            if (hasHints && (strengthWithData || inEnrichWindow)) {
                 if (enrichWorkout(workoutMap, totals)) {
                     enrichmentPartial = true
                 }
             } else {
+                // Totals-only historical must not be enrichmentStatus=partial
+                // (Flutter clock 3 would otherwise reopen the 2022 Count floor).
                 workoutMap["enrichmentStatus"] = "none"
                 workoutMap["sampleFetch"] = "none"
             }

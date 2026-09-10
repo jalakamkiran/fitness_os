@@ -18,6 +18,7 @@ class _ScriptedChannel extends HuaweiBtChannel {
   Future<Map<String, dynamic>> syncWorkouts({
     required int startUnix,
     required int endUnix,
+    int? enrichStartUnix,
   }) async {
     workoutCalls++;
     if (workoutsGate != null) return workoutsGate!.future;
