@@ -152,7 +152,22 @@ class HuaweiWorkoutSync(
         val avgSwolf: Int? = null,
         val poolLength: Int? = null,
         val laps: Int? = null,
+        /** Training load — catalog tag 0x0d; omit when absent or width mismatch. */
+        val load: Int? = null,
+        /** Aerobic training stress — catalog tag 0x0e. */
+        val aerobicEffect: Int? = null,
+        /** Anaerobic training stress — catalog tag 0x20. */
+        val anaerobicEffect: Int? = null,
+        /** Session recovery time — catalog tag 0x11. */
+        val recoveryTime: Int? = null,
+        /** Training points — catalog tag 0x63. */
+        val trainingPoints: Int? = null,
         val enrichmentTags: List<EnrichmentTagRef> = emptyList(),
+        /**
+         * Unmatched / width-mismatched Totals TLVs kept as tag+len+body.
+         * Recovery-HR (0x66) rides here as an opaque blob. Logs use id+len only.
+         */
+        val leftoverTlvs: List<HuaweiFraming.Tlv> = emptyList(),
     ) {
         fun toMap(): Map<String, Any?> {
             val out = linkedMapOf<String, Any?>(
@@ -177,8 +192,18 @@ class HuaweiWorkoutSync(
             if (avgSwolf != null) out["avgSwolf"] = avgSwolf
             if (poolLength != null) out["poolLength"] = poolLength
             if (laps != null) out["laps"] = laps
+            if (load != null) out["load"] = load
+            if (aerobicEffect != null) out["aerobicEffect"] = aerobicEffect
+            if (anaerobicEffect != null) out["anaerobicEffect"] = anaerobicEffect
+            if (recoveryTime != null) out["recoveryTime"] = recoveryTime
+            if (trainingPoints != null) out["trainingPoints"] = trainingPoints
             if (enrichmentTags.isNotEmpty()) {
                 out["enrichmentTags"] = enrichmentTags.map { it.toMap() }
+            }
+            if (leftoverTlvs.isNotEmpty()) {
+                val leftoverBytes = HuaweiFraming.encodeTlvs(leftoverTlvs)
+                out["leftover"] = leftoverBytes
+                out["leftoverLen"] = leftoverBytes.size
             }
             return out
         }
@@ -553,7 +578,13 @@ class HuaweiWorkoutSync(
         var avgSwolf: Int? = null
         var poolLength: Int? = null
         var laps: Int? = null
+        var load: Int? = null
+        var aerobicEffect: Int? = null
+        var anaerobicEffect: Int? = null
+        var recoveryTime: Int? = null
+        var trainingPoints: Int? = null
         val unknownTags = ArrayList<EnrichmentTagRef>()
+        val leftoverTlvs = ArrayList<HuaweiFraming.Tlv>()
         for (tlv in tlvs) {
             when (tlv.tag) {
                 0x02 -> number = u16(tlv.value)
@@ -573,6 +604,19 @@ class HuaweiWorkoutSync(
                     Log.d(TAG, "workout-sync tag 0x0c len=${tlv.value.size} unparsed")
                     unknownTags.add(EnrichmentTagRef(0x0c, tlv.value.size))
                 }
+                // Locked community scalars: strip from leftover only on width match.
+                0x0d -> parseScalarU32(tlv)?.let { load = it.toInt() }
+                    ?: keepLeftover(leftoverTlvs, tlv)
+                0x0e -> parseScalarU32(tlv)?.let { aerobicEffect = it.toInt() }
+                    ?: keepLeftover(leftoverTlvs, tlv)
+                0x11 -> parseScalarU16(tlv)?.let { recoveryTime = it }
+                    ?: keepLeftover(leftoverTlvs, tlv)
+                0x20 -> parseScalarU8(tlv)?.let { anaerobicEffect = it }
+                    ?: keepLeftover(leftoverTlvs, tlv)
+                0x63 -> parseScalarU16(tlv)?.let { trainingPoints = it }
+                    ?: keepLeftover(leftoverTlvs, tlv)
+                // Recovery-HR stays opaque leftover — never integer-decode.
+                0x66 -> keepLeftover(leftoverTlvs, tlv)
                 0x15 -> parseScalarU8(tlv)?.let { swimType = it }
                     ?: recordUnknown(unknownTags, tlv)
                 0x16 -> parseScalarU32OrU16(tlv)?.let { strokes = it }
@@ -585,6 +629,7 @@ class HuaweiWorkoutSync(
                     ?: recordUnknown(unknownTags, tlv)
                 0x1a -> parseScalarU16(tlv)?.let { avgSwolf = it }
                     ?: recordUnknown(unknownTags, tlv)
+                else -> keepLeftover(leftoverTlvs, tlv)
             }
         }
         if (number == 0 || startTime == 0L) return null
@@ -609,13 +654,25 @@ class HuaweiWorkoutSync(
             avgSwolf = avgSwolf,
             poolLength = poolLength,
             laps = laps,
+            load = load,
+            aerobicEffect = aerobicEffect,
+            anaerobicEffect = anaerobicEffect,
+            recoveryTime = recoveryTime,
+            trainingPoints = trainingPoints,
             enrichmentTags = unknownTags,
+            leftoverTlvs = leftoverTlvs,
         )
     }
 
     private fun recordUnknown(out: MutableList<EnrichmentTagRef>, tlv: HuaweiFraming.Tlv) {
         Log.d(TAG, "workout-sync tag 0x${tlv.tag.toString(16)} len=${tlv.value.size} unparsed")
         out.add(EnrichmentTagRef(tlv.tag, tlv.value.size))
+    }
+
+    /** Totals-only: keep unmatched / width-mismatched TLV bodies. Log id+len only. */
+    private fun keepLeftover(out: MutableList<HuaweiFraming.Tlv>, tlv: HuaweiFraming.Tlv) {
+        Log.d(TAG, "workout-sync leftover tag 0x${tlv.tag.toString(16)} len=${tlv.value.size}")
+        out.add(tlv)
     }
 
     /** Totals TLV 0x0c — oracle suggests 2-byte min/max peaks; accept u8 pair or u16. */
@@ -633,6 +690,9 @@ class HuaweiWorkoutSync(
 
     private fun parseScalarU16(tlv: HuaweiFraming.Tlv): Int? =
         if (tlv.value.size == 2) u16(tlv.value) else null
+
+    private fun parseScalarU32(tlv: HuaweiFraming.Tlv): Long? =
+        if (tlv.value.size == 4) u32(tlv.value) else null
 
     private fun parseScalarU16OrU8(tlv: HuaweiFraming.Tlv): Int? = when (tlv.value.size) {
         1 -> u8(tlv.value)
