@@ -834,6 +834,122 @@ class HuaweiWorkoutSyncTest {
         assertEquals("none", workouts[0]["sampleFetch"])
     }
 
+    @Test
+    fun sync_historicalSwimOutsideEnrichWindow_skipsDataTotalsOnly() {
+        var dataCalls = 0
+        val enrichingSync = HuaweiWorkoutSync(
+            exchangeEncrypted = { _, service, cmd, _ ->
+                when {
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
+                        countFrame(number = 60, dataCount = 2, paceCount = 0, segmentsCount = 0)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
+                        // Historical run/swim — start before enrich floor.
+                        totalsFrame(number = 60, start = 1_600_000_000, duration = 400, type = 2)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_DATA -> {
+                        dataCalls++
+                        null
+                    }
+                    else -> null
+                }
+            },
+        )
+
+        val result = enrichingSync.sync(
+            startUnix = HuaweiWorkoutSync.FALLBACK_START_UNIX,
+            endUnix = 999_999_999,
+            enrichStartUnix = 1_700_000_000,
+        )
+        assertEquals("ok", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val workouts = result["workouts"] as List<Map<String, Any?>>
+        assertEquals(1, workouts.size)
+        assertEquals(2, workouts[0]["dataCount"])
+        assertEquals("none", workouts[0]["enrichmentStatus"])
+        assertEquals("none", workouts[0]["sampleFetch"])
+        assertEquals(0, dataCalls)
+    }
+
+    @Test
+    fun sync_historicalStrengthWithData_enrichesDespiteEnrichFloor() {
+        var dataCalls = 0
+        val enrichingSync = HuaweiWorkoutSync(
+            exchangeEncrypted = { _, service, cmd, _ ->
+                when {
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
+                        countFrame(number = 61, dataCount = 1, paceCount = 0, segmentsCount = 0)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
+                        totalsFrame(number = 61, start = 1_600_000_100, duration = 900, type = 140)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_DATA -> {
+                        dataCalls++
+                        dataPageFrame(
+                            workoutNumber = 61,
+                            pageIndex = 0,
+                            timestamp = 1_600_000_100,
+                            intervalSec = 1,
+                            sampleCount = 2,
+                            dataLength = 2,
+                            bitmap = 0x0001,
+                            leftover = listOf(HuaweiFraming.Tlv(0x7a, byteArrayOf(0x01, 0x02))),
+                        )
+                    }
+                    else -> null
+                }
+            },
+            persistWorkoutSamples = { id, _ -> "workouts/hr_samples/$id.bin" },
+        )
+
+        val result = enrichingSync.sync(
+            startUnix = HuaweiWorkoutSync.FALLBACK_START_UNIX,
+            endUnix = 999_999_999,
+            enrichStartUnix = 1_700_000_000,
+        )
+        assertEquals("ok", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val workouts = result["workouts"] as List<Map<String, Any?>>
+        assertEquals(1, workouts.size)
+        assertEquals(1, dataCalls)
+        assertEquals("ok", workouts[0]["sampleFetch"])
+        assertTrue(workouts[0].containsKey("samplePath"))
+    }
+
+    @Test
+    fun sync_recentOutsideStrength_stillEnrichesWhenInWindow() {
+        var swimCalls = 0
+        val enrichingSync = HuaweiWorkoutSync(
+            exchangeEncrypted = { _, service, cmd, _ ->
+                when {
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
+                        countFrame(number = 62, dataCount = 0, paceCount = 0, segmentsCount = 1)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
+                        totalsFrame(number = 62, start = 1_700_000_500, duration = 200, type = 6)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_SWIM -> {
+                        swimCalls++
+                        null
+                    }
+                    else -> null
+                }
+            },
+        )
+
+        val result = enrichingSync.sync(
+            startUnix = HuaweiWorkoutSync.FALLBACK_START_UNIX,
+            endUnix = 999_999_999,
+            enrichStartUnix = 1_700_000_000,
+        )
+        assertEquals("partial_batch", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val workouts = result["workouts"] as List<Map<String, Any?>>
+        assertEquals(1, workouts.size)
+        assertEquals(1, swimCalls)
+        assertEquals("partial", workouts[0]["enrichmentStatus"])
+    }
+
     private fun countFrame(
         number: Int,
         dataCount: Int,

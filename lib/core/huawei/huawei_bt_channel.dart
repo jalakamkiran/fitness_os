@@ -89,13 +89,17 @@ class HuaweiBtChannel {
   Future<void> clearSecrets() => _method.invokeMethod<void>('clearSecrets');
 
   /// Gate B: native Count→Totals. Returns `{status, message?, workouts: [...]}`.
+  ///
+  /// [enrichStartUnix] gates Data/Pace/Swim (defaults to [startUnix] when omitted).
   Future<Map<String, dynamic>> syncWorkouts({
     required int startUnix,
     required int endUnix,
+    int? enrichStartUnix,
   }) async {
     final raw = await _method.invokeMethod<dynamic>('syncWorkouts', {
       'startUnix': startUnix,
       'endUnix': endUnix,
+      if (enrichStartUnix != null) 'enrichStartUnix': enrichStartUnix,
     });
     return Map<String, dynamic>.from(raw as Map? ?? const {});
   }

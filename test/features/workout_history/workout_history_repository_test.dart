@@ -17,14 +17,17 @@ class _StubLink extends HuaweiLink {
   WorkoutSyncResult? result;
   int syncCalls = 0;
   int? lastStartUnix;
+  int? lastEnrichStartUnix;
 
   @override
   Future<WorkoutSyncResult> syncWorkouts({
     required int startUnix,
     required int endUnix,
+    int? enrichStartUnix,
   }) async {
     syncCalls++;
     lastStartUnix = startUnix;
+    lastEnrichStartUnix = enrichStartUnix ?? startUnix;
     return result ??
         const WorkoutSyncResult(
           status: WorkoutSyncStatus.empty,
@@ -57,6 +60,8 @@ void main() {
         GateAPrefs.lastSyncCursor: cursor,
         GateAPrefs.swimSegmentParserVersion:
             WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
+        GateAPrefs.leftoverKeepImplVersion:
+            WorkoutHistoryRepositoryImpl.currentLeftoverKeepImplVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final link = _StubLink(
@@ -91,6 +96,7 @@ void main() {
         link.lastStartUnix,
         cursor - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
       );
+      expect(link.lastEnrichStartUnix, link.lastStartUnix);
       expect(prefs.getInt(GateAPrefs.lastSyncCursor), 1_700_003_601);
       expect(await repo.loadLocal(), hasLength(1));
       expect(settled, 1);
@@ -99,6 +105,8 @@ void main() {
     test('cold-start sync uses last N days when no cursor', () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.leftoverKeepImplVersion:
+            WorkoutHistoryRepositoryImpl.currentLeftoverKeepImplVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final link = _StubLink(
@@ -129,6 +137,8 @@ void main() {
         GateAPrefs.lastSyncCursor: cursor,
         GateAPrefs.swimSegmentParserVersion:
             WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
+        GateAPrefs.leftoverKeepImplVersion:
+            WorkoutHistoryRepositoryImpl.currentLeftoverKeepImplVersion,
         GateAPrefs.workoutsJson:
             '[{"number":1,"startTime":$partialStart,"endTime":${partialStart + 100},'
                 '"durationSec":100,"type":6,"enrichmentStatus":"partial"}]',
@@ -156,6 +166,8 @@ void main() {
         GateAPrefs.gateAPassed: true,
         GateAPrefs.lastSyncCursor: cursor,
         GateAPrefs.swimSegmentParserVersion: 1,
+        GateAPrefs.leftoverKeepImplVersion:
+            WorkoutHistoryRepositoryImpl.currentLeftoverKeepImplVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_swim_reparse_');
@@ -201,6 +213,8 @@ void main() {
         GateAPrefs.lastSyncCursor: cursor,
         // Stale vs current — still delta; no full-history force.
         GateAPrefs.swimSegmentParserVersion: 1,
+        GateAPrefs.leftoverKeepImplVersion:
+            WorkoutHistoryRepositoryImpl.currentLeftoverKeepImplVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_swim_bump_');
@@ -249,6 +263,95 @@ void main() {
         // Cursor advanced from first ok merge (endTime+1), then overlap.
         (1_700_003_600 + 1) - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
       );
+    });
+
+    test(
+        'stale leftover-keep version forces Count from 2022 floor then stamps',
+        () async {
+      const cursor = 1_700_000_000;
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.lastSyncCursor: cursor,
+        // Absent / stale leftover-keep → one-shot full-history Count.
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_leftover_keep_');
+      addTearDown(() => tmp.delete(recursive: true));
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 50,
+              startTime: 1_700_000_100,
+              endTime: 1_700_003_600,
+              durationSec: 3500,
+              type: 140,
+              calories: 200,
+              sampleFetch: 'none',
+            ),
+          ],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        leftoverRootOverride: () => tmp,
+        sideFileRootOverride: () => tmp,
+      );
+
+      final first = await repo.syncFromWatch();
+      expect(first, isA<Right>());
+      expect(
+        link.lastStartUnix,
+        WorkoutHistoryRepositoryImpl.leftoverKeepFullHistoryStartUnix,
+      );
+      expect(
+        link.lastEnrichStartUnix,
+        cursor - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
+      );
+      expect(repo.lastLeftoverPersistLanded, isTrue);
+      expect(
+        prefs.getInt(GateAPrefs.leftoverKeepImplVersion),
+        WorkoutHistoryRepositoryImpl.currentLeftoverKeepImplVersion,
+      );
+
+      link.result = const WorkoutSyncResult(
+        status: WorkoutSyncStatus.empty,
+        workouts: [],
+      );
+      await repo.syncFromWatch();
+      expect(
+        link.lastStartUnix,
+        (1_700_003_600 + 1) - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
+      );
+      expect(link.lastEnrichStartUnix, link.lastStartUnix);
+    });
+
+    test('current leftover-keep version keeps incremental Count window',
+        () async {
+      const cursor = 1_700_000_000;
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.lastSyncCursor: cursor,
+        GateAPrefs.leftoverKeepImplVersion:
+            WorkoutHistoryRepositoryImpl.currentLeftoverKeepImplVersion,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.empty,
+          workouts: [],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(link: link, prefs: prefs);
+
+      await repo.syncFromWatch();
+      expect(
+        link.lastStartUnix,
+        cursor - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
+      );
+      expect(link.lastEnrichStartUnix, link.lastStartUnix);
     });
 
     test('ok sync with swim styles does not change summary style fields',
@@ -326,6 +429,7 @@ void main() {
           GateAPrefs.lastSyncCursor: cursor,
           GateAPrefs.swimSegmentParserVersion:
               WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
+          // Stale leftover-keep → full-history Count; stamp after partial_batch.
           GateAPrefs.workoutsJson:
               '[{"number":1,"startTime":100,"endTime":200,"durationSec":100,"type":1}]',
         });
@@ -383,6 +487,15 @@ void main() {
         final list = (out as Right).value;
         expect(list.map((w) => w.number), containsAll([1, 1408, 9]));
 
+        expect(
+          link.lastStartUnix,
+          WorkoutHistoryRepositoryImpl.leftoverKeepFullHistoryStartUnix,
+        );
+        expect(
+          link.lastEnrichStartUnix,
+          cursor - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
+        );
+
         final strength = list.firstWhere((w) => w.number == 1408);
         expect(strength.load, 33);
         expect(strength.calories, 180);
@@ -403,8 +516,30 @@ void main() {
 
         // Totals complete on partial_batch → cursor may advance.
         expect(prefs.getInt(GateAPrefs.lastSyncCursor), 1_700_200_901);
+        // Sample partial_batch must still stamp leftover-keep.
+        expect(
+          prefs.getInt(GateAPrefs.leftoverKeepImplVersion),
+          WorkoutHistoryRepositoryImpl.currentLeftoverKeepImplVersion,
+        );
         // Pre-sync row 1 kept (Right replaces list with merge, not drop).
         expect(list.firstWhere((w) => w.number == 1).type, 1);
+
+        // Next Count is incremental (stamped); strength partial widens to its
+        // start, but historical totals-only must not reopen the 2022 floor.
+        link.result = const WorkoutSyncResult(
+          status: WorkoutSyncStatus.empty,
+          workouts: [],
+        );
+        await repo.syncFromWatch();
+        expect(
+          link.lastStartUnix,
+          1_700_200_000 - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
+        );
+        expect(
+          link.lastStartUnix,
+          isNot(WorkoutHistoryRepositoryImpl.leftoverKeepFullHistoryStartUnix),
+        );
+        expect(link.lastStartUnix, greaterThan(1_650_000_000));
       },
     );
 
@@ -469,6 +604,18 @@ void main() {
 
         // Count-incomplete stuck must not advance past unfetched numbers.
         expect(prefs.getInt(GateAPrefs.lastSyncCursor), cursor);
+        // Totals-prefix stuck must not stamp leftover-keep.
+        expect(prefs.getInt(GateAPrefs.leftoverKeepImplVersion), isNull);
+
+        link.result = const WorkoutSyncResult(
+          status: WorkoutSyncStatus.empty,
+          workouts: [],
+        );
+        await repo.syncFromWatch();
+        expect(
+          link.lastStartUnix,
+          WorkoutHistoryRepositoryImpl.leftoverKeepFullHistoryStartUnix,
+        );
       },
     );
 
@@ -497,6 +644,11 @@ void main() {
       expect(local.single.number, 7);
       expect(local.single.load, 9);
       expect(prefs.getInt(GateAPrefs.lastSyncCursor), 1_700_000_000);
+      expect(prefs.getInt(GateAPrefs.leftoverKeepImplVersion), isNull);
+      expect(
+        link.lastStartUnix,
+        WorkoutHistoryRepositoryImpl.leftoverKeepFullHistoryStartUnix,
+      );
     });
 
     test('ok sync persists canonical swim side-file for pool workout', () async {
@@ -721,6 +873,7 @@ void main() {
       final out = await repo.syncFromWatch();
       expect(out, isA<Right>());
       expect(repo.lastLeftoverPersistLanded, isFalse);
+      expect(prefs.getInt(GateAPrefs.leftoverKeepImplVersion), isNull);
 
       final local = await repo.loadLocal();
       expect(local.single.load, 10);

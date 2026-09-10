@@ -252,9 +252,13 @@ class HuaweiLink {
 
   /// Gate B radio call. Requires authenticated session (`connected` or
   /// `gateAIncomplete`). Product unlock is enforced by workout_history.
+  ///
+  /// [enrichStartUnix] is the incremental enrich floor (Count may be wider on
+  /// leftover-keep one-shot). Defaults to [startUnix] when omitted.
   Future<WorkoutSyncResult> syncWorkouts({
     required int startUnix,
     required int endUnix,
+    int? enrichStartUnix,
   }) async {
     if (_syncInFlight) {
       return const WorkoutSyncResult(
@@ -276,6 +280,7 @@ class HuaweiLink {
       );
     }
     _syncInFlight = true;
+    final enrichFloor = enrichStartUnix ?? startUnix;
     final window = SentrySyncInstrumentation.windowClass(
       startUnix: startUnix,
       endUnix: endUnix,
@@ -291,7 +296,7 @@ class HuaweiLink {
     );
     span?.setTag('window', window);
     FosHuaweiLog.i(
-      'syncWorkouts window=[$startUnix,$endUnix]',
+      'syncWorkouts window=[$startUnix,$endUnix] enrichStart=$enrichFloor',
       op: 'sync',
     );
     try {
@@ -300,6 +305,7 @@ class HuaweiLink {
         future: _channel.syncWorkouts(
           startUnix: startUnix,
           endUnix: endUnix,
+          enrichStartUnix: enrichFloor,
         ),
         timeout: budget,
         channel: 'syncWorkouts',

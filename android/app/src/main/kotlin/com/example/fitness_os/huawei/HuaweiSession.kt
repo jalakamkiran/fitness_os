@@ -240,8 +240,15 @@ class HuaweiSession(
     /**
      * Gate B: Count → Totals over the authenticated session.
      * Caller must already have a ready encrypted session (post authenticate).
+     *
+     * [enrichStartUnix] gates hint-based Data/Pace/Swim; Count uses [startUnix].
+     * Defaults to [startUnix] when omitted (incremental Sync).
      */
-    fun syncWorkouts(startUnix: Long, endUnix: Long): Map<String, Any?> {
+    fun syncWorkouts(
+        startUnix: Long,
+        endUnix: Long,
+        enrichStartUnix: Long = startUnix,
+    ): Map<String, Any?> {
         if (sessionKey == null || !encryptionEnabled) {
             Log.w(TAG, "workout-sync rejected — session not ready")
             return mapOf(
@@ -257,7 +264,7 @@ class HuaweiSession(
                     exchangeEncrypted(req, svc, cmd, timeout)
                 },
                 persistWorkoutSamples = { id, bytes -> persistWorkoutSampleFile(id, bytes) },
-            ).sync(startUnix, endUnix)
+            ).sync(startUnix, endUnix, enrichStartUnix)
         } finally {
             productSyncActive = false
         }
