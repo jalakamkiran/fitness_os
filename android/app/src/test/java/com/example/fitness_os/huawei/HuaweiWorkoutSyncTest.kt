@@ -1,8 +1,11 @@
 package com.example.fitness_os.huawei
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HuaweiWorkoutSyncTest {
@@ -155,6 +158,239 @@ class HuaweiWorkoutSyncTest {
         assertEquals(3, totals.enrichmentTags[0].len)
         assertEquals(0x15, totals.enrichmentTags[1].id)
         assertEquals(2, totals.enrichmentTags[1].len)
+    }
+
+    @Test
+    fun parseTotals_keepsUnmatchedTlvBodyInLeftover() {
+        val unmatchedBody = byteArrayOf(0xDE.toByte(), 0xAD.toByte(), 0xBE.toByte())
+        val container = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(0x42)),
+                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(1_700_000_000)),
+                HuaweiFraming.Tlv(0x12, HuaweiPacketCrypto.intBe(900)),
+                HuaweiFraming.Tlv(0x14, byteArrayOf(140.toByte())),
+                HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.intBe(120)),
+                HuaweiFraming.Tlv(0x7f, unmatchedBody),
+            ),
+        )
+        val frame = HuaweiFraming.Frame(
+            HuaweiWorkoutSync.SVC,
+            HuaweiWorkoutSync.CMD_TOTALS,
+            listOf(HuaweiFraming.Tlv(0x81, container)),
+        )
+
+        val totals = sync.parseTotals(frame)
+        assertNotNull(totals)
+        assertEquals(0x42, totals!!.number)
+        assertEquals(140, totals.type)
+        assertEquals(120L, totals.calories)
+        assertNull(totals.load)
+        assertNull(totals.recoveryTime)
+
+        val leftover = totals.leftoverTlvs
+        assertEquals(1, leftover.size)
+        assertEquals(0x7f, leftover[0].tag)
+        assertEquals(3, leftover[0].value.size)
+        assertArrayEquals(unmatchedBody, leftover[0].value)
+
+        val map = totals.toMap()
+        assertTrue(map.containsKey("leftover"))
+        @Suppress("UNCHECKED_CAST")
+        val leftoverBytes = map["leftover"] as ByteArray
+        assertEquals(leftoverBytes.size, map["leftoverLen"])
+        val decoded = HuaweiFraming.decodeTlvs(leftoverBytes)
+        assertEquals(1, decoded.size)
+        assertEquals(0x7f, decoded[0].tag)
+        assertArrayEquals(unmatchedBody, decoded[0].value)
+        // Bodies must not ride enrichmentTags.
+        assertEquals(0, totals.enrichmentTags.size)
+        assertFalse(map.containsKey("enrichmentTags"))
+    }
+
+    @Test
+    fun parseTotals_persistsLockedScalarsWhenWidthMatches() {
+        val container = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(11)),
+                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(1_700_000_100)),
+                HuaweiFraming.Tlv(0x12, HuaweiPacketCrypto.intBe(600)),
+                HuaweiFraming.Tlv(0x14, byteArrayOf(140.toByte())),
+                HuaweiFraming.Tlv(0x0d, HuaweiPacketCrypto.intBe(42)), // load u32
+                HuaweiFraming.Tlv(0x0e, HuaweiPacketCrypto.intBe(35)), // aerobicEffect u32
+                HuaweiFraming.Tlv(0x11, HuaweiPacketCrypto.shortBe(90)), // recoveryTime u16
+                HuaweiFraming.Tlv(0x20, byteArrayOf(18)), // anaerobicEffect u8
+                HuaweiFraming.Tlv(0x63, HuaweiPacketCrypto.shortBe(12)), // trainingPoints u16
+            ),
+        )
+        val frame = HuaweiFraming.Frame(
+            HuaweiWorkoutSync.SVC,
+            HuaweiWorkoutSync.CMD_TOTALS,
+            listOf(HuaweiFraming.Tlv(0x81, container)),
+        )
+
+        val totals = sync.parseTotals(frame)!!
+        assertEquals(42, totals.load)
+        assertEquals(35, totals.aerobicEffect)
+        assertEquals(90, totals.recoveryTime)
+        assertEquals(18, totals.anaerobicEffect)
+        assertEquals(12, totals.trainingPoints)
+        assertTrue(totals.leftoverTlvs.isEmpty())
+
+        val map = totals.toMap()
+        assertEquals(42, map["load"])
+        assertEquals(35, map["aerobicEffect"])
+        assertEquals(90, map["recoveryTime"])
+        assertEquals(18, map["anaerobicEffect"])
+        assertEquals(12, map["trainingPoints"])
+        assertFalse(map.containsKey("leftover"))
+        assertFalse(map.containsKey("leftoverLen"))
+    }
+
+    @Test
+    fun parseTotals_lockedTagUnexpectedLength_keepsBodyInLeftover() {
+        val badLoad = byteArrayOf(0x01, 0x02, 0x03) // not u32
+        val container = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(8)),
+                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(200)),
+                HuaweiFraming.Tlv(0x12, HuaweiPacketCrypto.intBe(60)),
+                HuaweiFraming.Tlv(0x14, byteArrayOf(140.toByte())),
+                HuaweiFraming.Tlv(0x0d, badLoad),
+                HuaweiFraming.Tlv(0x66, byteArrayOf(0x70, 0x71, 0x72, 0x73)), // recovery-HR opaque
+            ),
+        )
+        val frame = HuaweiFraming.Frame(
+            HuaweiWorkoutSync.SVC,
+            HuaweiWorkoutSync.CMD_TOTALS,
+            listOf(HuaweiFraming.Tlv(0x81, container)),
+        )
+
+        val totals = sync.parseTotals(frame)!!
+        assertNull(totals.load)
+        assertEquals(2, totals.leftoverTlvs.size)
+        assertEquals(0x0d, totals.leftoverTlvs[0].tag)
+        assertArrayEquals(badLoad, totals.leftoverTlvs[0].value)
+        assertEquals(0x66, totals.leftoverTlvs[1].tag)
+        assertEquals(4, totals.leftoverTlvs[1].value.size)
+        // Must not invent integer recovery-HR.
+        assertFalse(totals.toMap().containsKey("recoveryHeartRates"))
+    }
+
+    @Test
+    fun parseTotals_lockedScalarsOmittedWhenAbsent() {
+        val container = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(3)),
+                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(50)),
+                HuaweiFraming.Tlv(0x12, HuaweiPacketCrypto.intBe(30)),
+                HuaweiFraming.Tlv(0x14, byteArrayOf(2)),
+            ),
+        )
+        val frame = HuaweiFraming.Frame(
+            HuaweiWorkoutSync.SVC,
+            HuaweiWorkoutSync.CMD_TOTALS,
+            listOf(HuaweiFraming.Tlv(0x81, container)),
+        )
+
+        val totals = sync.parseTotals(frame)!!
+        assertNull(totals.load)
+        assertNull(totals.aerobicEffect)
+        assertNull(totals.anaerobicEffect)
+        assertNull(totals.recoveryTime)
+        assertNull(totals.trainingPoints)
+        val map = totals.toMap()
+        assertFalse(map.containsKey("load"))
+        assertFalse(map.containsKey("aerobicEffect"))
+        assertFalse(map.containsKey("anaerobicEffect"))
+        assertFalse(map.containsKey("recoveryTime"))
+        assertFalse(map.containsKey("trainingPoints"))
+        assertFalse(map.containsKey("leftover"))
+    }
+
+    @Test
+    fun parseTotals_missingNumberOrStart_returnsNullEvenWithLeftover() {
+        val container = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x12, HuaweiPacketCrypto.intBe(60)),
+                HuaweiFraming.Tlv(0x14, byteArrayOf(140.toByte())),
+                HuaweiFraming.Tlv(0x7f, byteArrayOf(0x01, 0x02)),
+            ),
+        )
+        val frame = HuaweiFraming.Frame(
+            HuaweiWorkoutSync.SVC,
+            HuaweiWorkoutSync.CMD_TOTALS,
+            listOf(HuaweiFraming.Tlv(0x81, container)),
+        )
+
+        assertNull(sync.parseTotals(frame))
+    }
+
+    @Test
+    fun sync_totalsMapIncludesLeftoverLen() {
+        val unmatchedBody = byteArrayOf(0xAA.toByte(), 0xBB.toByte())
+        val enrichingSync = HuaweiWorkoutSync(
+            exchangeEncrypted = { _, service, cmd, _ ->
+                when {
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
+                        val entry = HuaweiFraming.encodeTlvs(
+                            listOf(
+                                HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(21)),
+                                HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.shortBe(0)),
+                                HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(0)),
+                                HuaweiFraming.Tlv(0x09, HuaweiPacketCrypto.shortBe(0)),
+                            ),
+                        )
+                        val container = HuaweiFraming.encodeTlvs(
+                            listOf(
+                                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(1)),
+                                HuaweiFraming.Tlv(0x85, entry),
+                            ),
+                        )
+                        HuaweiFraming.Frame(
+                            HuaweiWorkoutSync.SVC,
+                            HuaweiWorkoutSync.CMD_COUNT,
+                            listOf(HuaweiFraming.Tlv(0x81, container)),
+                        )
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
+                        val container = HuaweiFraming.encodeTlvs(
+                            listOf(
+                                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(21)),
+                                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(300)),
+                                HuaweiFraming.Tlv(0x12, HuaweiPacketCrypto.intBe(120)),
+                                HuaweiFraming.Tlv(0x14, byteArrayOf(140.toByte())),
+                                HuaweiFraming.Tlv(0x0d, HuaweiPacketCrypto.intBe(7)),
+                                HuaweiFraming.Tlv(0x7f, unmatchedBody),
+                            ),
+                        )
+                        HuaweiFraming.Frame(
+                            HuaweiWorkoutSync.SVC,
+                            HuaweiWorkoutSync.CMD_TOTALS,
+                            listOf(HuaweiFraming.Tlv(0x81, container)),
+                        )
+                    }
+                    else -> null
+                }
+            },
+        )
+
+        val result = enrichingSync.sync(0, 999_999_999)
+        assertEquals("ok", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val workouts = result["workouts"] as List<Map<String, Any?>>
+        assertEquals(1, workouts.size)
+        assertEquals(7, workouts[0]["load"])
+        assertTrue(workouts[0].containsKey("leftoverLen"))
+        assertTrue(workouts[0]["leftoverLen"] is Int)
+        @Suppress("UNCHECKED_CAST")
+        val leftoverBytes = workouts[0]["leftover"] as ByteArray
+        assertEquals(leftoverBytes.size, workouts[0]["leftoverLen"])
+        // Channel carries raw bytes once — not a hex string body.
+        assertFalse(workouts[0]["leftover"] is String)
+        val decoded = HuaweiFraming.decodeTlvs(leftoverBytes)
+        assertEquals(1, decoded.size)
+        assertEquals(0x7f, decoded[0].tag)
+        assertArrayEquals(unmatchedBody, decoded[0].value)
     }
 
     @Test
