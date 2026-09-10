@@ -256,6 +256,7 @@ class HuaweiSession(
                 exchangeEncrypted = { req, svc, cmd, timeout ->
                     exchangeEncrypted(req, svc, cmd, timeout)
                 },
+                persistWorkoutSamples = { id, bytes -> persistWorkoutSampleFile(id, bytes) },
             ).sync(startUnix, endUnix)
         } finally {
             productSyncActive = false
@@ -572,6 +573,48 @@ class HuaweiSession(
         file.writeBytes(bytes)
         val rel = "vitals/sleep_files/$safeId.bin"
         Log.i(TAG, "file-download persisted id=$safeId len=${bytes.size} path=$rel")
+        return rel
+    }
+
+    /**
+     * Write under `filesDir/workouts/hr_samples/{id}.bin` (GateAPrefs.workoutHrSamplesDir).
+     * Richer-file rule: empty / header-only must not replace a present series.
+     */
+    private fun persistWorkoutSampleFile(id: String, bytes: ByteArray): String? {
+        val root = appFilesDir?.invoke() ?: return null
+        val dir = java.io.File(root, HuaweiWorkoutSync.WORKOUT_HR_SAMPLES_DIR)
+        if (!dir.exists() && !dir.mkdirs()) {
+            Log.w(TAG, "workout-samples mkdir failed ${dir.absolutePath}")
+            return null
+        }
+        val safeId = id.replace(Regex("[^0-9A-Za-z._-]"), "_")
+        if (safeId.isEmpty() || safeId != id) {
+            Log.w(TAG, "workout-samples persist rejected id=$id")
+            return null
+        }
+        val file = java.io.File(dir, "$safeId.bin")
+        val canonicalDir = dir.canonicalFile
+        val canonicalFile = file.canonicalFile
+        if (!canonicalFile.path.startsWith(canonicalDir.path + java.io.File.separator) &&
+            canonicalFile.path != canonicalDir.path
+        ) {
+            Log.w(TAG, "workout-samples persist path escape id=$safeId")
+            return null
+        }
+        val rel = "${HuaweiWorkoutSync.WORKOUT_HR_SAMPLES_DIR}/$safeId.bin"
+        if (bytes.isEmpty()) {
+            if (file.exists() && file.length() > 0) {
+                Log.i(
+                    TAG,
+                    "workout-samples keep richer id=$safeId existingLen=${file.length()}",
+                )
+                return rel
+            }
+            Log.d(TAG, "workout-samples skip empty id=$safeId")
+            return null
+        }
+        file.writeBytes(bytes)
+        Log.i(TAG, "workout-samples persisted id=$safeId len=${bytes.size} path=$rel")
         return rel
     }
 

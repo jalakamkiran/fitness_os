@@ -558,7 +558,8 @@ class HuaweiWorkoutSyncTest {
     }
 
     @Test
-    fun parseWorkoutDataPage_readsHeaderSummaryWithoutSamples() {
+    fun parseWorkoutDataPage_headerOnly_hasNoPointBodies() {
+        // Header-only is not "samples persisted" — no unmatched sample TLV bodies.
         val inner = HuaweiFraming.encodeTlvs(
             listOf(
                 HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(10)),
@@ -583,50 +584,231 @@ class HuaweiWorkoutSyncTest {
         assertEquals(12, page.sampleCount)
         assertEquals(240, page.dataLength)
         assertEquals(0x0040, page.bitmap)
+        assertTrue(page.leftoverTlvs.isEmpty())
         assertEquals(0, page.tags.size)
+        assertFalse(page.hasPointBodies)
+    }
+
+    @Test
+    fun parseWorkoutDataPage_keepsUnmatchedSampleBodiesAsEquivalentPoints() {
+        val opaqueSampleBody = byteArrayOf(0x7A, 0x7B, 0x7C, 0x7D, 0x7E)
+        val inner = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(10)),
+                HuaweiFraming.Tlv(0x03, HuaweiPacketCrypto.shortBe(0)),
+                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(1_700_000_200)),
+                HuaweiFraming.Tlv(0x05, HuaweiPacketCrypto.shortBe(1)),
+                HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(5)),
+                HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.shortBe(5)),
+                HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(0x0001)),
+                // Synthetic unmatched sample payload — clean-room; not a GT5 bitmap decode.
+                HuaweiFraming.Tlv(0x7a, opaqueSampleBody),
+            ),
+        )
+        val frame = HuaweiFraming.Frame(
+            HuaweiWorkoutSync.SVC,
+            HuaweiWorkoutSync.CMD_DATA,
+            listOf(HuaweiFraming.Tlv(0x81, inner)),
+        )
+
+        val page = sync.parseWorkoutDataPage(frame, 0)!!
+        assertEquals(5, page.sampleCount)
+        assertTrue(page.hasPointBodies)
+        assertEquals(1, page.leftoverTlvs.size)
+        assertEquals(0x7a, page.leftoverTlvs[0].tag)
+        assertArrayEquals(opaqueSampleBody, page.leftoverTlvs[0].value)
+        // Channel map stays metadata-sized: id+len only, no body bytes.
+        val map = page.toMap()
+        assertFalse(map.containsKey("leftover"))
+        assertFalse(map.containsKey("points"))
+        @Suppress("UNCHECKED_CAST")
+        val tags = map["tags"] as List<Map<String, Int>>
+        assertEquals(1, tags.size)
+        assertEquals(0x7a, tags[0]["id"])
+        assertEquals(5, tags[0]["len"])
+    }
+
+    @Test
+    fun sync_dataCountZero_skipsDataAndSampleFetchNone() {
+        var dataCalls = 0
+        val enrichingSync = HuaweiWorkoutSync(
+            exchangeEncrypted = { _, service, cmd, _ ->
+                when {
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
+                        countFrame(number = 40, dataCount = 0, paceCount = 0, segmentsCount = 0)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
+                        totalsFrame(number = 40, start = 500, duration = 90, type = 140)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_DATA -> {
+                        dataCalls++
+                        null
+                    }
+                    else -> null
+                }
+            },
+        )
+
+        val result = enrichingSync.sync(0, 999_999_999)
+        assertEquals("ok", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val workouts = result["workouts"] as List<Map<String, Any?>>
+        assertEquals(1, workouts.size)
+        assertEquals(0, workouts[0]["dataCount"])
+        assertEquals("none", workouts[0]["sampleFetch"])
+        assertEquals("none", workouts[0]["enrichmentStatus"])
+        assertEquals(0, dataCalls)
+        assertFalse(workouts[0].containsKey("samplePath"))
+    }
+
+    @Test
+    fun sync_dataPagesWithPointBodies_persistsFileAndMetadataOnly() {
+        val opaqueSampleBody = byteArrayOf(0x11, 0x22, 0x33, 0x44)
+        val sink = LinkedHashMap<String, ByteArray>()
+        var dataCalls = 0
+        val enrichingSync = HuaweiWorkoutSync(
+            exchangeEncrypted = { _, service, cmd, _ ->
+                when {
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
+                        countFrame(number = 41, dataCount = 1, paceCount = 0, segmentsCount = 0)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
+                        totalsFrame(number = 41, start = 1_700_000_300, duration = 120, type = 140)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_DATA -> {
+                        dataCalls++
+                        dataPageFrame(
+                            workoutNumber = 41,
+                            pageIndex = 0,
+                            timestamp = 1_700_000_300,
+                            intervalSec = 1,
+                            sampleCount = 4,
+                            dataLength = 4,
+                            bitmap = 0x0001,
+                            leftover = listOf(HuaweiFraming.Tlv(0x7a, opaqueSampleBody)),
+                        )
+                    }
+                    else -> null
+                }
+            },
+            persistWorkoutSamples = { id, bytes ->
+                sink[id] = bytes.copyOf()
+                "workouts/hr_samples/$id.bin"
+            },
+        )
+
+        val result = enrichingSync.sync(0, 999_999_999)
+        assertEquals("ok", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val workouts = result["workouts"] as List<Map<String, Any?>>
+        assertEquals(1, workouts.size)
+        assertEquals(1, dataCalls)
+        assertEquals("ok", workouts[0]["sampleFetch"])
+        assertEquals(4, workouts[0]["sampleCount"])
+        assertEquals(1, workouts[0]["dataCount"])
+        assertEquals("workouts/hr_samples/41_1700000300.bin", workouts[0]["samplePath"])
+        assertEquals(1, sink.size)
+        assertTrue(sink.values.first().isNotEmpty())
+        // Channel must stay metadata-sized — no multi-point series list.
+        assertFalse(workouts[0].containsKey("hrPoints"))
+        assertFalse(workouts[0].containsKey("points"))
+        @Suppress("UNCHECKED_CAST")
+        val dataPages = workouts[0]["dataPages"] as? List<Map<String, Any?>>
+        assertNotNull(dataPages)
+        assertFalse(dataPages!![0].containsKey("leftover"))
+        assertFalse(dataPages[0].containsKey("points"))
+    }
+
+    @Test
+    fun sync_headerOnlyDataPages_sampleFetchNotOkWithPoints() {
+        val sink = LinkedHashMap<String, ByteArray>()
+        val enrichingSync = HuaweiWorkoutSync(
+            exchangeEncrypted = { _, service, cmd, _ ->
+                when {
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
+                        countFrame(number = 42, dataCount = 1, paceCount = 0, segmentsCount = 0)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
+                        totalsFrame(number = 42, start = 800, duration = 60, type = 140)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_DATA -> {
+                        dataPageFrame(
+                            workoutNumber = 42,
+                            pageIndex = 0,
+                            timestamp = 800,
+                            intervalSec = 60,
+                            sampleCount = 12,
+                            dataLength = 240,
+                            bitmap = 0x0040,
+                            leftover = emptyList(),
+                        )
+                    }
+                    else -> null
+                }
+            },
+            persistWorkoutSamples = { id, bytes ->
+                sink[id] = bytes.copyOf()
+                "workouts/hr_samples/$id.bin"
+            },
+        )
+
+        val result = enrichingSync.sync(0, 999_999_999)
+        @Suppress("UNCHECKED_CAST")
+        val workouts = result["workouts"] as List<Map<String, Any?>>
+        assertEquals(1, workouts.size)
+        // Pages arrived and header claims samples, but bitmap/payload has no point bodies.
+        assertEquals(12, workouts[0]["sampleCount"])
+        assertEquals("partial", workouts[0]["sampleFetch"])
+        assertFalse(workouts[0].containsKey("samplePath"))
+        assertTrue(sink.isEmpty())
+    }
+
+    @Test
+    fun sync_dataTimeout_keepsTotalsPartialBatchAndSampleFetchTimeout() {
+        var dataCalls = 0
+        val enrichingSync = HuaweiWorkoutSync(
+            exchangeEncrypted = { _, service, cmd, _ ->
+                when {
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
+                        countFrame(number = 43, dataCount = 2, paceCount = 0, segmentsCount = 0)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
+                        totalsFrame(number = 43, start = 900, duration = 180, type = 140)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_DATA -> {
+                        dataCalls++
+                        null
+                    }
+                    else -> null
+                }
+            },
+        )
+
+        val result = enrichingSync.sync(0, 999_999_999)
+        assertEquals("partial_batch", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val workouts = result["workouts"] as List<Map<String, Any?>>
+        assertEquals(1, workouts.size)
+        assertEquals(43, workouts[0]["number"])
+        assertEquals(180L, workouts[0]["durationSec"])
+        assertEquals(2, workouts[0]["dataCount"])
+        assertEquals("partial", workouts[0]["enrichmentStatus"])
+        assertEquals("timeout", workouts[0]["sampleFetch"])
+        assertFalse(workouts[0].containsKey("samplePath"))
+        assertEquals(1, dataCalls)
     }
 
     @Test
     fun sync_enrichmentTimeout_keepsTotalsAndPartialBatch() {
         var swimCalls = 0
         val enrichingSync = HuaweiWorkoutSync(
-            exchangeEncrypted = { request, service, cmd, _ ->
+            exchangeEncrypted = { _, service, cmd, _ ->
                 when {
                     service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
-                        val entry = HuaweiFraming.encodeTlvs(
-                            listOf(
-                                HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(9)),
-                                HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.shortBe(0)),
-                                HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(0)),
-                                HuaweiFraming.Tlv(0x09, HuaweiPacketCrypto.shortBe(2)),
-                            ),
-                        )
-                        val container = HuaweiFraming.encodeTlvs(
-                            listOf(
-                                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(1)),
-                                HuaweiFraming.Tlv(0x85, entry),
-                            ),
-                        )
-                        HuaweiFraming.Frame(
-                            HuaweiWorkoutSync.SVC,
-                            HuaweiWorkoutSync.CMD_COUNT,
-                            listOf(HuaweiFraming.Tlv(0x81, container)),
-                        )
+                        countFrame(number = 9, dataCount = 0, paceCount = 0, segmentsCount = 2)
                     }
                     service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
-                        val container = HuaweiFraming.encodeTlvs(
-                            listOf(
-                                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(9)),
-                                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(100)),
-                                HuaweiFraming.Tlv(0x12, HuaweiPacketCrypto.intBe(300)),
-                                HuaweiFraming.Tlv(0x14, byteArrayOf(0x05)),
-                            ),
-                        )
-                        HuaweiFraming.Frame(
-                            HuaweiWorkoutSync.SVC,
-                            HuaweiWorkoutSync.CMD_TOTALS,
-                            listOf(HuaweiFraming.Tlv(0x81, container)),
-                        )
+                        totalsFrame(number = 9, start = 100, duration = 300, type = 5)
                     }
                     service == HuaweiWorkoutSync.SVC &&
                         cmd == HuaweiWorkoutSync.CMD_SWIM -> {
@@ -648,5 +830,83 @@ class HuaweiWorkoutSyncTest {
         assertEquals("partial", workouts[0]["enrichmentStatus"])
         assertEquals(2, workouts[0]["segmentsCount"])
         assertEquals(1, swimCalls)
+        // Count said no Data pages — do not claim sample load was absent beyond none.
+        assertEquals("none", workouts[0]["sampleFetch"])
+    }
+
+    private fun countFrame(
+        number: Int,
+        dataCount: Int,
+        paceCount: Int,
+        segmentsCount: Int,
+    ): HuaweiFraming.Frame {
+        val entry = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(number)),
+                HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.shortBe(dataCount)),
+                HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(paceCount)),
+                HuaweiFraming.Tlv(0x09, HuaweiPacketCrypto.shortBe(segmentsCount)),
+            ),
+        )
+        val container = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(1)),
+                HuaweiFraming.Tlv(0x85, entry),
+            ),
+        )
+        return HuaweiFraming.Frame(
+            HuaweiWorkoutSync.SVC,
+            HuaweiWorkoutSync.CMD_COUNT,
+            listOf(HuaweiFraming.Tlv(0x81, container)),
+        )
+    }
+
+    private fun totalsFrame(
+        number: Int,
+        start: Int,
+        duration: Int,
+        type: Int,
+    ): HuaweiFraming.Frame {
+        val container = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(number)),
+                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(start)),
+                HuaweiFraming.Tlv(0x12, HuaweiPacketCrypto.intBe(duration)),
+                HuaweiFraming.Tlv(0x14, byteArrayOf(type.toByte())),
+            ),
+        )
+        return HuaweiFraming.Frame(
+            HuaweiWorkoutSync.SVC,
+            HuaweiWorkoutSync.CMD_TOTALS,
+            listOf(HuaweiFraming.Tlv(0x81, container)),
+        )
+    }
+
+    private fun dataPageFrame(
+        workoutNumber: Int,
+        pageIndex: Int,
+        timestamp: Int,
+        intervalSec: Int,
+        sampleCount: Int,
+        dataLength: Int,
+        bitmap: Int,
+        leftover: List<HuaweiFraming.Tlv>,
+    ): HuaweiFraming.Frame {
+        val inner = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(workoutNumber)),
+                HuaweiFraming.Tlv(0x03, HuaweiPacketCrypto.shortBe(pageIndex)),
+                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(timestamp)),
+                HuaweiFraming.Tlv(0x05, HuaweiPacketCrypto.shortBe(intervalSec)),
+                HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(sampleCount)),
+                HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.shortBe(dataLength)),
+                HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(bitmap)),
+            ) + leftover,
+        )
+        return HuaweiFraming.Frame(
+            HuaweiWorkoutSync.SVC,
+            HuaweiWorkoutSync.CMD_DATA,
+            listOf(HuaweiFraming.Tlv(0x81, inner)),
+        )
     }
 }
