@@ -21,6 +21,12 @@ class HuaweiWorkoutSync(
      * GateAPrefs workout HR samples dir. Invoked only when opaque point bodies exist.
      */
     private val persistWorkoutSamples: ((id: String, bytes: ByteArray) -> String?)? = null,
+    /**
+     * Optional native leftover-file sink (peer to samples). Relative path under
+     * GateAPrefs workout leftovers dir. Used when leftover bodies would blow the
+     * MethodChannel binder budget — small leftovers still cross the channel once.
+     */
+    private val persistWorkoutLeftovers: ((id: String, bytes: ByteArray) -> String?)? = null,
 ) {
     companion object {
         private const val TAG = "FOS_HUAWEI"
@@ -35,6 +41,15 @@ class HuaweiWorkoutSync(
         const val FALLBACK_START_UNIX = 1_654_819_200L
         /** Relative side-file dir — must match [GateAPrefs.workoutHrSamplesDir]. */
         const val WORKOUT_HR_SAMPLES_DIR = "workouts/hr_samples"
+        /** Relative side-file dir — must match [GateAPrefs.workoutLeftoversDir]. */
+        const val WORKOUT_LEFTOVERS_DIR = "workouts/leftovers"
+        /**
+         * Soft cumulative binder budget for leftover bodies in one Sync result.
+         * Below Android TransactionTooLarge (~1MB) with headroom for other map fields.
+         */
+        const val LEFTOVER_CHANNEL_BUDGET_BYTES = 384 * 1024
+        /** Single leftover above this always spills when a sink is available. */
+        const val LEFTOVER_INLINE_MAX_BYTES = 64 * 1024
 
         fun u16(value: ByteArray, offset: Int = 0): Int {
             if (value.size < offset + 2) return 0
@@ -183,7 +198,10 @@ class HuaweiWorkoutSync(
          */
         val leftoverTlvs: List<HuaweiFraming.Tlv> = emptyList(),
     ) {
-        fun toMap(): Map<String, Any?> {
+        fun toMap(
+            leftoverSink: ((id: String, bytes: ByteArray) -> String?)? = null,
+            forceSpill: Boolean = false,
+        ): Map<String, Any?> {
             val out = linkedMapOf<String, Any?>(
                 "number" to number,
                 "startTime" to startTime,
@@ -216,8 +234,34 @@ class HuaweiWorkoutSync(
             }
             if (leftoverTlvs.isNotEmpty()) {
                 val leftoverBytes = HuaweiFraming.encodeTlvs(leftoverTlvs)
-                out["leftover"] = leftoverBytes
                 out["leftoverLen"] = leftoverBytes.size
+                val shouldSpill = forceSpill ||
+                    leftoverBytes.size > LEFTOVER_INLINE_MAX_BYTES
+                if (shouldSpill && leftoverSink != null) {
+                    val id = "${number}_$startTime"
+                    val path = leftoverSink(id, leftoverBytes)
+                    if (path != null) {
+                        out["leftoverPath"] = path
+                        out["leftoverPresent"] = true
+                        Log.i(
+                            TAG,
+                            "workout-sync leftover spilled number=$number " +
+                                "len=${leftoverBytes.size} path=$path",
+                        )
+                    } else {
+                        // Sink failed — fall back to inline so Dart can still persist.
+                        out["leftover"] = leftoverBytes
+                        out["leftoverPresent"] = true
+                        Log.w(
+                            TAG,
+                            "workout-sync leftover spill failed number=$number " +
+                                "len=${leftoverBytes.size} — inlining",
+                        )
+                    }
+                } else {
+                    out["leftover"] = leftoverBytes
+                    out["leftoverPresent"] = true
+                }
             }
             return out
         }
@@ -271,6 +315,7 @@ class HuaweiWorkoutSync(
 
         val workouts = ArrayList<Map<String, Any?>>(numbers.size)
         var enrichmentPartial = false
+        var leftoverChannelBytes = 0
         for (ref in numbers) {
             val totalsFrame = exchangeEncrypted(
                 buildTotalsRequest(ref.workoutNumber),
@@ -297,7 +342,24 @@ class HuaweiWorkoutSync(
                     "start=${totals.startTime} duration=${totals.durationSec}s " +
                     "data=${totals.dataCount} pace=${totals.paceCount} seg=${totals.segmentsCount}",
             )
-            val workoutMap = LinkedHashMap(totals.toMap())
+            val leftoverLenHint = if (totals.leftoverTlvs.isNotEmpty()) {
+                HuaweiFraming.encodeTlvs(totals.leftoverTlvs).size
+            } else {
+                0
+            }
+            val forceSpill = leftoverLenHint > 0 && (
+                leftoverLenHint > LEFTOVER_INLINE_MAX_BYTES ||
+                    leftoverChannelBytes + leftoverLenHint > LEFTOVER_CHANNEL_BUDGET_BYTES
+                )
+            val workoutMap = LinkedHashMap(
+                totals.toMap(
+                    leftoverSink = persistWorkoutLeftovers,
+                    forceSpill = forceSpill,
+                ),
+            )
+            if (workoutMap.containsKey("leftover")) {
+                leftoverChannelBytes += (workoutMap["leftoverLen"] as? Int) ?: 0
+            }
             val hasHints =
                 totals.segmentsCount > 0 || totals.dataCount > 0 || totals.paceCount > 0
             val strengthWithData = totals.type == 140 && totals.dataCount > 0

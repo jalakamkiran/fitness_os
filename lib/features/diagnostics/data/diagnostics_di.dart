@@ -42,6 +42,14 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
         isForgetInFlight: () => pairing is DevicePairingRepositoryImpl
             ? pairing.forgetInFlight
             : false,
+        isWorkoutSyncOrMergeInFlight: () =>
+            sl.isRegistered<WorkoutHistoryRepository>()
+                ? sl<WorkoutHistoryRepository>().isSyncOrMergeInFlight
+                : false,
+        isStrengthExportInFlight: () =>
+            sl.isRegistered<StrengthSessionExportService>()
+                ? sl<StrengthSessionExportService>().exportInFlight
+                : false,
         isQwenInstalled: () => sl<SwimReasonerService>().qwen3.isInstalled(),
       );
     },

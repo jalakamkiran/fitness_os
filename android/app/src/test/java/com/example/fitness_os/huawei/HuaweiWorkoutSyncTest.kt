@@ -950,6 +950,204 @@ class HuaweiWorkoutSyncTest {
         assertEquals("partial", workouts[0]["enrichmentStatus"])
     }
 
+    @Test
+    fun toMap_smallLeftover_inlinesBodyOnChannel() {
+        val unmatchedBody = byteArrayOf(0x0a, 0x0b, 0x0c)
+        val container = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(42)),
+                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(1_700_000_100)),
+                HuaweiFraming.Tlv(0x12, HuaweiPacketCrypto.intBe(600)),
+                HuaweiFraming.Tlv(0x14, byteArrayOf(140.toByte())),
+                HuaweiFraming.Tlv(0x7f, unmatchedBody),
+            ),
+        )
+        val frame = HuaweiFraming.Frame(
+            HuaweiWorkoutSync.SVC,
+            HuaweiWorkoutSync.CMD_TOTALS,
+            listOf(HuaweiFraming.Tlv(0x81, container)),
+        )
+        val totals = sync.parseTotals(frame)!!
+        val map = totals.toMap()
+        assertTrue(map.containsKey("leftover"))
+        assertFalse(map.containsKey("leftoverPath"))
+        assertEquals(true, map["leftoverPresent"])
+    }
+
+    @Test
+    fun toMap_largeLeftover_spillsToSinkOmitsBody() {
+        val bigBody = ByteArray(HuaweiWorkoutSync.LEFTOVER_INLINE_MAX_BYTES + 16) { i ->
+            (i % 251).toByte()
+        }
+        val container = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(77)),
+                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(1_700_111_000)),
+                HuaweiFraming.Tlv(0x12, HuaweiPacketCrypto.intBe(900)),
+                HuaweiFraming.Tlv(0x14, byteArrayOf(140.toByte())),
+                HuaweiFraming.Tlv(0x66, bigBody),
+            ),
+        )
+        val frame = HuaweiFraming.Frame(
+            HuaweiWorkoutSync.SVC,
+            HuaweiWorkoutSync.CMD_TOTALS,
+            listOf(HuaweiFraming.Tlv(0x81, container)),
+        )
+        val totals = sync.parseTotals(frame)!!
+        var sinkCalls = 0
+        var sunkId: String? = null
+        var sunkLen = 0
+        val map = totals.toMap(
+            leftoverSink = { id, bytes ->
+                sinkCalls++
+                sunkId = id
+                sunkLen = bytes.size
+                "${HuaweiWorkoutSync.WORKOUT_LEFTOVERS_DIR}/$id.bin"
+            },
+            forceSpill = true,
+        )
+        assertEquals(1, sinkCalls)
+        assertEquals("77_1700111000", sunkId)
+        assertEquals(map["leftoverLen"], sunkLen)
+        assertFalse(map.containsKey("leftover"))
+        assertEquals(
+            "${HuaweiWorkoutSync.WORKOUT_LEFTOVERS_DIR}/77_1700111000.bin",
+            map["leftoverPath"],
+        )
+        assertEquals(true, map["leftoverPresent"])
+    }
+
+    @Test
+    fun sync_largeLeftover_spillsViaSinkOmitsChannelBody() {
+        val bigBody = ByteArray(HuaweiWorkoutSync.LEFTOVER_INLINE_MAX_BYTES + 32) { 7 }
+        val spilled = mutableListOf<Pair<String, Int>>()
+        val enrichingSync = HuaweiWorkoutSync(
+            exchangeEncrypted = { _, service, cmd, _ ->
+                when {
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
+                        countFrame(
+                            number = 88,
+                            dataCount = 0,
+                            paceCount = 0,
+                            segmentsCount = 0,
+                        )
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
+                        val container = HuaweiFraming.encodeTlvs(
+                            listOf(
+                                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(88)),
+                                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(1_700_222_000)),
+                                HuaweiFraming.Tlv(0x12, HuaweiPacketCrypto.intBe(300)),
+                                HuaweiFraming.Tlv(0x14, byteArrayOf(140.toByte())),
+                                HuaweiFraming.Tlv(0x7f, bigBody),
+                            ),
+                        )
+                        HuaweiFraming.Frame(
+                            HuaweiWorkoutSync.SVC,
+                            HuaweiWorkoutSync.CMD_TOTALS,
+                            listOf(HuaweiFraming.Tlv(0x81, container)),
+                        )
+                    }
+                    else -> null
+                }
+            },
+            persistWorkoutLeftovers = { id, bytes ->
+                spilled += id to bytes.size
+                "${HuaweiWorkoutSync.WORKOUT_LEFTOVERS_DIR}/$id.bin"
+            },
+        )
+        val result = enrichingSync.sync(0, 999_999_999)
+        assertEquals("ok", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val workouts = result["workouts"] as List<Map<String, Any?>>
+        assertEquals(1, workouts.size)
+        assertFalse(workouts[0].containsKey("leftover"))
+        assertEquals(
+            "${HuaweiWorkoutSync.WORKOUT_LEFTOVERS_DIR}/88_1700222000.bin",
+            workouts[0]["leftoverPath"],
+        )
+        assertEquals(true, workouts[0]["leftoverPresent"])
+        assertEquals(1, spilled.size)
+        assertEquals("88_1700222000", spilled[0].first)
+    }
+
+    @Test
+    fun sync_cumulativeLeftoverBudget_spillsLaterSessions() {
+        // Chunks under INLINE_MAX so only cumulative budget forces spill.
+        val chunk = HuaweiWorkoutSync.LEFTOVER_INLINE_MAX_BYTES - 2048
+        val need =
+            (HuaweiWorkoutSync.LEFTOVER_CHANNEL_BUDGET_BYTES / chunk) + 1
+        val numbers = (1..need).toList()
+        var countServed = false
+        var totalsIndex = 0
+        val spilled = mutableListOf<String>()
+        val enrichingSync = HuaweiWorkoutSync(
+            exchangeEncrypted = { _, service, cmd, _ ->
+                when {
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
+                        if (countServed) return@HuaweiWorkoutSync null
+                        countServed = true
+                        val entries = numbers.map { n ->
+                            val entry = HuaweiFraming.encodeTlvs(
+                                listOf(
+                                    HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(n)),
+                                    HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.shortBe(0)),
+                                    HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(0)),
+                                    HuaweiFraming.Tlv(0x09, HuaweiPacketCrypto.shortBe(0)),
+                                ),
+                            )
+                            HuaweiFraming.Tlv(0x85, entry)
+                        }
+                        val container = HuaweiFraming.encodeTlvs(
+                            listOf(HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(numbers.size))) +
+                                entries,
+                        )
+                        HuaweiFraming.Frame(
+                            HuaweiWorkoutSync.SVC,
+                            HuaweiWorkoutSync.CMD_COUNT,
+                            listOf(HuaweiFraming.Tlv(0x81, container)),
+                        )
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
+                        val n = numbers[totalsIndex++]
+                        val body = ByteArray(chunk) { n.toByte() }
+                        val container = HuaweiFraming.encodeTlvs(
+                            listOf(
+                                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(n)),
+                                HuaweiFraming.Tlv(
+                                    0x04,
+                                    HuaweiPacketCrypto.intBe(1_700_300_000 + n),
+                                ),
+                                HuaweiFraming.Tlv(0x12, HuaweiPacketCrypto.intBe(60)),
+                                HuaweiFraming.Tlv(0x14, byteArrayOf(140.toByte())),
+                                HuaweiFraming.Tlv(0x7f, body),
+                            ),
+                        )
+                        HuaweiFraming.Frame(
+                            HuaweiWorkoutSync.SVC,
+                            HuaweiWorkoutSync.CMD_TOTALS,
+                            listOf(HuaweiFraming.Tlv(0x81, container)),
+                        )
+                    }
+                    else -> null
+                }
+            },
+            persistWorkoutLeftovers = { id, _ ->
+                spilled += id
+                "${HuaweiWorkoutSync.WORKOUT_LEFTOVERS_DIR}/$id.bin"
+            },
+        )
+        @Suppress("UNCHECKED_CAST")
+        val workouts =
+            enrichingSync.sync(0, 999_999_999)["workouts"] as List<Map<String, Any?>>
+        assertEquals(need, workouts.size)
+        assertTrue(workouts.first().containsKey("leftover"))
+        assertFalse(workouts.first().containsKey("leftoverPath"))
+        assertTrue(workouts.last().containsKey("leftoverPath"))
+        assertFalse(workouts.last().containsKey("leftover"))
+        assertTrue(spilled.isNotEmpty())
+    }
+
     private fun countFrame(
         number: Int,
         dataCount: Int,

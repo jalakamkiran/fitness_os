@@ -71,7 +71,8 @@ class WorkoutLeftoverStore {
       );
 
   /// Load by relative path from the lean prefs index.
-  /// Missing / unreadable → null (present flag + missing file = unobserved).
+  /// Missing / unreadable / path-escape → null (present flag + missing file =
+  /// unobserved).
   Future<Uint8List?> loadAtRelativePath(String relativePath) async {
     final sanitized = _sanitizeRelative(relativePath);
     if (sanitized == null) return null;
@@ -79,9 +80,34 @@ class WorkoutLeftoverStore {
     final file = File('${root.path}/$sanitized');
     try {
       if (!await file.exists()) return null;
+      if (!await _isUnderLeftoverRoot(root, file)) return null;
       return await file.readAsBytes();
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Best-effort delete by workout identity (startTime replace orphan cleanup).
+  Future<void> delete({
+    required int workoutNumber,
+    required int startTime,
+  }) =>
+      deleteAtRelativePath(
+        relativePathFor(workoutNumber: workoutNumber, startTime: startTime),
+      );
+
+  /// Best-effort delete by relative path. Path-escape / missing → no-op.
+  Future<void> deleteAtRelativePath(String relativePath) async {
+    final sanitized = _sanitizeRelative(relativePath);
+    if (sanitized == null) return;
+    final root = await _root();
+    final file = File('${root.path}/$sanitized');
+    try {
+      if (!await file.exists()) return;
+      if (!await _isUnderLeftoverRoot(root, file)) return;
+      await file.delete();
+    } catch (_) {
+      // Best-effort.
     }
   }
 
@@ -103,9 +129,27 @@ class WorkoutLeftoverStore {
     return override ?? await getApplicationSupportDirectory();
   }
 
+  /// Resolve canonical paths and reject reads that escape the leftovers root
+  /// (TruSleep / food path-escape peer — blocks symlink escapes).
+  static Future<bool> _isUnderLeftoverRoot(Directory root, File file) async {
+    try {
+      final leftovers =
+          Directory('${root.path}/${GateAPrefs.workoutLeftoversDir}');
+      if (!await leftovers.exists()) return false;
+      final rootCanon = await leftovers.resolveSymbolicLinks();
+      final fileCanon = await file.resolveSymbolicLinks();
+      if (fileCanon == rootCanon) return false; // directory, not a file body
+      final sep = Platform.pathSeparator;
+      final prefix = rootCanon.endsWith(sep) ? rootCanon : '$rootCanon$sep';
+      return fileCanon.startsWith(prefix);
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Reject absolute paths and path escape; require registered leftovers dir.
   static String? _sanitizeRelative(String path) {
-    final trimmed = path.trim();
+    final trimmed = path.trim().replaceAll('\\', '/');
     if (trimmed.isEmpty) return null;
     if (trimmed.startsWith('/') || trimmed.contains('..')) return null;
     if (trimmed.contains(':\\') || trimmed.startsWith('\\\\')) return null;

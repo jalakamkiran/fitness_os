@@ -26,6 +26,8 @@ void main() {
     bool Function()? syncInFlight,
     bool Function()? vitalsBusy,
     bool Function()? forgetInFlight,
+    bool Function()? workoutMergeBusy,
+    bool Function()? strengthExportBusy,
     Future<bool> Function()? qwenInstalled,
   }) async {
     SharedPreferences.setMockInitialValues(prefsSeed);
@@ -37,6 +39,8 @@ void main() {
       isSyncInFlight: syncInFlight ?? () => false,
       isVitalsSyncOrMergeInFlight: vitalsBusy ?? () => false,
       isForgetInFlight: forgetInFlight ?? () => false,
+      isWorkoutSyncOrMergeInFlight: workoutMergeBusy,
+      isStrengthExportInFlight: strengthExportBusy,
       isQwenInstalled: qwenInstalled ?? () async => false,
       clock: () => DateTime.utc(2026, 8, 5, 12, 0, 0),
     );
@@ -352,6 +356,22 @@ void main() {
 
     test('Forget-in-flight → blocked; no file', () async {
       final service = await buildService(forgetInFlight: () => true);
+      final result = await service.exportToCache();
+      expect(result.status, AppDataExportStatus.blocked);
+    });
+
+    test('workout merge-in-flight → blocked; no file', () async {
+      final service = await buildService(workoutMergeBusy: () => true);
+      final result = await service.exportToCache();
+      expect(result.status, AppDataExportStatus.blocked);
+      final cache = Directory(
+        '${tempRoot.path}/${AppDataExportEnvelope.exportCacheDirName}',
+      );
+      expect(cache.existsSync() ? cache.listSync() : <File>[], isEmpty);
+    });
+
+    test('strength export-in-flight → blocked; no file', () async {
+      final service = await buildService(strengthExportBusy: () => true);
       final result = await service.exportToCache();
       expect(result.status, AppDataExportStatus.blocked);
     });

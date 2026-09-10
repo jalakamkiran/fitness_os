@@ -264,6 +264,7 @@ class HuaweiSession(
                     exchangeEncrypted(req, svc, cmd, timeout)
                 },
                 persistWorkoutSamples = { id, bytes -> persistWorkoutSampleFile(id, bytes) },
+                persistWorkoutLeftovers = { id, bytes -> persistWorkoutLeftoverFile(id, bytes) },
             ).sync(startUnix, endUnix, enrichStartUnix)
         } finally {
             productSyncActive = false
@@ -622,6 +623,41 @@ class HuaweiSession(
         }
         file.writeBytes(bytes)
         Log.i(TAG, "workout-samples persisted id=$safeId len=${bytes.size} path=$rel")
+        return rel
+    }
+
+    /**
+     * Write under `filesDir/workouts/leftovers/{id}.bin` (GateAPrefs.workoutLeftoversDir).
+     * Peer to sample persist — used when MethodChannel leftover bodies would blow binder.
+     */
+    private fun persistWorkoutLeftoverFile(id: String, bytes: ByteArray): String? {
+        val root = appFilesDir?.invoke() ?: return null
+        val dir = java.io.File(root, HuaweiWorkoutSync.WORKOUT_LEFTOVERS_DIR)
+        if (!dir.exists() && !dir.mkdirs()) {
+            Log.w(TAG, "workout-leftovers mkdir failed ${dir.absolutePath}")
+            return null
+        }
+        val safeId = id.replace(Regex("[^0-9A-Za-z._-]"), "_")
+        if (safeId.isEmpty() || safeId != id) {
+            Log.w(TAG, "workout-leftovers persist rejected id=$id")
+            return null
+        }
+        val file = java.io.File(dir, "$safeId.bin")
+        val canonicalDir = dir.canonicalFile
+        val canonicalFile = file.canonicalFile
+        if (!canonicalFile.path.startsWith(canonicalDir.path + java.io.File.separator) &&
+            canonicalFile.path != canonicalDir.path
+        ) {
+            Log.w(TAG, "workout-leftovers persist path escape id=$safeId")
+            return null
+        }
+        if (bytes.isEmpty()) {
+            Log.d(TAG, "workout-leftovers skip empty id=$safeId")
+            return null
+        }
+        file.writeBytes(bytes)
+        val rel = "${HuaweiWorkoutSync.WORKOUT_LEFTOVERS_DIR}/$safeId.bin"
+        Log.i(TAG, "workout-leftovers persisted id=$safeId len=${bytes.size} path=$rel")
         return rel
     }
 

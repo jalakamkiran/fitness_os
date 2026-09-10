@@ -86,6 +86,28 @@ void main() {
       );
     });
 
+    test('Rejects symlink that escapes leftover root', () async {
+      final leftovers =
+          Directory('${tempRoot.path}/${GateAPrefs.workoutLeftoversDir}');
+      await leftovers.create(recursive: true);
+      final outside = File('${tempRoot.path}/outside_secret.bin');
+      await outside.writeAsBytes([7, 7, 7, 7]);
+      final linkPath = '${leftovers.path}/escape.bin';
+      try {
+        await Link(linkPath).create(outside.path);
+      } on PathAccessException {
+        // Some CI sandboxes disallow symlinks — skip assertion.
+        return;
+      } on FileSystemException {
+        return;
+      }
+
+      final loaded = await store.loadAtRelativePath(
+        '${GateAPrefs.workoutLeftoversDir}/escape.bin',
+      );
+      expect(loaded, isNull);
+    });
+
     test('clearLocal empties leftover dir', () async {
       await store.save(
         workoutNumber: 1,

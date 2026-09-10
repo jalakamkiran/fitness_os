@@ -1395,6 +1395,13 @@ bool _hasEnrichment(WorkoutSummary w) =>
 
 bool? _dataFetchedStatus(WorkoutSummary w) {
   if (w.dataCount == null || w.dataCount! <= 0) return null;
+  // sampleFetch is authoritative when present — header sampleCount alone must
+  // not claim fetched✓ after timeout/partial (AE6 honesty).
+  final fetch = w.sampleFetch;
+  if (fetch == 'timeout' || fetch == 'partial' || fetch == 'none') {
+    return false;
+  }
+  if (fetch == 'ok') return true;
   return w.sampleCount != null && w.sampleCount! > 0;
 }
 
