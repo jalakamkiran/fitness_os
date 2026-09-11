@@ -50,6 +50,9 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   /// (v3 one-shot force for stroke-style capability proof is complete — left at v2.)
   static const currentSwimSegmentParserVersion = 2;
 
+  /// Run/session leftover + stream remap generation (monotonic escape hatch).
+  static const currentRunSessionParserVersion = 1;
+
   @override
   Future<bool> isGateAPassed() async =>
       _prefs.getBool(GateAPrefs.gateAPassed) ?? false;
@@ -122,56 +125,144 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
         endUnix: endUnix,
       );
 
+      final softIncomplete = result.status == WorkoutSyncStatus.partialBatch ||
+          result.status == WorkoutSyncStatus.stuck;
+      final hasWorkouts = result.workouts.isNotEmpty;
+
       switch (result.status) {
         case WorkoutSyncStatus.notReady:
         case WorkoutSyncStatus.busy:
+        case WorkoutSyncStatus.error:
+          return _leftSoftFail(result);
         case WorkoutSyncStatus.stuck:
         case WorkoutSyncStatus.partialBatch:
-        case WorkoutSyncStatus.error:
-          // Soft Sync failure — not a capability Pass or Blocked-empty claim.
-          FosHuaweiLog.i(
-            syncNotOkSwimStyleOutcomeLine(result.status),
-            op: 'sync',
-          );
-          return Left(
-            ServerFailure(
-              result.message ??
-                  switch (result.status) {
-                    WorkoutSyncStatus.notReady =>
-                      'Session not ready — reconnect',
-                    WorkoutSyncStatus.busy =>
-                      'Another Sync is already in progress',
-                    WorkoutSyncStatus.stuck =>
-                      'Sync stuck — disconnect and reconnect',
-                    WorkoutSyncStatus.partialBatch =>
-                      'Workout Sync incomplete — retry after reconnect',
-                    _ => 'Sync failed',
-                  },
-            ),
-          );
+          // Soft-incomplete with usable Totals → merge (AE6). Empty → Left
+          // (AE7 blocked honesty — no tile-absence claim).
+          if (!hasWorkouts) return _leftSoftFail(result);
+          break;
         case WorkoutSyncStatus.empty:
           // Keep prior rows; empty window is success.
           final local = await loadLocal();
           return Right(local);
         case WorkoutSyncStatus.ok:
-          final stamped = await _persistPeeledSideFiles(
-            result.peeled,
-            result.workouts,
-          );
-          final merged = await _mergeAndPersist(stamped);
-          emitSwimStyleCapabilityLogs(
-            stamped,
-            log: (message) => FosHuaweiLog.i(message, op: 'sync'),
-          );
-          await _prefs.setInt(
-            GateAPrefs.swimSegmentParserVersion,
-            currentSwimSegmentParserVersion,
-          );
-          return Right(merged);
+          break;
       }
+
+      final peeled = await _persistPeeledSideFiles(
+        result.peeled,
+        result.workouts,
+      );
+      final stamped = <WorkoutSummary>[];
+      for (final w in peeled) {
+        final reconciled = await _reconcileRefsAndFiles(w);
+        stamped.add(
+          reconciled.copyWith(
+            enrichmentStatus: WorkoutEnrichmentMerge.sessionEnrichmentStatus(
+              softIncomplete: softIncomplete,
+              workout: reconciled,
+            ),
+            parserGeneration: currentRunSessionParserVersion,
+          ),
+        );
+      }
+      final merged = await _mergeAndPersist(stamped);
+      emitSwimStyleCapabilityLogs(
+        stamped,
+        log: (message) => FosHuaweiLog.i(message, op: 'sync'),
+      );
+      if (!softIncomplete) {
+        await _prefs.setInt(
+          GateAPrefs.swimSegmentParserVersion,
+          currentSwimSegmentParserVersion,
+        );
+      }
+      await _prefs.setInt(
+        GateAPrefs.runSessionParserVersion,
+        currentRunSessionParserVersion,
+      );
+      return Right(merged);
     } finally {
       _onSyncSettled?.call();
     }
+  }
+
+  Left<Failure, List<WorkoutSummary>> _leftSoftFail(WorkoutSyncResult result) {
+    // Soft Sync failure — not a capability Pass or Blocked-empty claim.
+    FosHuaweiLog.i(
+      syncNotOkSwimStyleOutcomeLine(result.status),
+      op: 'sync',
+    );
+    return Left(
+      ServerFailure(
+        result.message ??
+            switch (result.status) {
+              WorkoutSyncStatus.notReady => 'Session not ready — reconnect',
+              WorkoutSyncStatus.busy => 'Another Sync is already in progress',
+              WorkoutSyncStatus.stuck => 'Sync stuck — disconnect and reconnect',
+              WorkoutSyncStatus.partialBatch =>
+                'Workout Sync incomplete — retry after reconnect',
+              _ => 'Sync failed',
+            },
+      ),
+    );
+  }
+
+  /// Downgrade [WorkoutStreamHonesty.present] when side-files disagree with
+  /// prefs refs — never stamp session `ok` unless refs+files agree.
+  Future<WorkoutSummary> _reconcileRefsAndFiles(WorkoutSummary w) async {
+    final checkLeftovers = w.leftoversStatus == WorkoutStreamHonesty.present;
+    final checkData = w.dataPagesStatus == WorkoutStreamHonesty.present ||
+        w.dataPagesStatus == WorkoutStreamHonesty.partial;
+    final checkPace = w.paceBlocksStatus == WorkoutStreamHonesty.present ||
+        w.paceBlocksStatus == WorkoutStreamHonesty.partial;
+    if (!checkLeftovers && !checkData && !checkPace) return w;
+
+    var leftoversStatus = w.leftoversStatus;
+    var dataPagesStatus = w.dataPagesStatus;
+    var paceBlocksStatus = w.paceBlocksStatus;
+    var leftoverRefs = w.leftoverRefs;
+    var dataPagesStored = w.dataPagesStored;
+    var paceBlocksStored = w.paceBlocksStored;
+
+    if (checkLeftovers) {
+      final bodies = await _runSessionStore.loadTotalsLeftovers(w.number);
+      if (bodies.isEmpty) {
+        leftoversStatus = WorkoutStreamHonesty.incomplete;
+      } else {
+        leftoverRefs = bodies
+            .map((b) => EnrichmentTagRef(id: b.id, len: b.len))
+            .toList();
+      }
+    }
+    if (checkData) {
+      final pages = await _runSessionStore.loadDataPages(w.number);
+      if (pages.isEmpty &&
+          dataPagesStatus == WorkoutStreamHonesty.present) {
+        dataPagesStatus = WorkoutStreamHonesty.incomplete;
+        dataPagesStored = null;
+      } else if (pages.isNotEmpty) {
+        dataPagesStored = pages.length;
+      }
+    }
+    if (checkPace) {
+      final blocks = await _runSessionStore.loadPaceBlocks(w.number);
+      if (blocks.isEmpty &&
+          paceBlocksStatus == WorkoutStreamHonesty.present) {
+        paceBlocksStatus = WorkoutStreamHonesty.incomplete;
+        paceBlocksStored = null;
+      } else if (blocks.isNotEmpty) {
+        paceBlocksStored = blocks.length;
+      }
+    }
+
+    return w.copyWith(
+      leftoversStatus: leftoversStatus,
+      dataPagesStatus: dataPagesStatus,
+      paceBlocksStatus: paceBlocksStatus,
+      leftoverRefs: leftoverRefs,
+      dataPagesStored: dataPagesStored,
+      paceBlocksStored: paceBlocksStored,
+    );
   }
 
   /// Write peeled leftover/sample/pace bodies via [RunSessionStore].
@@ -250,7 +341,14 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
       for (final w in existing) w.number: w,
     };
     for (final w in incoming) {
-      byNumber[w.number] = w;
+      final prev = byNumber[w.number];
+      byNumber[w.number] = prev == null
+          ? w
+          : WorkoutEnrichmentMerge.mergeRow(
+              existing: prev,
+              incoming: w,
+              currentParserGeneration: currentRunSessionParserVersion,
+            );
     }
     final merged = byNumber.values.toList()
       ..sort((a, b) => b.startTime.compareTo(a.startTime));
@@ -263,8 +361,11 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final swimSessions = <CanonicalSwimSession>[];
     for (final w in incoming) {
+      // Use post-monotonic row so Totals-only soft-incomplete does not clobber
+      // richer local swim segments in the canonical side-file.
+      final row = byNumber[w.number] ?? w;
       final session = CanonicalSwimSession.fromWorkoutSummary(
-        w,
+        row,
         builtAtUnix: now,
       );
       if (session != null) swimSessions.add(session);
