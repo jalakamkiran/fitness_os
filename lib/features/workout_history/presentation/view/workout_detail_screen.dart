@@ -2,10 +2,12 @@ import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
 import 'package:fitness_os/features/workout_history/domain/offline_swim_reasoner.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
+import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_invent_guard.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_p0_metrics.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_recommendations.dart';
@@ -13,25 +15,47 @@ import 'package:fitness_os/features/workout_history/domain/swim_session_analytic
 import 'package:fitness_os/features/workout_history/domain/swim_stroke_label.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/coach_settings_route.dart';
+import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/run_session_sections.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_session_charts.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_stroke_icon.dart';
 
 class WorkoutDetailScreen extends StatelessWidget {
-  const WorkoutDetailScreen({super.key, required this.workout});
+  const WorkoutDetailScreen({
+    super.key,
+    required this.workout,
+    this.runSessionStore,
+    this.preloadedPaceSplits,
+    this.preloadedStreamPoints,
+  });
 
   final WorkoutSummary workout;
+
+  /// Optional override for Run side-file loaders (tests). Production uses DI.
+  final RunSessionStore? runSessionStore;
+
+  /// Test seam: inject pace splits without side-file IO.
+  final List<RunPaceSplit>? preloadedPaceSplits;
+
+  /// Test seam: inject chart points without side-file IO.
+  final List<RunStreamPoint>? preloadedStreamPoints;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final swim = CanonicalSwimSession.fromWorkoutSummary(workout);
+    final isRun = isRunWorkout(workout.type);
+    final swim = isRun ? null : CanonicalSwimSession.fromWorkoutSummary(workout);
     final analytics = swim == null ? null : analyzeSwimSession(swim.p0);
+    final runMetrics =
+        isRun ? RunSessionMetrics.fromSummary(workout) : null;
 
     return Scaffold(
       appBar: AppBar(
         title: Text('${_typeLabel(workout.type)} #${workout.number}'),
         actions: [
+          // U5 seam: Outdoor Run detail will add "Export for AI" here after
+          // sensitive-health confirm — not in this unit.
           IconButton(
             tooltip: 'Reasoner settings',
             icon: const Icon(Icons.psychology_outlined),
@@ -44,6 +68,7 @@ class WorkoutDetailScreen extends StatelessWidget {
         children: [
           _CountHintsCard(workout: workout),
           const SizedBox(height: 16),
+          // IA (1): session header.
           _SectionCard(
             title: 'Session',
             children: [
@@ -55,97 +80,142 @@ class WorkoutDetailScreen extends StatelessWidget {
                 _Row('Calories', '${workout.calories} kcal'),
               if (workout.distanceM != null)
                 _Row('Distance', '${workout.distanceM} m'),
-              if (workout.steps != null) _Row('Steps', '${workout.steps}'),
+              // Steps live under Form on the Run path (IA 4).
+              if (!isRun && workout.steps != null)
+                _Row('Steps', '${workout.steps}'),
             ],
           ),
-          if (_hasHr(workout)) ...[
-            const SizedBox(height: 12),
-            _SectionCard(
-              title: 'Heart rate',
-              children: [
-                if (workout.hrMin != null) _Row('Min', '${workout.hrMin} bpm'),
-                if (workout.hrMax != null) _Row('Max', '${workout.hrMax} bpm'),
-                if (workout.hrPeak != null)
-                  _Row('Peak', '${workout.hrPeak} bpm'),
-              ],
-            ),
-          ],
-          if (_hasSwim(workout)) ...[
-            const SizedBox(height: 12),
-            _SectionCard(
-              title: 'Swim',
-              children: [
-                if (workout.swimType != null)
-                  _Row('Swim type', swimStrokeLabel(workout.swimType!)),
-                if (workout.strokes != null)
-                  _Row('Strokes', '${workout.strokes}'),
-                if (workout.strokeRate != null)
-                  _Row('Stroke rate', '${workout.strokeRate} /min'),
-                if (workout.avgSwolf != null)
-                  _Row('Avg SWOLF', '${workout.avgSwolf}'),
-                if (workout.poolLength != null)
-                  _Row('Pool length', _formatPoolLength(workout.poolLength!)),
-                if (workout.laps != null) _Row('Laps', '${workout.laps}'),
-              ],
-            ),
-          ],
-          if (swim != null) ...[
-            const SizedBox(height: 12),
-            _P0MetricsCard(session: swim),
-            if (analytics != null) ...[
+          if (isRun && runMetrics != null) ...[
+            // IA (2): this-run recovery / stress / load — omit if undecoded.
+            if (runMetrics.hasThisRunTraining) ...[
               const SizedBox(height: 12),
-              _SessionAnalyticsCard(analytics: analytics),
+              RunThisRunTrainingCard(metrics: runMetrics),
             ],
+            // IA (3): native zones only — never invent minutes.
+            if (runMetrics.hasNativeZones) ...[
+              const SizedBox(height: 12),
+              RunNativeZonesCard(metrics: runMetrics),
+            ],
+            // IA (4): form tiles when present.
+            if (runMetrics.hasFormTiles) ...[
+              const SizedBox(height: 12),
+              RunFormTilesCard(metrics: runMetrics),
+            ],
+            // Scalar HR peaks (fetched Totals) — before stream charts.
+            if (_hasHr(workout)) ...[
+              const SizedBox(height: 12),
+              _SectionCard(
+                title: 'Heart rate',
+                children: [
+                  if (workout.hrMin != null)
+                    _Row('Min', '${workout.hrMin} bpm'),
+                  if (workout.hrMax != null)
+                    _Row('Max', '${workout.hrMax} bpm'),
+                  if (workout.hrPeak != null)
+                    _Row('Peak', '${workout.hrPeak} bpm'),
+                ],
+              ),
+            ],
+            // IA (5–6): splits then pace/HR charts — gated on side-files.
             const SizedBox(height: 12),
-            _DiagnosesLoader(workoutNumber: workout.number),
-            const SizedBox(height: 12),
-            _CoachRecsLoader(workoutNumber: workout.number),
-          ],
-          if (swim != null && swim.p0.laps.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _SwimChartsAndIntervals(
-              laps: swim.p0.laps,
-              poolLengthM: swim.poolLengthM,
-              hrCoverage: swim.p0.hrCoverage,
+            RunSessionStreamsSection(
+              workoutNumber: workout.number,
+              store: runSessionStore,
+              preloadedSplits: preloadedPaceSplits,
+              preloadedPoints: preloadedStreamPoints,
             ),
-          ] else if (workout.segments != null &&
-              workout.segments!.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _LapTable(segments: workout.segments!),
-          ],
-          if (workout.sampleCount != null && workout.sampleCount! > 0) ...[
-            const SizedBox(height: 12),
-            _SectionCard(
-              title: 'Samples',
-              children: [
-                _Row('Sample count', '${workout.sampleCount}'),
+          ] else ...[
+            if (_hasHr(workout)) ...[
+              const SizedBox(height: 12),
+              _SectionCard(
+                title: 'Heart rate',
+                children: [
+                  if (workout.hrMin != null)
+                    _Row('Min', '${workout.hrMin} bpm'),
+                  if (workout.hrMax != null)
+                    _Row('Max', '${workout.hrMax} bpm'),
+                  if (workout.hrPeak != null)
+                    _Row('Peak', '${workout.hrPeak} bpm'),
+                ],
+              ),
+            ],
+            if (_hasSwim(workout)) ...[
+              const SizedBox(height: 12),
+              _SectionCard(
+                title: 'Swim',
+                children: [
+                  if (workout.swimType != null)
+                    _Row('Swim type', swimStrokeLabel(workout.swimType!)),
+                  if (workout.strokes != null)
+                    _Row('Strokes', '${workout.strokes}'),
+                  if (workout.strokeRate != null)
+                    _Row('Stroke rate', '${workout.strokeRate} /min'),
+                  if (workout.avgSwolf != null)
+                    _Row('Avg SWOLF', '${workout.avgSwolf}'),
+                  if (workout.poolLength != null)
+                    _Row('Pool length', _formatPoolLength(workout.poolLength!)),
+                  if (workout.laps != null) _Row('Laps', '${workout.laps}'),
+                ],
+              ),
+            ],
+            if (swim != null) ...[
+              const SizedBox(height: 12),
+              _P0MetricsCard(session: swim),
+              if (analytics != null) ...[
+                const SizedBox(height: 12),
+                _SessionAnalyticsCard(analytics: analytics),
               ],
-            ),
-          ],
-          if (workout.enrichmentTags != null &&
-              workout.enrichmentTags!.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _SectionCard(
-              title: 'Enrichment tags',
-              subtitle: '${workout.enrichmentTags!.length} tag(s) on wire',
-              children: [
-                for (final tag in workout.enrichmentTags!)
-                  _Row('Tag ${tag.id}', 'len ${tag.len}'),
-              ],
-            ),
-          ],
-          if (!_hasEnrichment(workout)) ...[
-            const SizedBox(height: 12),
-            BpContainer(
-              padding: EdgeInsets.zero,
-              child: Text(
-                'No enrichment counts or tags on this workout yet — '
-                'sync again after a watch session with data/pace/segments.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
+              const SizedBox(height: 12),
+              _DiagnosesLoader(workoutNumber: workout.number),
+              const SizedBox(height: 12),
+              _CoachRecsLoader(workoutNumber: workout.number),
+            ],
+            if (swim != null && swim.p0.laps.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _SwimChartsAndIntervals(
+                laps: swim.p0.laps,
+                poolLengthM: swim.poolLengthM,
+                hrCoverage: swim.p0.hrCoverage,
+              ),
+            ] else if (workout.segments != null &&
+                workout.segments!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _LapTable(segments: workout.segments!),
+            ],
+            if (workout.sampleCount != null && workout.sampleCount! > 0) ...[
+              const SizedBox(height: 12),
+              _SectionCard(
+                title: 'Samples',
+                children: [
+                  _Row('Sample count', '${workout.sampleCount}'),
+                ],
+              ),
+            ],
+            if (workout.enrichmentTags != null &&
+                workout.enrichmentTags!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _SectionCard(
+                title: 'Enrichment tags',
+                subtitle: '${workout.enrichmentTags!.length} tag(s) on wire',
+                children: [
+                  for (final tag in workout.enrichmentTags!)
+                    _Row('Tag ${tag.id}', 'len ${tag.len}'),
+                ],
+              ),
+            ],
+            if (!_hasEnrichment(workout)) ...[
+              const SizedBox(height: 12),
+              BpContainer(
+                padding: EdgeInsets.zero,
+                child: Text(
+                  'No enrichment counts or tags on this workout yet — '
+                  'sync again after a watch session with data/pace/segments.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
         ],
       ),

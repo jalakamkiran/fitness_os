@@ -116,6 +116,7 @@ class RunSessionStore {
     final dir = await _workoutDir(relDir, workoutNumber);
     final pageMeta = <Map<String, dynamic>>[];
     for (final page in pages) {
+      if (!page.hasPersistableContent) continue;
       final items = <Map<String, dynamic>>[];
       for (var i = 0; i < page.bodies.length; i++) {
         final body = page.bodies[i];
@@ -126,8 +127,14 @@ class RunSessionStore {
         );
         items.add({'id': body.id, 'len': body.len, 'file': name});
       }
-      pageMeta.add({'index': page.index, 'items': items});
+      pageMeta.add({
+        'index': page.index,
+        if (page.distanceM != null) 'distanceM': page.distanceM,
+        if (page.paceSec != null) 'paceSec': page.paceSec,
+        'items': items,
+      });
     }
+    if (pageMeta.isEmpty) return;
     await File('${dir.path}/meta.json').writeAsString(
       jsonEncode({'pages': pageMeta}),
       flush: true,
@@ -184,24 +191,33 @@ class RunSessionStore {
       for (final page in pages.whereType<Map>()) {
         final pageMap = Map<String, dynamic>.from(page);
         final index = (pageMap['index'] as num?)?.toInt() ?? 0;
+        final distanceM = (pageMap['distanceM'] as num?)?.toInt();
+        final paceSec = (pageMap['paceSec'] as num?)?.toInt();
         final items = pageMap['items'];
-        if (items is! List) continue;
         final bodies = <LeftoverTlvBody>[];
-        for (final item in items.whereType<Map>()) {
-          final map = Map<String, dynamic>.from(item);
-          final name = map['file'] as String?;
-          if (name == null || name.isEmpty) continue;
-          final bytes = await File('${dir.path}/$name').readAsBytes();
-          bodies.add(
-            LeftoverTlvBody(
-              id: (map['id'] as num?)?.toInt() ?? 0,
-              len: (map['len'] as num?)?.toInt() ?? bytes.length,
-              bodyBase64: base64Encode(bytes),
-            ),
-          );
+        if (items is List) {
+          for (final item in items.whereType<Map>()) {
+            final map = Map<String, dynamic>.from(item);
+            final name = map['file'] as String?;
+            if (name == null || name.isEmpty) continue;
+            final bytes = await File('${dir.path}/$name').readAsBytes();
+            bodies.add(
+              LeftoverTlvBody(
+                id: (map['id'] as num?)?.toInt() ?? 0,
+                len: (map['len'] as num?)?.toInt() ?? bytes.length,
+                bodyBase64: base64Encode(bytes),
+              ),
+            );
+          }
         }
-        if (bodies.isNotEmpty) {
-          out.add(PeeledPageBodies(index: index, bodies: bodies));
+        final peeled = PeeledPageBodies(
+          index: index,
+          bodies: bodies,
+          distanceM: distanceM,
+          paceSec: paceSec,
+        );
+        if (peeled.hasPersistableContent) {
+          out.add(peeled);
         }
       }
       return out;
