@@ -8,6 +8,7 @@ import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/workout_history/data/canonical_swim_store.dart';
+import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_style_capability_log.dart';
@@ -20,16 +21,21 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     required SharedPreferences prefs,
     CanonicalSwimStore? swimStore,
     Directory? Function()? swimRootOverride,
+    RunSessionStore? runSessionStore,
+    Directory? Function()? runSessionRootOverride,
     void Function()? onSyncSettled,
   })  : _link = link,
         _prefs = prefs,
         _swimStore = swimStore ??
             CanonicalSwimStore(rootOverride: swimRootOverride),
+        _runSessionStore = runSessionStore ??
+            RunSessionStore(rootOverride: runSessionRootOverride),
         _onSyncSettled = onSyncSettled;
 
   final HuaweiLink _link;
   final SharedPreferences _prefs;
   final CanonicalSwimStore _swimStore;
+  final RunSessionStore _runSessionStore;
   final void Function()? _onSyncSettled;
 
   /// Overlap when advancing from [GateAPrefs.lastSyncCursor] so boundary
@@ -148,9 +154,13 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
           final local = await loadLocal();
           return Right(local);
         case WorkoutSyncStatus.ok:
-          final merged = await _mergeAndPersist(result.workouts);
-          emitSwimStyleCapabilityLogs(
+          final stamped = await _persistPeeledSideFiles(
+            result.peeled,
             result.workouts,
+          );
+          final merged = await _mergeAndPersist(stamped);
+          emitSwimStyleCapabilityLogs(
+            stamped,
             log: (message) => FosHuaweiLog.i(message, op: 'sync'),
           );
           await _prefs.setInt(
@@ -162,6 +172,53 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     } finally {
       _onSyncSettled?.call();
     }
+  }
+
+  /// Write peeled leftover/sample/pace bodies via [RunSessionStore].
+  ///
+  /// Side-file write failure → stamp [WorkoutStreamHonesty.incomplete] on the
+  /// affected streams; Totals scalars remain mergeable (U3 soft-incomplete).
+  /// Never logs body payloads — workout # / lengths only.
+  Future<List<WorkoutSummary>> _persistPeeledSideFiles(
+    List<PeeledWorkoutPayload>? peeled,
+    List<WorkoutSummary> workouts,
+  ) async {
+    if (peeled == null || peeled.isEmpty) return workouts;
+    final byNumber = <int, WorkoutSummary>{
+      for (final w in workouts) w.number: w,
+    };
+    for (final payload in peeled) {
+      if (!payload.hasBodiesToPersist) continue;
+      try {
+        await _runSessionStore.save(payload);
+        FosHuaweiLog.i(
+          'run-session side-files saved workout=#${payload.workoutNumber} '
+          'leftovers=${payload.totalsLeftovers.length} '
+          'dataPages=${payload.dataPages.length} '
+          'paceBlocks=${payload.paceBlocks.length}',
+          op: 'sync',
+        );
+      } catch (e) {
+        FosHuaweiLog.w(
+          'run-session side-file write failed workout=#${payload.workoutNumber}',
+          op: 'sync',
+        );
+        final existing = byNumber[payload.workoutNumber];
+        if (existing == null) continue;
+        byNumber[payload.workoutNumber] = existing.copyWith(
+          leftoversStatus: payload.totalsLeftovers.isNotEmpty
+              ? WorkoutStreamHonesty.incomplete
+              : existing.leftoversStatus,
+          dataPagesStatus: payload.dataPages.isNotEmpty
+              ? WorkoutStreamHonesty.incomplete
+              : existing.dataPagesStatus,
+          paceBlocksStatus: payload.paceBlocks.isNotEmpty
+              ? WorkoutStreamHonesty.incomplete
+              : existing.paceBlocksStatus,
+        );
+      }
+    }
+    return workouts.map((w) => byNumber[w.number] ?? w).toList();
   }
 
   /// Delta-only Count window: cursor − overlap when present; otherwise last

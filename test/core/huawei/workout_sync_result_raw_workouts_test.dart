@@ -14,7 +14,7 @@ void main() {
           'type': 2,
           'observedType': 2,
           'leftoverBodies': [
-            {'id': 0x66, 'len': 2, 'bodyBase64': 'qq=='},
+            {'id': 0x66, 'len': 2, 'bodyBase64': 'qqo='},
           ],
           'dataPages': [
             {
@@ -36,6 +36,6 @@ void main() {
       r.rawWorkouts!.single['leftoverBodies'],
     );
     expect(bodies.single.id, 0x66);
-    expect(bodies.single.bodyBase64, 'qq==');
+    expect(bodies.single.bodyBase64, 'qqo=');
   });
 }

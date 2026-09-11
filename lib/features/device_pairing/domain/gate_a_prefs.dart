@@ -36,6 +36,12 @@ abstract final class GateAPrefs {
   static const sleepFeelOnWakeJson = 'sleep_feel_on_wake_json';
   /// Side-file subdir for canonical swim sessions (one JSON per workout #).
   static const canonicalSwimDir = 'workouts/canonical_swim';
+  /// Sport-agnostic Totals leftover TLV bodies (keyed by workout #).
+  static const workoutTotalsLeftoversDir = 'workouts/totals_leftovers';
+  /// Sport-agnostic WorkoutData sample page bodies (keyed by workout #).
+  static const workoutDataPagesDir = 'workouts/data_pages';
+  /// Sport-agnostic Pace block bodies (keyed by workout #).
+  static const workoutPaceBlocksDir = 'workouts/pace_blocks';
   /// Gemini API key for W4 coach (device-local; never commit).
   static const geminiApiKey = 'gemini_api_key';
   /// Last explicit Enable auto-tracking result (outcomes-only allowlist).
