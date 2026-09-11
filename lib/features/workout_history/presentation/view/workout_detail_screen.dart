@@ -1436,6 +1436,17 @@ bool? _dataFetchedStatus(WorkoutSummary w) {
 
 bool? _paceFetchedStatus(WorkoutSummary w) {
   if (w.paceCount == null || w.paceCount! <= 0) return null;
+  // Prefer stream honesty / stored refs — soft-incomplete keeps enrichmentStatus
+  // at `partial` even when pace blocks were persisted.
+  if (w.paceBlocksStatus == WorkoutStreamHonesty.present ||
+      w.paceBlocksStatus == WorkoutStreamHonesty.partial) {
+    return true;
+  }
+  if ((w.paceBlocksStored ?? 0) > 0) return true;
+  if (w.paceBlocksStatus == WorkoutStreamHonesty.incomplete ||
+      w.paceBlocksStatus == WorkoutStreamHonesty.blocked) {
+    return false;
+  }
   return w.enrichmentStatus == 'ok';
 }
 

@@ -151,6 +151,7 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
       final peeled = await _persistPeeledSideFiles(
         result.peeled,
         result.workouts,
+        softIncomplete: softIncomplete,
       );
       final stamped = <WorkoutSummary>[];
       for (final w in peeled) {
@@ -270,23 +271,33 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   /// Side-file write failure → stamp [WorkoutStreamHonesty.incomplete] on the
   /// affected streams; Totals scalars remain mergeable (U3 soft-incomplete).
   /// Never logs body payloads — workout # / lengths only.
+  ///
+  /// Enrichment-monotonic for streams: never overwrite denser data/pace
+  /// side-files with a sparser partial payload (prefs merge alone cannot
+  /// restore bytes already clobbered on disk).
   Future<List<WorkoutSummary>> _persistPeeledSideFiles(
     List<PeeledWorkoutPayload>? peeled,
-    List<WorkoutSummary> workouts,
-  ) async {
-    if (peeled == null || peeled.isEmpty) return workouts;
+    List<WorkoutSummary> workouts, {
+    required bool softIncomplete,
+  }) async {
+    if (peeled == null || peeled.isEmpty) {
+      return softIncomplete
+          ? workouts.map(_bumpSoftIncompleteStreamHonesty).toList()
+          : workouts;
+    }
     final byNumber = <int, WorkoutSummary>{
       for (final w in workouts) w.number: w,
     };
     for (final payload in peeled) {
-      if (!payload.hasBodiesToPersist) continue;
+      final toWrite = await _monotonicPeeledPayload(payload);
+      if (!toWrite.hasBodiesToPersist) continue;
       try {
-        await _runSessionStore.save(payload);
+        await _runSessionStore.save(toWrite);
         FosHuaweiLog.i(
-          'run-session side-files saved workout=#${payload.workoutNumber} '
-          'leftovers=${payload.totalsLeftovers.length} '
-          'dataPages=${payload.dataPages.length} '
-          'paceBlocks=${payload.paceBlocks.length}',
+          'run-session side-files saved workout=#${toWrite.workoutNumber} '
+          'leftovers=${toWrite.totalsLeftovers.length} '
+          'dataPages=${toWrite.dataPages.length} '
+          'paceBlocks=${toWrite.paceBlocks.length}',
           op: 'sync',
         );
       } catch (e) {
@@ -297,19 +308,83 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
         final existing = byNumber[payload.workoutNumber];
         if (existing == null) continue;
         byNumber[payload.workoutNumber] = existing.copyWith(
-          leftoversStatus: payload.totalsLeftovers.isNotEmpty
+          leftoversStatus: toWrite.totalsLeftovers.isNotEmpty
               ? WorkoutStreamHonesty.incomplete
               : existing.leftoversStatus,
-          dataPagesStatus: payload.dataPages.isNotEmpty
+          dataPagesStatus: toWrite.dataPages.isNotEmpty
               ? WorkoutStreamHonesty.incomplete
               : existing.dataPagesStatus,
-          paceBlocksStatus: payload.paceBlocks.isNotEmpty
+          paceBlocksStatus: toWrite.paceBlocks.isNotEmpty
               ? WorkoutStreamHonesty.incomplete
               : existing.paceBlocksStatus,
         );
       }
     }
-    return workouts.map((w) => byNumber[w.number] ?? w).toList();
+    final out = workouts.map((w) => byNumber[w.number] ?? w).toList();
+    if (!softIncomplete) return out;
+    return out.map(_bumpSoftIncompleteStreamHonesty).toList();
+  }
+
+  /// Soft-incomplete with Count>0 but zero arrived pages peels as
+  /// [WorkoutStreamHonesty.unobserved]; bump to [partial] so honesty matches
+  /// enrichment timeout (not Count=0 unobserved).
+  WorkoutSummary _bumpSoftIncompleteStreamHonesty(WorkoutSummary w) {
+    String? bump(String? status, int? countHint) {
+      if ((countHint ?? 0) <= 0) return status;
+      if (status == null || status == WorkoutStreamHonesty.unobserved) {
+        return WorkoutStreamHonesty.partial;
+      }
+      return status;
+    }
+
+    return w.copyWith(
+      dataPagesStatus: bump(w.dataPagesStatus, w.dataCount),
+      paceBlocksStatus: bump(w.paceBlocksStatus, w.paceCount),
+    );
+  }
+
+  /// Drop sparser data/pace bodies so [RunSessionStore.save] cannot clobber
+  /// denser on-disk streams. Leftovers still replace when present (R3 remap).
+  Future<PeeledWorkoutPayload> _monotonicPeeledPayload(
+    PeeledWorkoutPayload payload,
+  ) async {
+    var dataPages = payload.dataPages;
+    var paceBlocks = payload.paceBlocks;
+    if (dataPages.isNotEmpty) {
+      final existing = await _runSessionStore.loadDataPages(payload.workoutNumber);
+      if (_pageBodyRichness(existing) > _pageBodyRichness(dataPages)) {
+        dataPages = const [];
+      }
+    }
+    if (paceBlocks.isNotEmpty) {
+      final existing = await _runSessionStore.loadPaceBlocks(payload.workoutNumber);
+      if (_pageBodyRichness(existing) > _pageBodyRichness(paceBlocks)) {
+        paceBlocks = const [];
+      }
+    }
+    if (identical(dataPages, payload.dataPages) &&
+        identical(paceBlocks, payload.paceBlocks)) {
+      return payload;
+    }
+    return PeeledWorkoutPayload(
+      workoutNumber: payload.workoutNumber,
+      totalsLeftovers: payload.totalsLeftovers,
+      dataPages: dataPages,
+      paceBlocks: paceBlocks,
+      leftoversStatus: payload.leftoversStatus,
+      dataPagesStatus: payload.dataPagesStatus,
+      paceBlocksStatus: payload.paceBlocksStatus,
+      observedType: payload.observedType,
+    );
+  }
+
+  static int _pageBodyRichness(List<PeeledPageBodies> pages) {
+    if (pages.isEmpty) return 0;
+    var bodies = 0;
+    for (final p in pages) {
+      bodies += p.bodies.length;
+    }
+    return pages.length * 1000 + bodies;
   }
 
   /// Delta-only Count window: cursor − overlap when present; otherwise last
