@@ -1431,7 +1431,19 @@ bool _hasEnrichment(WorkoutSummary w) =>
 
 bool? _dataFetchedStatus(WorkoutSummary w) {
   if (w.dataCount == null || w.dataCount! <= 0) return null;
-  return w.sampleCount != null && w.sampleCount! > 0;
+  // Prefer stream honesty / stored refs — sampleCount alone misses opaque
+  // pages persisted without a rolled-up sample total (parity with pace).
+  if (w.dataPagesStatus == WorkoutStreamHonesty.present ||
+      w.dataPagesStatus == WorkoutStreamHonesty.partial) {
+    return true;
+  }
+  if ((w.dataPagesStored ?? 0) > 0) return true;
+  if (w.dataPagesStatus == WorkoutStreamHonesty.incomplete ||
+      w.dataPagesStatus == WorkoutStreamHonesty.blocked) {
+    return false;
+  }
+  if (w.sampleCount != null && w.sampleCount! > 0) return true;
+  return w.enrichmentStatus == 'ok';
 }
 
 bool? _paceFetchedStatus(WorkoutSummary w) {
