@@ -16,6 +16,9 @@ abstract final class SentryPrivacyScrub {
     'segments',
     'dataPages',
     'paceBlocks',
+    'leftoverBodies',
+    'bodyBase64',
+    'rawWorkouts',
     'dailyHrSamples',
     'sleepSessions',
     'fitnessTotals',
@@ -68,7 +71,8 @@ abstract final class SentryPrivacyScrub {
             key.toLowerCase().contains('sleep') ||
             key.toLowerCase().contains('hr') ||
             key.toLowerCase().contains('sample') ||
-            key.toLowerCase().contains('segment')) {
+            key.toLowerCase().contains('segment') ||
+            key.toLowerCase().contains('leftover')) {
           continue;
         }
         out[key] = value;
