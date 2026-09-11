@@ -1319,14 +1319,29 @@ abstract final class WorkoutStreamHonesty {
 }
 
 /// Sample or pace page bodies peeled from a channel map entry.
+///
+/// Pace channel summaries may also carry [distanceM] / [paceSec] without
+/// leftover bodies — those scalars survive into [RunSessionStore] meta for
+/// the splits table (U4). Opaque [bodies] alone never invent chart points.
 class PeeledPageBodies {
   const PeeledPageBodies({
     required this.index,
     required this.bodies,
+    this.distanceM,
+    this.paceSec,
   });
 
   final int index;
   final List<LeftoverTlvBody> bodies;
+
+  /// Pace-block distance (metres) when native summary decoded it.
+  final int? distanceM;
+
+  /// Pace-block pace (seconds) when native summary decoded it.
+  final int? paceSec;
+
+  bool get hasPersistableContent =>
+      bodies.isNotEmpty || distanceM != null || paceSec != null;
 }
 
 /// Bodies + honesty peeled from one native workout map before lean prefs write.
@@ -1353,8 +1368,8 @@ class PeeledWorkoutPayload {
 
   bool get hasBodiesToPersist =>
       totalsLeftovers.isNotEmpty ||
-      dataPages.any((p) => p.bodies.isNotEmpty) ||
-      paceBlocks.any((p) => p.bodies.isNotEmpty);
+      dataPages.any((p) => p.hasPersistableContent) ||
+      paceBlocks.any((p) => p.hasPersistableContent);
 
   PeeledWorkoutPayload copyWith({
     String? leftoversStatus,
@@ -1470,15 +1485,26 @@ abstract final class WorkoutChannelPeel {
 
   static List<PeeledPageBodies> _parsePagedBodies(Object? raw) {
     if (raw is! List) return const [];
+    int? asInt(Object? v) => v == null ? null : (v as num).toInt();
     final out = <PeeledPageBodies>[];
     for (final item in raw.whereType<Map>()) {
       final map = Map<String, dynamic>.from(item);
       final bodies = WorkoutChannelRawKeys.parseLeftoverBodies(
         map[WorkoutChannelRawKeys.leftoverBodies],
       );
-      if (bodies.isEmpty) continue;
-      final index = (map['index'] as num?)?.toInt() ?? 0;
-      out.add(PeeledPageBodies(index: index, bodies: bodies));
+      final index = asInt(map['index']) ?? 0;
+      final distanceM = asInt(map['distanceM']);
+      final paceSec = asInt(map['paceSec']);
+      final page = PeeledPageBodies(
+        index: index,
+        bodies: bodies,
+        distanceM: distanceM,
+        paceSec: paceSec,
+      );
+      // Keep scalar-only pace summaries (distance/pace) even when no opaque
+      // leftover bodies — required for the U4 splits table.
+      if (!page.hasPersistableContent) continue;
+      out.add(page);
     }
     return out;
   }
