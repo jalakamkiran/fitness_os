@@ -19,6 +19,8 @@ abstract final class SentryPrivacyScrub {
     'leftoverBodies',
     'bodyBase64',
     'rawWorkouts',
+    'peeled',
+    'totalsLeftovers',
     'dailyHrSamples',
     'sleepSessions',
     'fitnessTotals',

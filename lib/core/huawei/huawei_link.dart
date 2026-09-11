@@ -1307,6 +1307,73 @@ class LeftoverTlvBody {
       };
 }
 
+/// Honesty stamps for leftover / sample / pace streams (prefs refs only).
+///
+/// Never stamp [present] unless channel refs and side-files agree after write.
+abstract final class WorkoutStreamHonesty {
+  static const present = 'present';
+  static const unobserved = 'unobserved';
+  static const partial = 'partial';
+  static const blocked = 'blocked';
+  static const incomplete = 'incomplete';
+}
+
+/// Sample or pace page bodies peeled from a channel map entry.
+class PeeledPageBodies {
+  const PeeledPageBodies({
+    required this.index,
+    required this.bodies,
+  });
+
+  final int index;
+  final List<LeftoverTlvBody> bodies;
+}
+
+/// Bodies + honesty peeled from one native workout map before lean prefs write.
+class PeeledWorkoutPayload {
+  const PeeledWorkoutPayload({
+    required this.workoutNumber,
+    required this.totalsLeftovers,
+    required this.dataPages,
+    required this.paceBlocks,
+    required this.leftoversStatus,
+    required this.dataPagesStatus,
+    required this.paceBlocksStatus,
+    this.observedType,
+  });
+
+  final int workoutNumber;
+  final List<LeftoverTlvBody> totalsLeftovers;
+  final List<PeeledPageBodies> dataPages;
+  final List<PeeledPageBodies> paceBlocks;
+  final String leftoversStatus;
+  final String dataPagesStatus;
+  final String paceBlocksStatus;
+  final int? observedType;
+
+  bool get hasBodiesToPersist =>
+      totalsLeftovers.isNotEmpty ||
+      dataPages.any((p) => p.bodies.isNotEmpty) ||
+      paceBlocks.any((p) => p.bodies.isNotEmpty);
+
+  PeeledWorkoutPayload copyWith({
+    String? leftoversStatus,
+    String? dataPagesStatus,
+    String? paceBlocksStatus,
+  }) {
+    return PeeledWorkoutPayload(
+      workoutNumber: workoutNumber,
+      totalsLeftovers: totalsLeftovers,
+      dataPages: dataPages,
+      paceBlocks: paceBlocks,
+      leftoversStatus: leftoversStatus ?? this.leftoversStatus,
+      dataPagesStatus: dataPagesStatus ?? this.dataPagesStatus,
+      paceBlocksStatus: paceBlocksStatus ?? this.paceBlocksStatus,
+      observedType: observedType,
+    );
+  }
+}
+
 /// Helpers for U1 channel maps retained on [WorkoutSyncResult.rawWorkouts].
 ///
 /// New / retained raw keys (U2 peel surface):
@@ -1327,7 +1394,93 @@ abstract final class WorkoutChannelRawKeys {
     return raw
         .whereType<Map>()
         .map((e) => LeftoverTlvBody.fromMap(Map<String, dynamic>.from(e)))
+        .where((b) => b.bodyBase64.isNotEmpty)
         .toList();
+  }
+}
+
+/// Peel leftover / sample / pace bodies from a native workout map.
+///
+/// Called from [WorkoutSyncResult.fromMap] (HuaweiLink sync path) before lean
+/// [WorkoutSummary] construction. Never logs body payloads — id/len only.
+abstract final class WorkoutChannelPeel {
+  static PeeledWorkoutPayload peel(Map<String, dynamic> raw) {
+    int? asInt(Object? v) => v == null ? null : (v as num).toInt();
+    final number = asInt(raw['number']) ?? 0;
+    final dataCount = asInt(raw['dataCount']) ?? 0;
+    final paceCount = asInt(raw['paceCount']) ?? 0;
+    final observedType = asInt(raw[WorkoutChannelRawKeys.observedType]);
+
+    final leftovers = WorkoutChannelRawKeys.parseLeftoverBodies(
+      raw[WorkoutChannelRawKeys.leftoverBodies],
+    );
+    final dataPages = _parsePagedBodies(raw[WorkoutChannelRawKeys.dataPages]);
+    final paceBlocks = _parsePagedBodies(raw[WorkoutChannelRawKeys.paceBlocks]);
+
+    return PeeledWorkoutPayload(
+      workoutNumber: number,
+      totalsLeftovers: leftovers,
+      dataPages: dataPages,
+      paceBlocks: paceBlocks,
+      leftoversStatus: leftovers.isEmpty
+          ? WorkoutStreamHonesty.unobserved
+          : WorkoutStreamHonesty.present,
+      dataPagesStatus: _streamStatus(
+        countHint: dataCount,
+        arrivedPages: dataPages.length,
+      ),
+      paceBlocksStatus: _streamStatus(
+        countHint: paceCount,
+        arrivedPages: paceBlocks.length,
+      ),
+      observedType: observedType,
+    );
+  }
+
+  /// Lean summary for prefs: scalars + refs/stamps; never bodies/series.
+  static WorkoutSummary leanSummary(
+    Map<String, dynamic> raw,
+    PeeledWorkoutPayload peeled,
+  ) {
+    final base = WorkoutSummary.fromMap(raw);
+    return base.copyWith(
+      observedType: peeled.observedType ?? base.observedType,
+      leftoversStatus: peeled.leftoversStatus,
+      dataPagesStatus: peeled.dataPagesStatus,
+      paceBlocksStatus: peeled.paceBlocksStatus,
+      leftoverRefs: peeled.totalsLeftovers
+          .map((b) => EnrichmentTagRef(id: b.id, len: b.len))
+          .toList(),
+      dataPagesStored:
+          peeled.dataPages.isEmpty ? null : peeled.dataPages.length,
+      paceBlocksStored:
+          peeled.paceBlocks.isEmpty ? null : peeled.paceBlocks.length,
+    );
+  }
+
+  static String _streamStatus({
+    required int countHint,
+    required int arrivedPages,
+  }) {
+    if (countHint <= 0) return WorkoutStreamHonesty.unobserved;
+    if (arrivedPages <= 0) return WorkoutStreamHonesty.unobserved;
+    if (arrivedPages < countHint) return WorkoutStreamHonesty.partial;
+    return WorkoutStreamHonesty.present;
+  }
+
+  static List<PeeledPageBodies> _parsePagedBodies(Object? raw) {
+    if (raw is! List) return const [];
+    final out = <PeeledPageBodies>[];
+    for (final item in raw.whereType<Map>()) {
+      final map = Map<String, dynamic>.from(item);
+      final bodies = WorkoutChannelRawKeys.parseLeftoverBodies(
+        map[WorkoutChannelRawKeys.leftoverBodies],
+      );
+      if (bodies.isEmpty) continue;
+      final index = (map['index'] as num?)?.toInt() ?? 0;
+      out.add(PeeledPageBodies(index: index, bodies: bodies));
+    }
+    return out;
   }
 }
 
@@ -1418,6 +1571,13 @@ class WorkoutSummary {
     this.laps,
     this.enrichmentTags,
     this.segments,
+    this.observedType,
+    this.leftoversStatus,
+    this.dataPagesStatus,
+    this.paceBlocksStatus,
+    this.leftoverRefs,
+    this.dataPagesStored,
+    this.paceBlocksStored,
   });
 
   final int number;
@@ -1448,6 +1608,27 @@ class WorkoutSummary {
   final List<EnrichmentTagRef>? enrichmentTags;
   final List<WorkoutSegment>? segments;
 
+  /// Wire type from Totals TLV `0x14` when present (prove-session freeze input).
+  final int? observedType;
+
+  /// Honesty for Totals leftover side-files ([WorkoutStreamHonesty]).
+  final String? leftoversStatus;
+
+  /// Honesty for WorkoutData sample page side-files.
+  final String? dataPagesStatus;
+
+  /// Honesty for Pace block side-files.
+  final String? paceBlocksStatus;
+
+  /// Prefs-only leftover refs (id+len). Bodies live in [RunSessionStore].
+  final List<EnrichmentTagRef>? leftoverRefs;
+
+  /// Count of sample pages persisted to side-files (not an invented series).
+  final int? dataPagesStored;
+
+  /// Count of pace blocks persisted to side-files.
+  final int? paceBlocksStored;
+
   factory WorkoutSummary.fromMap(Map<String, dynamic> map) {
     int? asInt(Object? v) => v == null ? null : (v as num).toInt();
     List<EnrichmentTagRef>? tags;
@@ -1464,6 +1645,14 @@ class WorkoutSummary {
       segments = rawSegments
           .whereType<Map>()
           .map((e) => WorkoutSegment.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    List<EnrichmentTagRef>? leftoverRefs;
+    final rawLeftoverRefs = map['leftoverRefs'];
+    if (rawLeftoverRefs is List) {
+      leftoverRefs = rawLeftoverRefs
+          .whereType<Map>()
+          .map((e) => EnrichmentTagRef.fromMap(Map<String, dynamic>.from(e)))
           .toList();
     }
     return WorkoutSummary(
@@ -1492,6 +1681,83 @@ class WorkoutSummary {
       laps: asInt(map['laps']),
       enrichmentTags: tags,
       segments: segments,
+      observedType: asInt(map['observedType']),
+      leftoversStatus: map['leftoversStatus'] as String?,
+      dataPagesStatus: map['dataPagesStatus'] as String?,
+      paceBlocksStatus: map['paceBlocksStatus'] as String?,
+      leftoverRefs: leftoverRefs,
+      dataPagesStored: asInt(map['dataPagesStored']),
+      paceBlocksStored: asInt(map['paceBlocksStored']),
+    );
+  }
+
+  WorkoutSummary copyWith({
+    int? number,
+    int? startTime,
+    int? endTime,
+    int? durationSec,
+    int? type,
+    int? calories,
+    int? distanceM,
+    int? steps,
+    int? dataCount,
+    int? paceCount,
+    int? segmentsCount,
+    int? sampleCount,
+    String? enrichmentStatus,
+    int? hrMin,
+    int? hrMax,
+    int? hrPeak,
+    int? swimType,
+    int? strokes,
+    int? strokeRate,
+    int? avgSwolf,
+    String? sessionFlag,
+    int? poolLength,
+    int? laps,
+    List<EnrichmentTagRef>? enrichmentTags,
+    List<WorkoutSegment>? segments,
+    int? observedType,
+    String? leftoversStatus,
+    String? dataPagesStatus,
+    String? paceBlocksStatus,
+    List<EnrichmentTagRef>? leftoverRefs,
+    int? dataPagesStored,
+    int? paceBlocksStored,
+  }) {
+    return WorkoutSummary(
+      number: number ?? this.number,
+      startTime: startTime ?? this.startTime,
+      endTime: endTime ?? this.endTime,
+      durationSec: durationSec ?? this.durationSec,
+      type: type ?? this.type,
+      calories: calories ?? this.calories,
+      distanceM: distanceM ?? this.distanceM,
+      steps: steps ?? this.steps,
+      dataCount: dataCount ?? this.dataCount,
+      paceCount: paceCount ?? this.paceCount,
+      segmentsCount: segmentsCount ?? this.segmentsCount,
+      sampleCount: sampleCount ?? this.sampleCount,
+      enrichmentStatus: enrichmentStatus ?? this.enrichmentStatus,
+      hrMin: hrMin ?? this.hrMin,
+      hrMax: hrMax ?? this.hrMax,
+      hrPeak: hrPeak ?? this.hrPeak,
+      swimType: swimType ?? this.swimType,
+      strokes: strokes ?? this.strokes,
+      strokeRate: strokeRate ?? this.strokeRate,
+      avgSwolf: avgSwolf ?? this.avgSwolf,
+      sessionFlag: sessionFlag ?? this.sessionFlag,
+      poolLength: poolLength ?? this.poolLength,
+      laps: laps ?? this.laps,
+      enrichmentTags: enrichmentTags ?? this.enrichmentTags,
+      segments: segments ?? this.segments,
+      observedType: observedType ?? this.observedType,
+      leftoversStatus: leftoversStatus ?? this.leftoversStatus,
+      dataPagesStatus: dataPagesStatus ?? this.dataPagesStatus,
+      paceBlocksStatus: paceBlocksStatus ?? this.paceBlocksStatus,
+      leftoverRefs: leftoverRefs ?? this.leftoverRefs,
+      dataPagesStored: dataPagesStored ?? this.dataPagesStored,
+      paceBlocksStored: paceBlocksStored ?? this.paceBlocksStored,
     );
   }
 
@@ -1523,6 +1789,14 @@ class WorkoutSummary {
           'enrichmentTags': enrichmentTags!.map((t) => t.toJson()).toList(),
         if (segments != null && segments!.isNotEmpty)
           'segments': segments!.map((s) => s.toJson()).toList(),
+        if (observedType != null) 'observedType': observedType,
+        if (leftoversStatus != null) 'leftoversStatus': leftoversStatus,
+        if (dataPagesStatus != null) 'dataPagesStatus': dataPagesStatus,
+        if (paceBlocksStatus != null) 'paceBlocksStatus': paceBlocksStatus,
+        if (leftoverRefs != null && leftoverRefs!.isNotEmpty)
+          'leftoverRefs': leftoverRefs!.map((t) => t.toJson()).toList(),
+        if (dataPagesStored != null) 'dataPagesStored': dataPagesStored,
+        if (paceBlocksStored != null) 'paceBlocksStored': paceBlocksStored,
       };
 }
 
@@ -1532,6 +1806,7 @@ class WorkoutSyncResult {
     required this.workouts,
     this.message,
     this.rawWorkouts,
+    this.peeled,
   });
 
   final WorkoutSyncStatus status;
@@ -1544,6 +1819,10 @@ class WorkoutSyncResult {
   /// bodies on `dataPages` / `paceBlocks`, `observedType`) for U2 peel/store.
   /// [WorkoutSummary.fromMap] still drops those keys by design.
   final List<Map<String, dynamic>>? rawWorkouts;
+
+  /// Bodies peeled at [WorkoutSyncResult.fromMap] for [RunSessionStore] write.
+  /// Parallel to [workouts]; never log — length/id only outside the device.
+  final List<PeeledWorkoutPayload>? peeled;
 
   factory WorkoutSyncResult.fromMap(Map<String, dynamic> map) {
     final statusStr = map['status'] as String? ?? 'error';
@@ -1559,12 +1838,15 @@ class WorkoutSyncResult {
     final rawList = map['workouts'];
     final workouts = <WorkoutSummary>[];
     final rawWorkouts = <Map<String, dynamic>>[];
+    final peeled = <PeeledWorkoutPayload>[];
     if (rawList is List) {
       for (final item in rawList) {
         if (item is Map) {
           final raw = Map<String, dynamic>.from(item);
           rawWorkouts.add(raw);
-          workouts.add(WorkoutSummary.fromMap(raw));
+          final peel = WorkoutChannelPeel.peel(raw);
+          peeled.add(peel);
+          workouts.add(WorkoutChannelPeel.leanSummary(raw, peel));
         }
       }
     }
@@ -1573,6 +1855,8 @@ class WorkoutSyncResult {
       workouts: workouts,
       message: map['message'] as String?,
       rawWorkouts: rawWorkouts.isEmpty ? null : rawWorkouts,
+      peeled: peeled.isEmpty ? null : peeled,
     );
   }
 }
+
