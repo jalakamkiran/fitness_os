@@ -1273,6 +1273,64 @@ class EnrichmentTagRef {
   Map<String, dynamic> toJson() => {'id': id, 'len': len};
 }
 
+/// Opaque Totals / sample / pace TLV body from native U1 channel maps.
+///
+/// Channel keys (per entry): `id`, `len`, `bodyBase64`.
+/// Workout-level list key: `leftoverBodies`. Same key on `dataPages` /
+/// `paceBlocks` entries when sample/pace bodies were captured.
+/// U2 peels these into side-files before lean [WorkoutSummary] prefs write.
+/// Never log or send to Sentry — length/id only outside the device.
+class LeftoverTlvBody {
+  const LeftoverTlvBody({
+    required this.id,
+    required this.len,
+    required this.bodyBase64,
+  });
+
+  final int id;
+  final int len;
+  final String bodyBase64;
+
+  factory LeftoverTlvBody.fromMap(Map<String, dynamic> map) {
+    int asInt(Object? v) => v == null ? 0 : (v as num).toInt();
+    return LeftoverTlvBody(
+      id: asInt(map['id']),
+      len: asInt(map['len']),
+      bodyBase64: map['bodyBase64'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'len': len,
+        'bodyBase64': bodyBase64,
+      };
+}
+
+/// Helpers for U1 channel maps retained on [WorkoutSyncResult.rawWorkouts].
+///
+/// New / retained raw keys (U2 peel surface):
+/// - `leftoverBodies` — `List<{id, len, bodyBase64}>` on Totals workout maps
+/// - `observedType` — wire type from Totals TLV `0x14` when present (no enum claim)
+/// - `dataPages[]` / `paceBlocks[]` — may include nested `leftoverBodies` with
+///   sample/pace opaque bodies (not summary-only)
+/// Path-ref spill (`leftoverPath`) remains a U2 option if Binder size bites.
+abstract final class WorkoutChannelRawKeys {
+  static const leftoverBodies = 'leftoverBodies';
+  static const bodyBase64 = 'bodyBase64';
+  static const observedType = 'observedType';
+  static const dataPages = 'dataPages';
+  static const paceBlocks = 'paceBlocks';
+
+  static List<LeftoverTlvBody> parseLeftoverBodies(Object? raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => LeftoverTlvBody.fromMap(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+}
+
 class WorkoutSegment {
   const WorkoutSegment({
     required this.index,
@@ -1473,11 +1531,19 @@ class WorkoutSyncResult {
     required this.status,
     required this.workouts,
     this.message,
+    this.rawWorkouts,
   });
 
   final WorkoutSyncStatus status;
   final List<WorkoutSummary> workouts;
   final String? message;
+
+  /// Native workout maps before lean [WorkoutSummary] construction.
+  ///
+  /// Preserves U1 body-bearing keys (`leftoverBodies`, nested sample/pace
+  /// bodies on `dataPages` / `paceBlocks`, `observedType`) for U2 peel/store.
+  /// [WorkoutSummary.fromMap] still drops those keys by design.
+  final List<Map<String, dynamic>>? rawWorkouts;
 
   factory WorkoutSyncResult.fromMap(Map<String, dynamic> map) {
     final statusStr = map['status'] as String? ?? 'error';
@@ -1492,12 +1558,13 @@ class WorkoutSyncResult {
     };
     final rawList = map['workouts'];
     final workouts = <WorkoutSummary>[];
+    final rawWorkouts = <Map<String, dynamic>>[];
     if (rawList is List) {
       for (final item in rawList) {
         if (item is Map) {
-          workouts.add(
-            WorkoutSummary.fromMap(Map<String, dynamic>.from(item)),
-          );
+          final raw = Map<String, dynamic>.from(item);
+          rawWorkouts.add(raw);
+          workouts.add(WorkoutSummary.fromMap(raw));
         }
       }
     }
@@ -1505,6 +1572,7 @@ class WorkoutSyncResult {
       status: status,
       workouts: workouts,
       message: map['message'] as String?,
+      rawWorkouts: rawWorkouts.isEmpty ? null : rawWorkouts,
     );
   }
 }

@@ -40,11 +40,21 @@ void main() {
           {'id': 1, 'mac': 'AABBCCDDEEFF'},
         ],
         'hrSeries': [60, 62],
+        'leftoverBodies': [
+          {'id': 0x66, 'len': 4, 'bodyBase64': 'qrvM3Q=='},
+        ],
+        'bodyBase64': 'qrvM3Q==',
+        'rawWorkouts': [
+          {'number': 1},
+        ],
         'mac': 'AA:BB:CC:DD:EE:FF',
         'gemini_api_key': 'secret',
       });
       expect(out?.containsKey('workouts'), isFalse);
       expect(out?.containsKey('hrSeries'), isFalse);
+      expect(out?.containsKey('leftoverBodies'), isFalse);
+      expect(out?.containsKey('bodyBase64'), isFalse);
+      expect(out?.containsKey('rawWorkouts'), isFalse);
       expect(out?.containsKey('mac'), isFalse);
       expect(out?.containsKey('gemini_api_key'), isFalse);
       expect(out?['status'], 'ok');

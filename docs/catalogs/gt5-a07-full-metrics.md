@@ -68,6 +68,8 @@ Firmware string for freeze table: **not recorded in Gate A interrupt matrix** �
 
 **Opportunistic Indoor Run:** deferred until Outdoor type collides or GPS/elev needs contrast. Not a plan failure.
 
+**Outdoor `0x14` prove-session freeze (placeholder):** Channel may stamp `observedType` from Totals TLV `0x14` after Sync. Do **not** update Outdoor obs / freeze table until an owner-seeded Outdoor Run lands and is cross-checked against the watch activity list — Pool swim also uses type `0x14` on this firmware family, so wire value alone is not an Outdoor claim. Global GB vs FOS enum conflict remains open.
+
 ---
 
 ## S2 — Strength

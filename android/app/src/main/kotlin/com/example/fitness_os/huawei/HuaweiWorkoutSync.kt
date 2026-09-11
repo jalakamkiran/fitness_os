@@ -2,6 +2,7 @@ package com.example.fitness_os.huawei
 
 import android.util.Log
 import java.nio.ByteBuffer
+import java.util.Base64
 
 /**
  * Clean-room Gate B workout sync — Count → Totals → hint-gated enrichment.
@@ -61,6 +62,26 @@ class HuaweiWorkoutSync(
     }
 
     /**
+     * Opaque leftover / sample TLV body for channel → Flutter (U2 peels/stores).
+     * Logs and Sentry must use [EnrichmentTagRef] id+len only — never [body].
+     * Channel shape: `{id, len, bodyBase64}`. Path-ref spill is a U2 option if
+     * Binder size bites.
+     */
+    data class LeftoverTlvBody(
+        val id: Int,
+        val len: Int,
+        val body: ByteArray,
+    ) {
+        fun toTagRef(): EnrichmentTagRef = EnrichmentTagRef(id, len)
+
+        fun toMap(): Map<String, Any?> = mapOf(
+            "id" to id,
+            "len" to len,
+            "bodyBase64" to Base64.getEncoder().encodeToString(body),
+        )
+    }
+
+    /**
      * Parsed swim lap from nested 0x83 inside 0x17:0x0e — unknown TLVs as id+len only.
      *
      * Field map aligned with GB behavioral oracle (WorkoutSwimSegments.Block):
@@ -94,7 +115,11 @@ class HuaweiWorkoutSync(
         }
     }
 
-    /** WorkoutData page summary (0x17:0x0a) — no sample payload in channel map. */
+    /**
+     * WorkoutData page (0x17:0x0a) — header fields plus opaque leftover/sample TLV
+     * bodies on the channel map ([leftoverBodies] with bodyBase64) so streams can
+     * persist on-device in U2. Logs stay id+len via [tags].
+     */
     data class WorkoutDataPageSummary(
         val index: Int,
         val timestamp: Long? = null,
@@ -103,6 +128,7 @@ class HuaweiWorkoutSync(
         val dataLength: Int? = null,
         val bitmap: Int? = null,
         val tags: List<EnrichmentTagRef> = emptyList(),
+        val leftoverBodies: List<LeftoverTlvBody> = emptyList(),
     ) {
         fun toMap(): Map<String, Any?> {
             val out = linkedMapOf<String, Any?>("index" to index)
@@ -112,21 +138,32 @@ class HuaweiWorkoutSync(
             if (dataLength != null) out["dataLength"] = dataLength
             if (bitmap != null) out["bitmap"] = bitmap
             if (tags.isNotEmpty()) out["tags"] = tags.map { it.toMap() }
+            if (leftoverBodies.isNotEmpty()) {
+                out["leftoverBodies"] = leftoverBodies.map { it.toMap() }
+            }
             return out
         }
     }
 
+    /**
+     * Pace block (0x17:0x0c) — known scalars plus opaque leftover/sample TLV
+     * bodies ([leftoverBodies]) for on-device persist in U2.
+     */
     data class PaceBlockSummary(
         val index: Int,
         val distanceM: Long? = null,
         val paceSec: Int? = null,
         val tags: List<EnrichmentTagRef> = emptyList(),
+        val leftoverBodies: List<LeftoverTlvBody> = emptyList(),
     ) {
         fun toMap(): Map<String, Any?> {
             val out = linkedMapOf<String, Any?>("index" to index)
             if (distanceM != null) out["distanceM"] = distanceM
             if (paceSec != null) out["paceSec"] = paceSec
             if (tags.isNotEmpty()) out["tags"] = tags.map { it.toMap() }
+            if (leftoverBodies.isNotEmpty()) {
+                out["leftoverBodies"] = leftoverBodies.map { it.toMap() }
+            }
             return out
         }
     }
@@ -152,7 +189,11 @@ class HuaweiWorkoutSync(
         val avgSwolf: Int? = null,
         val poolLength: Int? = null,
         val laps: Int? = null,
+        /** True when Totals TLV 0x14 was present (prove-session type freeze input). */
+        val typeObserved: Boolean = false,
         val enrichmentTags: List<EnrichmentTagRef> = emptyList(),
+        /** Sport-agnostic opaque Totals leftovers (unknown / failed known-tag parse). */
+        val leftoverBodies: List<LeftoverTlvBody> = emptyList(),
     ) {
         fun toMap(): Map<String, Any?> {
             val out = linkedMapOf<String, Any?>(
@@ -177,8 +218,13 @@ class HuaweiWorkoutSync(
             if (avgSwolf != null) out["avgSwolf"] = avgSwolf
             if (poolLength != null) out["poolLength"] = poolLength
             if (laps != null) out["laps"] = laps
+            // Stamp observed wire type without claiming Outdoor/Indoor enum resolution.
+            if (typeObserved) out["observedType"] = type
             if (enrichmentTags.isNotEmpty()) {
                 out["enrichmentTags"] = enrichmentTags.map { it.toMap() }
+            }
+            if (leftoverBodies.isNotEmpty()) {
+                out["leftoverBodies"] = leftoverBodies.map { it.toMap() }
             }
             return out
         }
@@ -541,6 +587,7 @@ class HuaweiWorkoutSync(
         var endTime = 0L
         var durationSec = 0L
         var type = 0
+        var typeObserved = false
         var calories: Long? = null
         var distanceM: Long? = null
         var steps: Long? = null
@@ -554,6 +601,7 @@ class HuaweiWorkoutSync(
         var poolLength: Int? = null
         var laps: Int? = null
         val unknownTags = ArrayList<EnrichmentTagRef>()
+        val leftoverBodies = ArrayList<LeftoverTlvBody>()
         for (tlv in tlvs) {
             when (tlv.tag) {
                 0x02 -> number = u16(tlv.value)
@@ -564,27 +612,29 @@ class HuaweiWorkoutSync(
                 0x08 -> steps = u32(tlv.value)
                 0x09 -> if (durationSec == 0L) durationSec = u32(tlv.value)
                 0x12 -> durationSec = u32(tlv.value)
-                0x14 -> type = u8(tlv.value)
+                0x14 -> {
+                    type = u8(tlv.value)
+                    typeObserved = true
+                }
                 0x0c -> parseHrPeakTlv(tlv)?.let { (min, max, peak) ->
                     hrMin = min
                     hrMax = max
                     hrPeak = peak
-                } ?: run {
-                    Log.d(TAG, "workout-sync tag 0x0c len=${tlv.value.size} unparsed")
-                    unknownTags.add(EnrichmentTagRef(0x0c, tlv.value.size))
-                }
+                } ?: recordUnknown(unknownTags, leftoverBodies, tlv)
                 0x15 -> parseScalarU8(tlv)?.let { swimType = it }
-                    ?: recordUnknown(unknownTags, tlv)
+                    ?: recordUnknown(unknownTags, leftoverBodies, tlv)
                 0x16 -> parseScalarU32OrU16(tlv)?.let { strokes = it }
-                    ?: recordUnknown(unknownTags, tlv)
+                    ?: recordUnknown(unknownTags, leftoverBodies, tlv)
                 0x17 -> parseScalarU16OrU8(tlv)?.let { strokeRate = it }
-                    ?: recordUnknown(unknownTags, tlv)
+                    ?: recordUnknown(unknownTags, leftoverBodies, tlv)
                 0x18 -> parseScalarU16(tlv)?.let { poolLength = it }
-                    ?: recordUnknown(unknownTags, tlv)
+                    ?: recordUnknown(unknownTags, leftoverBodies, tlv)
                 0x19 -> parseScalarU16OrU8(tlv)?.let { laps = it }
-                    ?: recordUnknown(unknownTags, tlv)
+                    ?: recordUnknown(unknownTags, leftoverBodies, tlv)
                 0x1a -> parseScalarU16(tlv)?.let { avgSwolf = it }
-                    ?: recordUnknown(unknownTags, tlv)
+                    ?: recordUnknown(unknownTags, leftoverBodies, tlv)
+                // Sport-agnostic: keep unnamed / undecoded Totals TLV bodies.
+                else -> recordUnknown(unknownTags, leftoverBodies, tlv)
             }
         }
         if (number == 0 || startTime == 0L) return null
@@ -609,10 +659,24 @@ class HuaweiWorkoutSync(
             avgSwolf = avgSwolf,
             poolLength = poolLength,
             laps = laps,
+            typeObserved = typeObserved,
             enrichmentTags = unknownTags,
+            leftoverBodies = leftoverBodies,
         )
     }
 
+    /** Id+len for logs; body kept only on [leftovers] for channel (never logged). */
+    private fun recordUnknown(
+        tags: MutableList<EnrichmentTagRef>,
+        leftovers: MutableList<LeftoverTlvBody>,
+        tlv: HuaweiFraming.Tlv,
+    ) {
+        Log.d(TAG, "workout-sync tag 0x${tlv.tag.toString(16)} len=${tlv.value.size} unparsed")
+        tags.add(EnrichmentTagRef(tlv.tag, tlv.value.size))
+        leftovers.add(LeftoverTlvBody(tlv.tag, tlv.value.size, tlv.value.copyOf()))
+    }
+
+    /** Swim / legacy callers that only need id+len on the segment map. */
     private fun recordUnknown(out: MutableList<EnrichmentTagRef>, tlv: HuaweiFraming.Tlv) {
         Log.d(TAG, "workout-sync tag 0x${tlv.tag.toString(16)} len=${tlv.value.size} unparsed")
         out.add(EnrichmentTagRef(tlv.tag, tlv.value.size))
@@ -766,6 +830,7 @@ class HuaweiWorkoutSync(
         var dataLength: Int? = null
         var bitmap: Int? = null
         val unknownTags = ArrayList<EnrichmentTagRef>()
+        val leftoverBodies = ArrayList<LeftoverTlvBody>()
         for (tlv in tlvs) {
             when (tlv.tag) {
                 0x02 -> { /* workoutNumber — ignore for summary */ }
@@ -775,7 +840,7 @@ class HuaweiWorkoutSync(
                 0x06 -> sampleCount = parseScalarU32OrU16(tlv)
                 0x07 -> dataLength = parseScalarU32OrU16(tlv)
                 0x08 -> bitmap = parseScalarU32OrU16(tlv)
-                else -> recordUnknown(unknownTags, tlv)
+                else -> recordUnknown(unknownTags, leftoverBodies, tlv)
             }
         }
         return WorkoutDataPageSummary(
@@ -786,6 +851,7 @@ class HuaweiWorkoutSync(
             dataLength = dataLength,
             bitmap = bitmap,
             tags = unknownTags,
+            leftoverBodies = leftoverBodies,
         )
     }
 
@@ -799,13 +865,14 @@ class HuaweiWorkoutSync(
         var distanceM: Long? = null
         var paceSec: Int? = null
         val unknownTags = ArrayList<EnrichmentTagRef>()
+        val leftoverBodies = ArrayList<LeftoverTlvBody>()
         for (tlv in tlvs) {
             when (tlv.tag) {
                 0x02 -> { /* workoutNumber */ }
                 0x03 -> index = u16(tlv.value)
                 0x07 -> distanceM = u32(tlv.value)
                 0x0b -> paceSec = parseScalarU32OrU16(tlv)
-                else -> recordUnknown(unknownTags, tlv)
+                else -> recordUnknown(unknownTags, leftoverBodies, tlv)
             }
         }
         return PaceBlockSummary(
@@ -813,6 +880,7 @@ class HuaweiWorkoutSync(
             distanceM = distanceM,
             paceSec = paceSec,
             tags = unknownTags,
+            leftoverBodies = leftoverBodies,
         )
     }
 }
