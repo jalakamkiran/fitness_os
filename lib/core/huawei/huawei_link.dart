@@ -2034,6 +2034,9 @@ abstract final class WorkoutEnrichmentMerge {
   }
 
   static String? _preferEnrichmentStatus(String? existing, String? incoming) {
+    // Full ok Sync must clear sticky partial so cursor overlap can shrink and
+    // UI honesty can leave "Sync: partial" (U3).
+    if (incoming == 'ok') return 'ok';
     if (existing == 'partial' || incoming == 'partial') return 'partial';
     return incoming ?? existing;
   }
