@@ -274,7 +274,8 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   ///
   /// Enrichment-monotonic for streams: never overwrite denser data/pace
   /// side-files with a sparser partial payload (prefs merge alone cannot
-  /// restore bytes already clobbered on disk).
+  /// restore bytes already clobbered on disk). Leftovers replace only when
+  /// [parserGeneration] allows (R3 remap) or incoming is denser.
   Future<List<WorkoutSummary>> _persistPeeledSideFiles(
     List<PeeledWorkoutPayload>? peeled,
     List<WorkoutSummary> workouts, {
@@ -288,8 +289,14 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     final byNumber = <int, WorkoutSummary>{
       for (final w in workouts) w.number: w,
     };
+    final existingByNumber = <int, WorkoutSummary>{
+      for (final w in await loadLocal()) w.number: w,
+    };
     for (final payload in peeled) {
-      final toWrite = await _monotonicPeeledPayload(payload);
+      final toWrite = await _monotonicPeeledPayload(
+        payload,
+        existingSummary: existingByNumber[payload.workoutNumber],
+      );
       if (!toWrite.hasBodiesToPersist) continue;
       try {
         await _runSessionStore.save(toWrite);
@@ -326,8 +333,8 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   }
 
   /// Soft-incomplete with Count>0 but zero arrived pages peels as
-  /// [WorkoutStreamHonesty.unobserved]; bump to [partial] so honesty matches
-  /// enrichment timeout (not Count=0 unobserved).
+  /// [WorkoutStreamHonesty.partial] (and this bump covers older peels that
+  /// still said unobserved). Count=0 stays unobserved.
   WorkoutSummary _bumpSoftIncompleteStreamHonesty(WorkoutSummary w) {
     String? bump(String? status, int? countHint) {
       if ((countHint ?? 0) <= 0) return status;
@@ -343,32 +350,48 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     );
   }
 
-  /// Drop sparser data/pace bodies so [RunSessionStore.save] cannot clobber
-  /// denser on-disk streams. Leftovers still replace when present (R3 remap).
+  /// Drop sparser data/pace/leftover bodies so [RunSessionStore.save] cannot
+  /// clobber denser on-disk streams. Leftovers may still replace when
+  /// [currentRunSessionParserVersion] exceeds the existing row's generation.
   Future<PeeledWorkoutPayload> _monotonicPeeledPayload(
-    PeeledWorkoutPayload payload,
-  ) async {
+    PeeledWorkoutPayload payload, {
+    WorkoutSummary? existingSummary,
+  }) async {
+    var leftovers = payload.totalsLeftovers;
     var dataPages = payload.dataPages;
     var paceBlocks = payload.paceBlocks;
+
+    if (leftovers.isNotEmpty) {
+      final existing =
+          await _runSessionStore.loadTotalsLeftovers(payload.workoutNumber);
+      final allowReplace = _allowParserReplace(existingSummary);
+      if (!allowReplace &&
+          _leftoverRichness(existing) > _leftoverRichness(leftovers)) {
+        leftovers = const [];
+      }
+    }
     if (dataPages.isNotEmpty) {
-      final existing = await _runSessionStore.loadDataPages(payload.workoutNumber);
+      final existing =
+          await _runSessionStore.loadDataPages(payload.workoutNumber);
       if (_pageBodyRichness(existing) > _pageBodyRichness(dataPages)) {
         dataPages = const [];
       }
     }
     if (paceBlocks.isNotEmpty) {
-      final existing = await _runSessionStore.loadPaceBlocks(payload.workoutNumber);
+      final existing =
+          await _runSessionStore.loadPaceBlocks(payload.workoutNumber);
       if (_pageBodyRichness(existing) > _pageBodyRichness(paceBlocks)) {
         paceBlocks = const [];
       }
     }
-    if (identical(dataPages, payload.dataPages) &&
+    if (identical(leftovers, payload.totalsLeftovers) &&
+        identical(dataPages, payload.dataPages) &&
         identical(paceBlocks, payload.paceBlocks)) {
       return payload;
     }
     return PeeledWorkoutPayload(
       workoutNumber: payload.workoutNumber,
-      totalsLeftovers: payload.totalsLeftovers,
+      totalsLeftovers: leftovers,
       dataPages: dataPages,
       paceBlocks: paceBlocks,
       leftoversStatus: payload.leftoversStatus,
@@ -378,13 +401,34 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     );
   }
 
+  bool _allowParserReplace(WorkoutSummary? existing) {
+    if (existing == null) return true;
+    final existingGen = existing.parserGeneration ?? 0;
+    return currentRunSessionParserVersion > existingGen;
+  }
+
+  /// Body count dominates; total byte length next; page count is tie-breaker
+  /// only — never let more sparse pages beat denser sample bodies.
   static int _pageBodyRichness(List<PeeledPageBodies> pages) {
     if (pages.isEmpty) return 0;
     var bodies = 0;
+    var bytes = 0;
     for (final p in pages) {
       bodies += p.bodies.length;
+      for (final b in p.bodies) {
+        bytes += b.len;
+      }
     }
-    return pages.length * 1000 + bodies;
+    return bodies * 1000000 + bytes * 1000 + pages.length;
+  }
+
+  static int _leftoverRichness(List<LeftoverTlvBody> bodies) {
+    if (bodies.isEmpty) return 0;
+    var bytes = 0;
+    for (final b in bodies) {
+      bytes += b.len;
+    }
+    return bodies.length * 1000000 + bytes;
   }
 
   /// Delta-only Count window: cursor − overlap when present; otherwise last

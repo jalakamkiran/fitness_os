@@ -1478,7 +1478,9 @@ abstract final class WorkoutChannelPeel {
     required int arrivedPages,
   }) {
     if (countHint <= 0) return WorkoutStreamHonesty.unobserved;
-    if (arrivedPages <= 0) return WorkoutStreamHonesty.unobserved;
+    // Count promised pages but none arrived — partial/incomplete, not
+    // Count=0 unobserved (ok parse-fail or soft-incomplete before first page).
+    if (arrivedPages <= 0) return WorkoutStreamHonesty.partial;
     if (arrivedPages < countHint) return WorkoutStreamHonesty.partial;
     return WorkoutStreamHonesty.present;
   }

@@ -141,6 +141,22 @@ void main() {
       expect(peeled.dataPagesStatus, WorkoutStreamHonesty.partial);
       expect(peeled.paceBlocksStatus, WorkoutStreamHonesty.partial);
     });
+
+    test('Count>0 with zero arrived pages stamps partial not unobserved', () {
+      final peeled = WorkoutChannelPeel.peel({
+        'number': 10,
+        'startTime': 10,
+        'endTime': 20,
+        'durationSec': 10,
+        'type': 2,
+        'dataCount': 2,
+        'paceCount': 1,
+      });
+      expect(peeled.dataPages, isEmpty);
+      expect(peeled.paceBlocks, isEmpty);
+      expect(peeled.dataPagesStatus, WorkoutStreamHonesty.partial);
+      expect(peeled.paceBlocksStatus, WorkoutStreamHonesty.partial);
+    });
   });
 
   group('RunSessionStore', () {

@@ -608,6 +608,135 @@ void main() {
       expect((await store.loadTotalsLeftovers(73)).single.bodyBase64, 'qqo=');
     });
 
+    test('denser 1-page bodies are not replaced by more sparse pages', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u3_dense_');
+      addTearDown(() => tmp.delete(recursive: true));
+      final store = RunSessionStore(rootOverride: () => tmp);
+      final link = _StubLink(
+        result: WorkoutSyncResult.fromMap({
+          'status': 'ok',
+          'workouts': [
+            {
+              'number': 80,
+              'startTime': 1_700_000_000,
+              'endTime': 1_700_003_600,
+              'durationSec': 3600,
+              'type': 2,
+              'dataCount': 1,
+              'dataPages': [
+                {
+                  'index': 0,
+                  'leftoverBodies': [
+                    {'id': 0x7a, 'len': 4, 'bodyBase64': 'AQIDBA=='},
+                    {'id': 0x7b, 'len': 2, 'bodyBase64': 'BQc='},
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: store,
+        swimRootOverride: () => tmp,
+      );
+      await repo.syncFromWatch();
+      expect((await store.loadDataPages(80)).single.bodies, hasLength(2));
+
+      // Two scalar-only / sparse pages score higher on page count but lower
+      // on body density — must not clobber the denser 1-page payload.
+      link.result = WorkoutSyncResult.fromMap({
+        'status': 'partial_batch',
+        'workouts': [
+          {
+            'number': 80,
+            'startTime': 1_700_000_000,
+            'endTime': 1_700_003_600,
+            'durationSec': 3600,
+            'type': 2,
+            'dataCount': 2,
+            'dataPages': [
+              {'index': 0, 'leftoverBodies': []},
+              {
+                'index': 1,
+                'leftoverBodies': [
+                  {'id': 0x7a, 'len': 1, 'bodyBase64': 'AQ=='},
+                ],
+              },
+            ],
+          },
+        ],
+      });
+      await repo.syncFromWatch();
+      final pages = await store.loadDataPages(80);
+      expect(pages, hasLength(1));
+      expect(pages.single.bodies, hasLength(2));
+      expect(pages.single.bodies.first.bodyBase64, 'AQIDBA==');
+    });
+
+    test('sparser leftovers without parserGeneration bump keep denser disk',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u3_leftover_');
+      addTearDown(() => tmp.delete(recursive: true));
+      final store = RunSessionStore(rootOverride: () => tmp);
+      final link = _StubLink(
+        result: WorkoutSyncResult.fromMap({
+          'status': 'ok',
+          'workouts': [
+            {
+              'number': 81,
+              'startTime': 1_700_000_000,
+              'endTime': 1_700_003_600,
+              'durationSec': 3600,
+              'type': 2,
+              'leftoverBodies': [
+                {'id': 0x66, 'len': 2, 'bodyBase64': 'qqo='},
+                {'id': 0x10, 'len': 4, 'bodyBase64': 'AQIDBA=='},
+              ],
+            },
+          ],
+        }),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: store,
+        swimRootOverride: () => tmp,
+      );
+      await repo.syncFromWatch();
+      expect(await store.loadTotalsLeftovers(81), hasLength(2));
+
+      link.result = WorkoutSyncResult.fromMap({
+        'status': 'ok',
+        'workouts': [
+          {
+            'number': 81,
+            'startTime': 1_700_000_000,
+            'endTime': 1_700_003_600,
+            'durationSec': 3600,
+            'type': 2,
+            'leftoverBodies': [
+              {'id': 0x66, 'len': 2, 'bodyBase64': 'qqo='},
+            ],
+          },
+        ],
+      });
+      await repo.syncFromWatch();
+      final leftovers = await store.loadTotalsLeftovers(81);
+      expect(leftovers, hasLength(2));
+      expect(leftovers.map((b) => b.id).toList(), [0x66, 0x10]);
+    });
+
     test('partial merge → next Sync start extends via partial-window overlap',
         () async {
       SharedPreferences.setMockInitialValues({
