@@ -92,6 +92,7 @@ class RunSessionStore {
     List<LeftoverTlvBody> bodies,
   ) async {
     final dir = await _workoutDir(relDir, workoutNumber);
+    await _clearDirContents(dir);
     final items = <Map<String, dynamic>>[];
     for (var i = 0; i < bodies.length; i++) {
       final body = bodies[i];
@@ -113,18 +114,15 @@ class RunSessionStore {
     int workoutNumber,
     List<PeeledPageBodies> pages,
   ) async {
-    final dir = await _workoutDir(relDir, workoutNumber);
     final pageMeta = <Map<String, dynamic>>[];
+    final writes = <({String name, List<int> bytes})>[];
     for (final page in pages) {
       if (!page.hasPersistableContent) continue;
       final items = <Map<String, dynamic>>[];
       for (var i = 0; i < page.bodies.length; i++) {
         final body = page.bodies[i];
         final name = 'p${page.index}_$i.bin';
-        await File('${dir.path}/$name').writeAsBytes(
-          base64Decode(body.bodyBase64),
-          flush: true,
-        );
+        writes.add((name: name, bytes: base64Decode(body.bodyBase64)));
         items.add({'id': body.id, 'len': body.len, 'file': name});
       }
       pageMeta.add({
@@ -135,10 +133,28 @@ class RunSessionStore {
       });
     }
     if (pageMeta.isEmpty) return;
+    final dir = await _workoutDir(relDir, workoutNumber);
+    // Clear only when replacing — avoids orphan `.bin`s after shorter rewrites.
+    await _clearDirContents(dir);
+    for (final w in writes) {
+      await File('${dir.path}/${w.name}').writeAsBytes(w.bytes, flush: true);
+    }
     await File('${dir.path}/meta.json').writeAsString(
       jsonEncode({'pages': pageMeta}),
       flush: true,
     );
+  }
+
+  /// Drop prior binaries/meta so a shorter rewrite cannot orphan old `.bin`s.
+  Future<void> _clearDirContents(Directory dir) async {
+    if (!await dir.exists()) return;
+    await for (final entity in dir.list()) {
+      try {
+        await entity.delete(recursive: true);
+      } catch (_) {
+        // Best-effort; subsequent writes still refresh meta.json.
+      }
+    }
   }
 
   Future<List<LeftoverTlvBody>> _readFlatBodies(
