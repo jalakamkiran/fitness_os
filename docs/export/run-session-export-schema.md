@@ -11,7 +11,7 @@ Owner-initiated dump of **one Outdoor Run** session from Run detail (“Export f
 | `exportedAt` | ISO-8601 UTC |
 | `sensitivityNotes` | Non-anonymized session health; shared copies not revoked by Forget |
 | `consistencyClass` | `best_effort` (blocked during Sync / Forget / app or food export; mid-assemble recheck) |
-| `knownOmissions` | Always includes secrets / MAC / account / bind tokens / GPS series |
+| `knownOmissions` | Always includes secrets / MAC / account / bind tokens / structured GPS series. Opaque leftover bodies are **not** claimed omitted. |
 | `sessionKey` | Workout number, start, type (+ `observedType` if present), typeLabel, distance, duration — matches confirm identity |
 | `confirmIdentity` | Same human-readable lines shown in the confirm dialog |
 | `workout` | Present decoded lean prefs fields (`WorkoutSummary.toJson`) |
@@ -31,12 +31,12 @@ Cache: `{temp}/run_session_exports/` (peer to app-data `exports/` and day-food c
 | Account id / 17-digit `userId` shapes | Scrubbed + self-check |
 | Bind / auth tokens (`authKey`, `bindToken`, …) | Forbidden keys |
 | Gemini API key | Scrubbed + self-check |
-| GPS / location series | Forbidden keys this cut |
+| GPS / location **series** (keyed fields) | Forbidden keys this cut (`gps_location_series` in `knownOmissions`) |
 
 | May include (on-device share only) | Notes |
 |-----------------------------------|--------|
 | Present decoded Totals / session scalars | From lean workout JSON |
-| Leftover TLV **bodies** | Session dump only — never commit |
+| Leftover TLV **bodies** | Session dump only — never commit. Opaque bytes are not GPS-scrubbed; confirm dialog discloses that undecoded leftovers may contain location-related wire data until catalogued. |
 | Sample / pace **id+len** + honesty / no-pages flags | Bodies not required for honesty |
 | Count hints | From prefs |
 
