@@ -766,6 +766,35 @@ void main() {
       expect(local.single.segments, isNull);
     });
 
+    test('full ok Sync clears sticky enrichmentStatus partial', () {
+      final merged = WorkoutEnrichmentMerge.mergeRow(
+        existing: const WorkoutSummary(
+          number: 78,
+          startTime: 1_700_000_000,
+          endTime: 1_700_001_000,
+          durationSec: 1000,
+          type: 2,
+          enrichmentStatus: 'partial',
+          leftoversStatus: WorkoutStreamHonesty.present,
+          leftoverRefs: [EnrichmentTagRef(id: 0x66, len: 2)],
+          parserGeneration: 1,
+        ),
+        incoming: const WorkoutSummary(
+          number: 78,
+          startTime: 1_700_000_000,
+          endTime: 1_700_001_000,
+          durationSec: 1000,
+          type: 2,
+          enrichmentStatus: 'ok',
+          leftoversStatus: WorkoutStreamHonesty.present,
+          leftoverRefs: [EnrichmentTagRef(id: 0x66, len: 2)],
+          parserGeneration: 1,
+        ),
+        currentParserGeneration: 1,
+      );
+      expect(merged.enrichmentStatus, 'ok');
+    });
+
     test('parserGeneration bump allows leftover/scalar replacement', () async {
       final merged = WorkoutEnrichmentMerge.mergeRow(
         existing: const WorkoutSummary(
