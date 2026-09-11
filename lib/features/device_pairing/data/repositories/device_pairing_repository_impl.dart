@@ -15,17 +15,23 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
     Future<void> Function()? onForgetWipeExtras,
     void Function()? onForgot,
     bool Function()? isForgetBlocked,
+    Directory? Function()? supportRootOverride,
+    Directory? Function()? tempRootOverride,
   })  : _link = link,
         _prefs = prefs,
         _onForgetWipeExtras = onForgetWipeExtras,
         _onForgot = onForgot,
-        _isForgetBlocked = isForgetBlocked;
+        _isForgetBlocked = isForgetBlocked,
+        _supportRootOverride = supportRootOverride,
+        _tempRootOverride = tempRootOverride;
 
   final HuaweiLink _link;
   final SharedPreferences _prefs;
   Future<void> Function()? _onForgetWipeExtras;
   void Function()? _onForgot;
   bool Function()? _isForgetBlocked;
+  final Directory? Function()? _supportRootOverride;
+  final Directory? Function()? _tempRootOverride;
   bool _forgetInFlight = false;
 
   /// True while [forgetDevice] body is running (not the same as isForgetBlocked).
@@ -199,18 +205,38 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
           );
         }
 
+        // Lean workouts prefs must be cleared with the privacy unit.
+        if (_prefs.containsKey(GateAPrefs.workoutsJson)) {
+          return const Left(
+            ValidationFailure(
+              'Forget verify failed — workouts prefs residue remains',
+            ),
+          );
+        }
+
         // Verify no meal files under food/meals
         try {
-          final root = await getApplicationSupportDirectory();
+          final root = await _supportRoot();
           final mealsDir = Directory('${root.path}/${GateAPrefs.foodMealsDir}');
-          if (await mealsDir.exists()) {
-            final hasFiles = await mealsDir
-                .list(recursive: true)
-                .any((entity) => entity is File);
-            if (hasFiles) {
-              return const Left(
+          if (await _directoryHasFiles(mealsDir)) {
+            return const Left(
+              ValidationFailure(
+                'Forget verify failed — food meal files residue remains',
+              ),
+            );
+          }
+
+          // R14: run leftover / sample / pace dirs must be empty after wipe.
+          for (final rel in [
+            GateAPrefs.workoutTotalsLeftoversDir,
+            GateAPrefs.workoutDataPagesDir,
+            GateAPrefs.workoutPaceBlocksDir,
+          ]) {
+            final dir = Directory('${root.path}/$rel');
+            if (await _directoryHasFiles(dir)) {
+              return Left(
                 ValidationFailure(
-                  'Forget verify failed — food meal files residue remains',
+                  'Forget verify failed — run session files residue remains ($rel)',
                 ),
               );
             }
@@ -218,7 +244,30 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
         } catch (_) {
           // If we can't check, fail safe
           return const Left(
-            ValidationFailure('Forget verify failed — could not verify food residue'),
+            ValidationFailure(
+              'Forget verify failed — could not verify food/run residue',
+            ),
+          );
+        }
+
+        // Run-session export cache must be empty after wipe.
+        try {
+          final tempRoot = await _tempRoot();
+          final runExportDir = Directory(
+            '${tempRoot.path}/${GateAPrefs.runSessionExportsDir}',
+          );
+          if (await _directoryHasFiles(runExportDir)) {
+            return const Left(
+              ValidationFailure(
+                'Forget verify failed — run session export cache residue remains',
+              ),
+            );
+          }
+        } catch (_) {
+          return const Left(
+            ValidationFailure(
+              'Forget verify failed — could not verify run export cache',
+            ),
           );
         }
       }
@@ -229,6 +278,21 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
     } finally {
       _forgetInFlight = false;
     }
+  }
+
+  Future<Directory> _supportRoot() async {
+    final override = _supportRootOverride?.call();
+    return override ?? await getApplicationSupportDirectory();
+  }
+
+  Future<Directory> _tempRoot() async {
+    final override = _tempRootOverride?.call();
+    return override ?? await getTemporaryDirectory();
+  }
+
+  Future<bool> _directoryHasFiles(Directory dir) async {
+    if (!await dir.exists()) return false;
+    return dir.list(recursive: true).any((entity) => entity is File);
   }
 
   @override

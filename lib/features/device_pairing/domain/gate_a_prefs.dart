@@ -45,6 +45,8 @@ abstract final class GateAPrefs {
   static const workoutDataPagesDir = 'workouts/data_pages';
   /// Sport-agnostic Pace block bodies (keyed by workout #).
   static const workoutPaceBlocksDir = 'workouts/pace_blocks';
+  /// Temp-dir cache for Outdoor Run session AI exports (Forget wipe + verify).
+  static const runSessionExportsDir = 'run_session_exports';
   /// Gemini API key for W4 coach (device-local; never commit).
   static const geminiApiKey = 'gemini_api_key';
   /// Last explicit Enable auto-tracking result (outcomes-only allowlist).
