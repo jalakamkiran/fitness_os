@@ -1,7 +1,12 @@
+import 'dart:io';
+
 import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/features/diagnostics/data/run_session_export_envelope.dart';
+import 'package:fitness_os/features/diagnostics/data/run_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
@@ -27,6 +32,10 @@ class WorkoutDetailScreen extends StatelessWidget {
     this.runSessionStore,
     this.preloadedPaceSplits,
     this.preloadedStreamPoints,
+    this.runSessionExportService,
+    this.shareSessionExport,
+    this.sessionExportOverride,
+    this.sessionExportBusyOverride,
   });
 
   final WorkoutSummary workout;
@@ -40,11 +49,24 @@ class WorkoutDetailScreen extends StatelessWidget {
   /// Test seam: inject chart points without side-file IO.
   final List<RunStreamPoint>? preloadedStreamPoints;
 
+  /// Test seam — production uses GetIt [RunSessionExportService].
+  final RunSessionExportService? runSessionExportService;
+
+  /// Test seam — production uses [SharePlus].
+  final Future<void> Function(File file)? shareSessionExport;
+
+  /// Test seam — when set, used instead of [RunSessionExportService.exportSessionToCache].
+  final Future<RunSessionExportResult> Function()? sessionExportOverride;
+
+  /// Test seam — when set, used instead of [RunSessionExportService.isBusy].
+  final bool Function()? sessionExportBusyOverride;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final isRun = isRunWorkout(workout.type);
+    final isOutdoor = isOutdoorRunWorkout(workout.type);
     final swim = isRun ? null : CanonicalSwimSession.fromWorkoutSummary(workout);
     final analytics = swim == null ? null : analyzeSwimSession(swim.p0);
     final runMetrics =
@@ -54,8 +76,14 @@ class WorkoutDetailScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text('${_typeLabel(workout.type)} #${workout.number}'),
         actions: [
-          // U5 seam: Outdoor Run detail will add "Export for AI" here after
-          // sensitive-health confirm — not in this unit.
+          if (isOutdoor)
+            _OutdoorRunExportAction(
+              workout: workout,
+              exportService: runSessionExportService,
+              shareExport: shareSessionExport,
+              exportOverride: sessionExportOverride,
+              exportBusyOverride: sessionExportBusyOverride,
+            ),
           IconButton(
             tooltip: 'Reasoner settings',
             icon: const Icon(Icons.psychology_outlined),
@@ -219,6 +247,156 @@ class WorkoutDetailScreen extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Outdoor Run AppBar overflow: Export for AI (confirm → assemble → share).
+class _OutdoorRunExportAction extends StatefulWidget {
+  const _OutdoorRunExportAction({
+    required this.workout,
+    this.exportService,
+    this.shareExport,
+    this.exportOverride,
+    this.exportBusyOverride,
+  });
+
+  final WorkoutSummary workout;
+  final RunSessionExportService? exportService;
+  final Future<void> Function(File file)? shareExport;
+  final Future<RunSessionExportResult> Function()? exportOverride;
+  final bool Function()? exportBusyOverride;
+
+  @override
+  State<_OutdoorRunExportAction> createState() =>
+      _OutdoorRunExportActionState();
+}
+
+class _OutdoorRunExportActionState extends State<_OutdoorRunExportAction> {
+  bool _assembling = false;
+
+  RunSessionExportService get _export =>
+      widget.exportService ?? sl<RunSessionExportService>();
+
+  bool get _serviceBusy {
+    if (widget.exportBusyOverride != null) {
+      return widget.exportBusyOverride!();
+    }
+    // Test seam: when exportOverride is supplied, skip GetIt busy probe.
+    if (widget.exportOverride != null) {
+      return false;
+    }
+    return _export.isBusy;
+  }
+
+  Future<RunSessionExportResult> _runExport() {
+    if (widget.exportOverride != null) {
+      return widget.exportOverride!();
+    }
+    return _export.exportSessionToCache(widget.workout);
+  }
+
+  Future<void> _onExportForAi() async {
+    if (_assembling) return;
+
+    if (_serviceBusy) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Export blocked — wait for sync, Forget, or another export to finish.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final identity =
+        RunSessionExportService.confirmIdentityLines(widget.workout);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Export for AI?'),
+        content: Text(
+          '$identity\n\n'
+          'This creates a JSON dump of this Outdoor Run session. It contains '
+          'non-anonymized health biometrics (heart rate, form metrics, leftover '
+          'payloads). After you share it, recipients may keep copies — Forget '
+          'Device does not revoke shared copies.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Export'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    setState(() => _assembling = true);
+
+    final result = await _runExport();
+    if (!mounted) return;
+
+    if (!result.isSuccess || result.file == null) {
+      setState(() => _assembling = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message ?? 'Export failed.')),
+      );
+      return;
+    }
+
+    final file = result.file!;
+    final sharePath = file.absolute.path;
+    if (!sharePath.contains(
+      '/${RunSessionExportEnvelope.exportCacheDirName}/',
+    )) {
+      setState(() => _assembling = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Export path refused — not under export cache.'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final share = widget.shareExport;
+      if (share != null) {
+        await share(file);
+      } else {
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(file.path, mimeType: 'application/json')],
+            subject: 'Fathom Outdoor Run session export',
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _assembling = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Share failed: $e')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _assembling = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Export for AI',
+      icon: const Icon(Icons.ios_share),
+      onPressed: _assembling ? null : _onExportForAi,
     );
   }
 }

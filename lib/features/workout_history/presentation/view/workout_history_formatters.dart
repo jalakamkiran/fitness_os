@@ -22,6 +22,9 @@ bool isSwimWorkout(int type) => type == 6 || type == 8;
 
 bool isRunWorkout(int type) => type == 2 || type == 5;
 
+/// Outdoor Run (Totals/list type 2). Indoor run (5) is never the Outdoor prove.
+bool isOutdoorRunWorkout(int type) => type == 2;
+
 bool isStrengthWorkout(int type) => type == 140;
 
 String formatWorkoutWhen(int unixSec) {
