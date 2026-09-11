@@ -10,7 +10,9 @@ abstract final class RunSessionExportEnvelope {
 
   static const sensitivityNotes =
       'Contains non-anonymized session health biometrics (HR, form, leftovers). '
-      'Shared copies are not revoked by Forget Device. Do not commit.';
+      'Structured GPS/location series are omitted; opaque leftover TLV bodies '
+      'may still include undecoded location-related wire data. Shared copies '
+      'are not revoked by Forget Device. Do not commit.';
 
   /// Always omitted — never stamp as included.
   static const alwaysOmitted = <String>{

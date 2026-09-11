@@ -320,9 +320,12 @@ class _OutdoorRunExportActionState extends State<_OutdoorRunExportAction> {
         content: Text(
           '$identity\n\n'
           'This creates a JSON dump of this Outdoor Run session. It contains '
-          'non-anonymized health biometrics (heart rate, form metrics, leftover '
-          'payloads). After you share it, recipients may keep copies — Forget '
-          'Device does not revoke shared copies.',
+          'non-anonymized health biometrics (heart rate, form metrics, and '
+          'opaque leftover payloads). Structured GPS/location series are '
+          'omitted, but undecoded leftover bytes may still include '
+          'location-related wire data until those tags are catalogued. After '
+          'you share it, recipients may keep copies — Forget Device does not '
+          'revoke shared copies.',
         ),
         actions: [
           TextButton(
