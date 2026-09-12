@@ -14,7 +14,7 @@ class HuaweiPhysioCaptureProbeTest {
         val body = """{"avgHrv":12,"avgBreathRate":14}""".toByteArray()
         val probe = HuaweiPhysioCaptureProbe(
             fileDownload = {
-                scriptedDownload(mapOf("sequence_data/SLEEP_DETAILS" to body))
+                scriptedDownload(mapOf(HuaweiFileDownload.FILE_SEQUENCE_DATA to body))
             },
             listenFeatureUploadSequence = { null },
         )
@@ -31,6 +31,13 @@ class HuaweiPhysioCaptureProbeTest {
         @Suppress("UNCHECKED_CAST")
         val keys = out["overnightSummaryKeys"] as List<*>
         assertTrue(keys.contains("avgHrv"))
+        @Suppress("UNCHECKED_CAST")
+        val attempts = out["dictAttempts"] as List<Map<String, Any?>>
+        assertEquals("cand-fd-seq-dict", attempts.first()["candidateId"])
+        assertEquals(
+            HuaweiFileDownload.DICT_SLEEP_DETAILS_CLASS,
+            attempts.first()["dictId"],
+        )
         @Suppress("UNCHECKED_CAST")
         val sleepData = out["sleepData"] as Map<String, Any?>
         assertEquals("skipped", sleepData["status"])
@@ -54,7 +61,9 @@ class HuaweiPhysioCaptureProbeTest {
         )
         @Suppress("UNCHECKED_CAST")
         val attempts = out["dictAttempts"] as List<Map<String, Any?>>
-        assertEquals(5, attempts.size)
+        // primary SEQUENCE_DATA + 2 legacy routes × 2 types + FU listen
+        assertEquals(6, attempts.size)
+        assertEquals("cand-fd-seq-dict", attempts.first()["candidateId"])
         assertTrue(attempts.all { it["status"] == "absent" })
         @Suppress("UNCHECKED_CAST")
         val sleepData = out["sleepData"] as Map<String, Any?>

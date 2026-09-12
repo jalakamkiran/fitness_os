@@ -109,6 +109,13 @@ class _Vitals implements VitalsRepository {
       false;
 
   @override
+  Future<TruSleepSequenceSession?> loadTruSleepSummary(
+    SleepSessionSummary session,
+  ) async =>
+      null;
+
+
+  @override
   Future<String?> loadFeelOnWake(SleepSessionSummary session) async => null;
 
   @override

@@ -8,6 +8,28 @@ import org.junit.Test
 class HuaweiFitnessDataSyncTest {
 
     @Test
+    fun resolveSleepFileDownloadStartUnix_widensIncrementalActivityWindow() {
+        val end = 1_789_226_768L
+        val incrementalStart = end - 86_400L // ~1d
+        val start = HuaweiFitnessDataSync.resolveSleepFileDownloadStartUnix(
+            incrementalStart,
+            end,
+        )
+        assertEquals(end.toInt() - 14 * 24 * 3600, start)
+    }
+
+    @Test
+    fun resolveSleepFileDownloadStartUnix_keepsAlreadyWideWindow() {
+        val end = 1_789_226_768L
+        val wideStart = end - 14 * 24 * 3600L
+        val start = HuaweiFitnessDataSync.resolveSleepFileDownloadStartUnix(
+            wideStart,
+            end,
+        )
+        assertEquals(wideStart.toInt(), start)
+    }
+
+    @Test
     fun parseSleepData_captureShapedStages_aggregateToSession() {
         // Shape from capture:POC-2026-07-18-activity-sync-sleep (timestamps synthetic).
         val begin = 1_700_000_000L
@@ -309,6 +331,60 @@ class HuaweiFitnessDataSyncTest {
         val intervals = enrich[0]["stateIntervals"] as List<Map<String, Any?>>
         assertEquals(1, intervals.size)
         assertEquals(intervalBegin, intervals[0]["beginUnix"])
+        assertEquals("ok", result["status"])
+    }
+
+    @Test
+    fun sync_fileDownload_forwardsSequenceSessionsOnFirstEnrichRow() {
+        val begin = 1_700_000_000L
+        val intervalBegin = 1_700_000_000
+        val intervalEnd = 1_700_014_400
+        val sequence = listOf(
+            mapOf(
+                "beginUnix" to intervalBegin,
+                "endUnix" to intervalEnd,
+                "sleepScore" to 84,
+                "productStages" to listOf(
+                    mapOf(
+                        "timestampUnix" to intervalBegin,
+                        "durationMin" to 30,
+                        "wireType" to 1,
+                    ),
+                ),
+            ),
+        )
+        val queue = ArrayDeque(
+            listOf(
+                null,
+                countFrame(HuaweiFitnessDataSync.CMD_SLEEP_COUNT, 0),
+                null,
+            ),
+        )
+        val sync = HuaweiFitnessDataSync(
+            exchangeEncrypted = { _, _, _, _ -> queue.removeFirstOrNull() },
+            sleepFileDownloadProbe = {
+                HuaweiFileDownload.ProbeOutcome(
+                    status = "present",
+                    serviceId = HuaweiFileDownload.SVC_NEW,
+                    files = listOf(
+                        HuaweiFileDownload.FileRef("sleep_state", 128),
+                        HuaweiFileDownload.FileRef("sequence_data", 256),
+                    ),
+                    stateIntervals = listOf(
+                        HuaweiFileDownload.StateInterval(intervalBegin, intervalEnd),
+                    ),
+                    sequenceSessions = sequence,
+                )
+            },
+        )
+        val result = sync.sync(begin - 100, begin + 20_000)
+        @Suppress("UNCHECKED_CAST")
+        val enrich = result["sleepEnrich"] as List<Map<String, Any?>>
+        assertEquals(1, enrich.size)
+        @Suppress("UNCHECKED_CAST")
+        val sessions = enrich[0]["sequenceSessions"] as List<Map<String, Any?>>
+        assertEquals(1, sessions.size)
+        assertEquals(84, sessions[0]["sleepScore"])
         assertEquals("ok", result["status"])
     }
 
