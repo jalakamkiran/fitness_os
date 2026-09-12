@@ -8,18 +8,25 @@ import 'package:fitness_os/features/home/presentation/view/home_screen.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  Future<void> pumpState(WidgetTester tester, HomePrecedence p) async {
+  Future<void> pumpSnapshot(WidgetTester tester, HomeSnapshot snapshot) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: BpTheme.light(),
-        home: HomeSnapshotView(snapshot: HomeSnapshot.forPrecedence(p)),
+        home: HomeSnapshotView(snapshot: snapshot),
       ),
     );
     await tester.pumpAndSettle();
   }
 
+  Future<void> pumpState(WidgetTester tester, HomePrecedence p,
+      {bool restDay = false}) async {
+    await pumpSnapshot(
+      tester,
+      HomeSnapshot.forPrecedence(p, restDay: restDay),
+    );
+  }
+
   void expectForbiddenSectionsAbsent() {
-    // Home never: graphs, vitals history lists, diagnosis lists, reasoner settings.
     expect(find.byKey(const Key('home-chart')), findsNothing);
     expect(find.textContaining('SWOLF'), findsNothing);
     expect(find.textContaining('Reasoner'), findsNothing);
@@ -27,9 +34,12 @@ void main() {
     expect(find.textContaining('Diagnosis'), findsNothing);
     expect(find.textContaining('Coach settings'), findsNothing);
     expect(find.textContaining('Vitals history'), findsNothing);
+    expect(find.textContaining('readiness'), findsNothing);
+    expect(find.textContaining('hypnogram'), findsNothing);
     expect(find.text('GT5 pairing'), findsNothing);
     expect(find.byType(Table), findsNothing);
     expect(find.byType(DataTable), findsNothing);
+    expect(find.byKey(const Key('home-swim-takeaway')), findsNothing);
   }
 
   testWidgets('01 not paired — pair CTA, no invented metrics', (tester) async {
@@ -38,10 +48,12 @@ void main() {
     expect(find.text('Pair watch'), findsOneWidget);
     expect(find.text('Pair a GT5 to begin'), findsOneWidget);
     expect(find.text('Calories'), findsNothing);
+    expect(find.byKey(const Key('home-sleep-duration')), findsNothing);
     expectForbiddenSectionsAbsent();
   });
 
-  testWidgets('02 paired never synced — Sync now, no fake zeros', (tester) async {
+  testWidgets('02 paired never synced — Sync now, no fake zeros',
+      (tester) async {
     await pumpState(tester, HomePrecedence.pairedNeverSynced);
     expect(
       find.byKey(const Key('home_state_pairedNeverSynced')),
@@ -53,7 +65,8 @@ void main() {
     expectForbiddenSectionsAbsent();
   });
 
-  testWidgets('03 sync in progress — calm progress, no charts', (tester) async {
+  testWidgets('03 sync in progress — muted prior stack, no charts',
+      (tester) async {
     await pumpState(tester, HomePrecedence.syncInProgress);
     expect(
       find.byKey(const Key('home_state_syncInProgress')),
@@ -61,7 +74,7 @@ void main() {
     );
     expect(find.text('Syncing'), findsOneWidget);
     expect(find.text('Pulling today’s data'), findsOneWidget);
-    expect(find.textContaining('no charts while syncing'), findsOneWidget);
+    expect(find.byKey(const Key('home-sleep-duration')), findsOneWidget);
     expectForbiddenSectionsAbsent();
   });
 
@@ -70,11 +83,11 @@ void main() {
     expect(find.byKey(const Key('home_state_syncFailed')), findsOneWidget);
     expect(find.text('Retry sync'), findsOneWidget);
     expect(find.text('Failed'), findsOneWidget);
-    expect(find.textContaining('Last known'), findsOneWidget);
+    expect(find.byKey(const Key('home-stale-cue')), findsOneWidget);
     expectForbiddenSectionsAbsent();
   });
 
-  testWidgets('05 data available — totals, vitals snapshot, one takeaway',
+  testWidgets('05 trusted day — Today stack with multi-sport sessions',
       (tester) async {
     await pumpState(tester, HomePrecedence.dataAvailable);
     expect(
@@ -84,22 +97,57 @@ void main() {
     expect(find.text('Synced'), findsOneWidget);
     expect(find.text('Calories'), findsOneWidget);
     expect(find.text('1,842'), findsOneWidget);
-    expect(find.text('Vitals · now'), findsOneWidget);
-    expect(find.text('Efficient early, fatigue later'), findsOneWidget);
-    expect(find.text('Open session'), findsOneWidget);
+    expect(find.byKey(const Key('home-sleep-duration')), findsOneWidget);
+    expect(find.byKey(const Key('home-sleep-feel')), findsOneWidget);
+    expect(find.byKey(const Key('home-body-hr')), findsOneWidget);
+    expect(find.byKey(const Key('home-hr-spark')), findsOneWidget);
+    expect(find.text('Pool swim · #11'), findsOneWidget);
+    expect(find.text('Strength · #24'), findsOneWidget);
+    expect(find.text('Load'), findsWidgets);
+    expect(find.text('TE'), findsOneWidget);
+    expect(find.textContaining('%'), findsNothing);
+    expect(find.byKey(const Key('home-session-0')), findsOneWidget);
+    expect(find.byKey(const Key('home-session-1')), findsOneWidget);
     expectForbiddenSectionsAbsent();
   });
 
-  testWidgets('06 no swim data yet — totals + empty swim cue', (tester) async {
-    await pumpState(tester, HomePrecedence.noSwimDataYet);
+  testWidgets('06 rest day — empty sessions cue, upper blocks remain',
+      (tester) async {
+    await pumpState(tester, HomePrecedence.dataAvailable, restDay: true);
     expect(
-      find.byKey(const Key('home_state_noSwimDataYet')),
+      find.byKey(const Key('home_state_dataAvailable')),
       findsOneWidget,
     );
-    expect(find.text('No swim yet today'), findsOneWidget);
+    expect(find.byKey(const Key('home-sessions-empty')), findsOneWidget);
+    expect(find.text('No sessions yet today'), findsOneWidget);
     expect(find.text('Calories'), findsOneWidget);
-    expect(find.text('Vitals · now'), findsOneWidget);
-    expect(find.text('Open session'), findsNothing);
+    expect(find.byKey(const Key('home-body-hr')), findsOneWidget);
+    expect(find.byKey(const Key('home-session-0')), findsNothing);
+    expectForbiddenSectionsAbsent();
+  });
+
+  testWidgets('feel absent — no survey CTA on Home', (tester) async {
+    final base = HomeSnapshot.forPrecedence(HomePrecedence.dataAvailable);
+    await pumpSnapshot(
+      tester,
+      HomeSnapshot(
+        precedence: base.precedence,
+        deviceLabel: base.deviceLabel,
+        brandSubtitle: base.brandSubtitle,
+        syncPillLabel: base.syncPillLabel,
+        syncTitle: base.syncTitle,
+        syncCaption: base.syncCaption,
+        sleepDurationLabel: base.sleepDurationLabel,
+        sleepWindowLabel: base.sleepWindowLabel,
+        caloriesLabel: base.caloriesLabel,
+        stepsLabel: base.stepsLabel,
+        workoutTimeLabel: base.workoutTimeLabel,
+        bodyHrLabel: base.bodyHrLabel,
+        todaySessions: base.todaySessions,
+      ),
+    );
+    expect(find.byKey(const Key('home-sleep-feel')), findsNothing);
+    expect(find.textContaining('survey'), findsNothing);
     expectForbiddenSectionsAbsent();
   });
 }
