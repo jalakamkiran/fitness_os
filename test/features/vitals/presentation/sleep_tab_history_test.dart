@@ -59,6 +59,13 @@ class _FakeRepo implements VitalsRepository {
       false;
 
   @override
+  Future<TruSleepSequenceSession?> loadTruSleepSummary(
+    SleepSessionSummary session,
+  ) async =>
+      null;
+
+
+  @override
   Future<String?> loadFeelOnWake(SleepSessionSummary session) async =>
       feelAnswers[session.mergeKey];
 
@@ -146,6 +153,8 @@ void main() {
 
     expect(find.text('How do you feel waking up?'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('Good'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Good'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
@@ -197,7 +206,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('Aug 2026'), findsOneWidget);
-    expect(find.text('charts later · list first'), findsOneWidget);
+    expect(find.textContaining('tap a row for TruSleep detail'), findsOneWidget);
     // One session card for August.
     expect(find.byType(Card), findsWidgets);
 
@@ -213,7 +222,7 @@ void main() {
 
     expect(find.text('Jun 2026'), findsOneWidget);
     expect(
-      find.textContaining('No sleep sessions stored yet'),
+      find.textContaining('No nights this month'),
       findsOneWidget,
     );
   });
@@ -242,10 +251,9 @@ void main() {
       find.textContaining('No sleep sessions stored yet'),
       findsOneWidget,
     );
-    expect(find.text('Advanced sleep metrics — unlock soon'), findsOneWidget);
-    expect(
-      find.text('no fake metrics · quality score deferred'),
-      findsOneWidget,
-    );
+    expect(find.text('Advanced sleep metrics'), findsOneWidget);
+    expect(find.textContaining('Available after an overnight Sync'), findsOneWidget);
+    expect(find.text('Sleep history'), findsOneWidget);
+    expect(find.textContaining('Browse by month'), findsOneWidget);
   });
 }

@@ -20,6 +20,8 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
     on<VitalsSyncRequested>(_onSync);
     on<VitalsEnableRequested>(_onEnable);
     on<VitalsPhysioProbeRequested>(_onPhysioProbe);
+    on<VitalsPersistSleepDataRequested>(_onPersistSleepData);
+    on<VitalsPersistSleepDictRequested>(_onPersistSleepDict);
     on<VitalsReloadRequested>(_onReload);
     on<VitalsSessionReadyChanged>(_onSessionReady);
     if (invalidation != null) {
@@ -239,6 +241,66 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
     );
   }
 
+  Future<void> _onPersistSleepData(
+    VitalsPersistSleepDataRequested event,
+    Emitter<VitalsState> emit,
+  ) async {
+    if (state.probeDisabled) return;
+    final link = _link;
+    if (link == null) {
+      emit(state.copyWith(message: 'Keep sleep_data unavailable (no link)'));
+      return;
+    }
+    emit(
+      state.copyWith(
+        phase: VitalsPhase.probing,
+        clearMessage: true,
+      ),
+    );
+    final endUnix = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final startUnix = endUnix - HuaweiLink.activityWindowDays * 24 * 60 * 60;
+    final map = await link.persistSleepDataCapture(
+      startUnix: startUnix,
+      endUnix: endUnix,
+    );
+    emit(
+      state.copyWith(
+        phase: VitalsPhase.idle,
+        message: _persistSleepDataCopy(map),
+      ),
+    );
+  }
+
+  Future<void> _onPersistSleepDict(
+    VitalsPersistSleepDictRequested event,
+    Emitter<VitalsState> emit,
+  ) async {
+    if (state.probeDisabled) return;
+    final link = _link;
+    if (link == null) {
+      emit(state.copyWith(message: 'Keep sleep dict unavailable (no link)'));
+      return;
+    }
+    emit(
+      state.copyWith(
+        phase: VitalsPhase.probing,
+        clearMessage: true,
+      ),
+    );
+    final endUnix = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final startUnix = endUnix - HuaweiLink.activityWindowDays * 24 * 60 * 60;
+    final map = await link.persistSleepDetailsSequenceCapture(
+      startUnix: startUnix,
+      endUnix: endUnix,
+    );
+    emit(
+      state.copyWith(
+        phase: VitalsPhase.idle,
+        message: _persistSleepDictCopy(map),
+      ),
+    );
+  }
+
   String _probeCopy(Map<String, dynamic> map) {
     final status = map['status']?.toString() ?? 'unknown';
     final msg = map['message']?.toString();
@@ -247,6 +309,34 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
       return 'Physio probe: $status ($keys)';
     }
     return 'Physio probe: $status — $msg ($keys)';
+  }
+
+  String _persistSleepDataCopy(Map<String, dynamic> map) {
+    final status = map['status']?.toString() ?? 'unknown';
+    final msg = map['message']?.toString();
+    final len = map['len'];
+    final path = map['path'];
+    final persisted = map['persisted'] == true;
+    if (msg != null && msg.isNotEmpty) {
+      return 'Keep sleep_data: $msg'
+          '${persisted ? '' : ' (not saved)'}';
+    }
+    return 'Keep sleep_data: $status len=$len path=$path persisted=$persisted';
+  }
+
+  String _persistSleepDictCopy(Map<String, dynamic> map) {
+    final status = map['status']?.toString() ?? 'unknown';
+    final msg = map['message']?.toString();
+    final len = map['len'];
+    final path = map['path'];
+    final persisted = map['persisted'] == true;
+    final keys = map['overnightSummaryKeys'];
+    if (msg != null && msg.isNotEmpty) {
+      return 'Keep sleep dict: $msg'
+          '${persisted ? '' : ' (not saved)'}';
+    }
+    return 'Keep sleep dict: $status len=$len path=$path '
+        'persisted=$persisted keys=$keys';
   }
 
   String _overallCopy(AutoTrackingEnableResult value) {

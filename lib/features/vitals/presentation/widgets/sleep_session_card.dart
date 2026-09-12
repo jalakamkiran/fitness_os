@@ -12,6 +12,7 @@ class SleepSessionCard extends StatelessWidget {
     required this.session,
     this.stages = const [],
     this.kicker,
+    this.sleepScore,
     this.showDetailsCta = false,
     this.onViewDetails,
     this.compact = false,
@@ -20,6 +21,8 @@ class SleepSessionCard extends StatelessWidget {
   final SleepSessionSummary session;
   final List<SleepStageSummary> stages;
   final String? kicker;
+  /// TruSleep score when known (scientific overnight only).
+  final int? sleepScore;
   final bool showDetailsCta;
   final VoidCallback? onViewDetails;
   final bool compact;
@@ -32,6 +35,8 @@ class SleepSessionCard extends StatelessWidget {
     final overnight = sleepCrossesLocalMidnight(session);
     final window = sleepFormatWindow(session.beginUnix, session.endUnix);
     final duration = sleepFormatDuration(session.durationSec);
+    final kind = overnight ? 'overnight' : 'nap';
+    final showScore = sleepScore != null && sleepScore! > 0;
 
     return Card(
       child: Padding(
@@ -50,24 +55,52 @@ class SleepSessionCard extends StatelessWidget {
               ),
               const SizedBox(height: 6),
             ],
-            Text(
-              sleepFormatShortDate(end),
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: colors.inkDim,
-                fontWeight: FontWeight.w600,
-              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        sleepFormatShortDate(end),
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: colors.inkDim,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        duration,
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: colors.ink,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (showScore)
+                  Text(
+                    '$sleepScore',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: colors.ink,
+                    ),
+                  )
+                else if (compact && !overnight)
+                  Text(
+                    'nap',
+                    style: FathomTextStyles.mono(
+                      fontSize: 12,
+                      color: colors.inkFaint,
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(
-              duration,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: colors.ink,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              overnight ? '$window · overnight · GT5' : '$window · GT5',
+              '$window · $kind',
               style: FathomTextStyles.mono(
                 fontSize: 12,
                 color: colors.inkFaint,

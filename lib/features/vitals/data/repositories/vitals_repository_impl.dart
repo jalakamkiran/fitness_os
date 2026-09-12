@@ -26,7 +26,8 @@ class VitalsRepositoryImpl implements VitalsRepository {
   final Directory? Function()? _sideFileRootOverride;
 
   /// Bumped when activity Sync merge / SoT rules change (forces one wide pull).
-  static const currentActivitySyncImplVersion = 1;
+  /// v2: SEQUENCE_DATA TruSleep summary+stages productized — one 14d re-pull.
+  static const currentActivitySyncImplVersion = 2;
 
   /// Overnight-scale overlap when advancing from [GateAPrefs.lastActivitySyncCursor].
   static const activityCursorOverlapSec = 6 * 3600;
@@ -182,6 +183,32 @@ class VitalsRepositoryImpl implements VitalsRepository {
       return decoded['present'] == true;
     } catch (_) {
       return false;
+    }
+  }
+
+  @override
+  Future<TruSleepSequenceSession?> loadTruSleepSummary(
+    SleepSessionSummary session,
+  ) async {
+    final root = await _sideFileRoot();
+    if (root == null) return null;
+    final file = File(_enrichFilePath(root, session));
+    if (!await file.exists()) return null;
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map) return null;
+      final refs = decoded['refs'];
+      if (refs is! Map) return null;
+      final raw = refs['trusleepSummary'];
+      if (raw is! Map) return null;
+      final summary =
+          TruSleepSequenceSession.fromMap(Map<String, dynamic>.from(raw));
+      if (summary.beginUnix <= 0 || summary.endUnix <= summary.beginUnix) {
+        return null;
+      }
+      return summary;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -541,11 +568,13 @@ class VitalsRepositoryImpl implements VitalsRepository {
     }
     final completed = result.completedContainers;
     final intervals = _collectStateIntervals(result.sleepEnrich);
+    final sequences = _collectSequenceSessions(result.sleepEnrich);
     var merge = const _SleepMergeResult();
 
-    if (intervals.isNotEmpty) {
+    if (intervals.isNotEmpty || sequences.isNotEmpty) {
       merge = await _mergeFileSleepSot(
         intervals: intervals,
+        sequences: sequences,
         messageSessions: result.sleepSessions,
         enrich: result.sleepEnrich,
       );
@@ -568,7 +597,9 @@ class VitalsRepositoryImpl implements VitalsRepository {
     }
     if (!_gateStillPassed()) return merge;
     // Enrich absent ⇒ leave prior enrich refs untouched (monotonic).
-    if (intervals.isEmpty && result.sleepEnrich.isNotEmpty) {
+    if (intervals.isEmpty &&
+        sequences.isEmpty &&
+        result.sleepEnrich.isNotEmpty) {
       await _mergeSleepEnrich(result.sleepEnrich);
     }
     return merge;
@@ -586,13 +617,33 @@ class VitalsRepositoryImpl implements VitalsRepository {
     return out;
   }
 
+  List<TruSleepSequenceSession> _collectSequenceSessions(
+    List<SleepEnrichOutcome> enrich,
+  ) {
+    for (final o in enrich) {
+      if (!o.present || o.sequenceSessions.isEmpty) continue;
+      return List<TruSleepSequenceSession>.from(o.sequenceSessions);
+    }
+    return const [];
+  }
+
   Future<_SleepMergeResult> _mergeFileSleepSot({
     required List<SleepStateInterval> intervals,
+    required List<TruSleepSequenceSession> sequences,
     required List<SleepSessionSummary> messageSessions,
     required List<SleepEnrichOutcome> enrich,
   }) async {
     if (!_gateStillPassed()) return const _SleepMergeResult();
-    final built = TruSleepSleepSot.buildSessions(intervals);
+    final built = intervals.isNotEmpty
+        ? TruSleepSleepSot.buildSessions(intervals)
+        : sequences
+            .map(
+              (s) => SleepSessionSummary(
+                beginUnix: s.beginUnix,
+                endUnix: s.endUnix,
+              ),
+            )
+            .toList();
     if (built.isEmpty) return const _SleepMergeResult();
 
     final existing = await _safeLoadSleep();
@@ -607,8 +658,19 @@ class VitalsRepositoryImpl implements VitalsRepository {
         .toList();
 
     final withStages = <SleepSessionSummary>[];
+    // Load prior stages before deleting replaced side-files (monotonic).
+    final priorStages = <String, List<SleepStageSummary>>{};
+    for (final r in replaced) {
+      priorStages[r.mergeKey] = await loadSleepStages(r);
+    }
     for (final file in built) {
-      final stages = _stagesForFileWindow(file, messageSessions);
+      final seq = _bestUsableSequenceForWindow(file, sequences);
+      var stages = (seq != null && seq.productStages.isNotEmpty)
+          ? seq.productStages
+          : _stagesForFileWindow(file, messageSessions);
+      if (stages.isEmpty) {
+        stages = _priorStagesForWindow(file, replaced, priorStages);
+      }
       withStages.add(
         SleepSessionSummary(
           beginUnix: file.beginUnix,
@@ -641,8 +703,12 @@ class VitalsRepositoryImpl implements VitalsRepository {
       withStages.where((s) => s.stages.isNotEmpty).toList(),
     );
 
-    // Rewrite enrich under file windows (monotonic present refs).
-    await _rewriteEnrichForFileSessions(withStages, enrich);
+    // Rewrite enrich under file windows (monotonic present refs + summary).
+    await _rewriteEnrichForFileSessions(
+      withStages,
+      enrich,
+      replaced: replaced,
+    );
 
     var maxEnd = 0;
     for (final s in withStages) {
@@ -675,6 +741,65 @@ class VitalsRepositoryImpl implements VitalsRepository {
     }
     stages.sort((a, b) => a.timestampUnix.compareTo(b.timestampUnix));
     return stages;
+  }
+
+  /// Prefer SEQUENCE session with greatest overlap vs file window.
+  TruSleepSequenceSession? _bestSequenceForWindow(
+    SleepSessionSummary file,
+    List<TruSleepSequenceSession> sequences,
+  ) {
+    TruSleepSequenceSession? best;
+    var bestOverlap = 0;
+    for (final s in sequences) {
+      final begin = file.beginUnix > s.beginUnix ? file.beginUnix : s.beginUnix;
+      final end = file.endUnix < s.endUnix ? file.endUnix : s.endUnix;
+      final o = end - begin;
+      if (o > bestOverlap) {
+        bestOverlap = o;
+        best = s;
+      }
+    }
+    return bestOverlap > 0 ? best : null;
+  }
+
+  /// Ignore thin SEQUENCE stubs (score=0, no stages) that would wipe prior SoT.
+  TruSleepSequenceSession? _bestUsableSequenceForWindow(
+    SleepSessionSummary file,
+    List<TruSleepSequenceSession> sequences,
+  ) {
+    final best = _bestSequenceForWindow(file, sequences);
+    if (best == null || !_sequenceHasUsableDetail(best)) return null;
+    return best;
+  }
+
+  bool _sequenceHasUsableDetail(TruSleepSequenceSession s) {
+    if (s.productStages.isNotEmpty) return true;
+    if (s.sleepScore != null && s.sleepScore! > 0) return true;
+    if (s.avgHrv != null ||
+        s.avgHeartRate != null ||
+        s.avgBreathRate != null ||
+        s.avgOxygenSaturation != null) {
+      return true;
+    }
+    return false;
+  }
+
+  List<SleepStageSummary> _priorStagesForWindow(
+    SleepSessionSummary file,
+    List<SleepSessionSummary> replaced,
+    Map<String, List<SleepStageSummary>> priorByKey,
+  ) {
+    SleepSessionSummary? best;
+    var bestOverlap = 0;
+    for (final r in replaced) {
+      final o = _overlapSec(file, r);
+      if (o > bestOverlap) {
+        bestOverlap = o;
+        best = r;
+      }
+    }
+    if (best == null || bestOverlap <= 0) return const [];
+    return priorByKey[best.mergeKey] ?? const [];
   }
 
   Future<void> _attachMessageStagesOntoFileSot(
@@ -745,8 +870,9 @@ class VitalsRepositoryImpl implements VitalsRepository {
 
   Future<void> _rewriteEnrichForFileSessions(
     List<SleepSessionSummary> fileSessions,
-    List<SleepEnrichOutcome> enrich,
-  ) async {
+    List<SleepEnrichOutcome> enrich, {
+    List<SleepSessionSummary> replaced = const [],
+  }) async {
     if (!_gateStillPassed() || fileSessions.isEmpty) return;
     SleepEnrichOutcome? present;
     for (final o in enrich) {
@@ -756,8 +882,14 @@ class VitalsRepositoryImpl implements VitalsRepository {
       }
     }
     if (present == null) return;
+    final sequences = present.sequenceSessions;
     for (final session in fileSessions) {
       if (!_gateStillPassed()) return;
+      final seq = _bestUsableSequenceForWindow(session, sequences);
+      Map<String, dynamic>? priorSummary;
+      if (seq == null && replaced.isNotEmpty) {
+        priorSummary = await _priorTruSleepSummaryMap(session, replaced);
+      }
       await persistSleepEnrich(
         session: session,
         present: true,
@@ -766,9 +898,31 @@ class VitalsRepositoryImpl implements VitalsRepository {
           if (present.stateIntervals.isNotEmpty)
             'stateIntervals':
                 present.stateIntervals.map((i) => i.toJson()).toList(),
+          if (seq != null)
+            'trusleepSummary': seq.toSummaryJson()
+          else if (priorSummary != null)
+            'trusleepSummary': priorSummary,
         },
       );
     }
+  }
+
+  Future<Map<String, dynamic>?> _priorTruSleepSummaryMap(
+    SleepSessionSummary file,
+    List<SleepSessionSummary> replaced,
+  ) async {
+    SleepSessionSummary? best;
+    var bestOverlap = 0;
+    for (final r in replaced) {
+      final o = _overlapSec(file, r);
+      if (o > bestOverlap) {
+        bestOverlap = o;
+        best = r;
+      }
+    }
+    if (best == null || bestOverlap <= 0) return null;
+    final prior = await loadTruSleepSummary(best);
+    return prior?.toSummaryJson();
   }
 
   Future<void> _mergeSleepEnrich(List<SleepEnrichOutcome> outcomes) async {
@@ -779,6 +933,8 @@ class VitalsRepositoryImpl implements VitalsRepository {
       if (outcome.beginUnix <= 0 || outcome.endUnix <= outcome.beginUnix) {
         continue;
       }
+      final seq =
+          _bestUsableSequenceForWindow(outcome.asSession, outcome.sequenceSessions);
       await persistSleepEnrich(
         session: outcome.asSession,
         present: true,
@@ -787,6 +943,7 @@ class VitalsRepositoryImpl implements VitalsRepository {
           if (outcome.stateIntervals.isNotEmpty)
             'stateIntervals':
                 outcome.stateIntervals.map((i) => i.toJson()).toList(),
+          if (seq != null) 'trusleepSummary': seq.toSummaryJson(),
         },
       );
     }

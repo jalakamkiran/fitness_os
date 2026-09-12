@@ -135,6 +135,46 @@ class _VitalsBody extends StatelessWidget {
                         probing ? 'Probing physio…' : 'Probe physio (debug)',
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: state.probeDisabled
+                          ? null
+                          : () => context
+                              .read<VitalsBloc>()
+                              .add(const VitalsPersistSleepDataRequested()),
+                      icon: probing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save_alt_outlined),
+                      label: Text(
+                        probing
+                            ? 'Saving sleep_data…'
+                            : 'Keep sleep_data (debug)',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: state.probeDisabled
+                          ? null
+                          : () => context
+                              .read<VitalsBloc>()
+                              .add(const VitalsPersistSleepDictRequested()),
+                      icon: probing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.nights_stay_outlined),
+                      label: Text(
+                        probing
+                            ? 'Saving sleep dict…'
+                            : 'Keep sleep dict (debug)',
+                      ),
+                    ),
                   ],
                   if (state.message != null) ...[
                     const SizedBox(height: 8),

@@ -24,6 +24,16 @@ final class VitalsPhysioProbeRequested extends VitalsEvent {
   const VitalsPhysioProbeRequested();
 }
 
+/// Debug-only: download and keep `sleep_data.bin` on disk (never product SoT).
+final class VitalsPersistSleepDataRequested extends VitalsEvent {
+  const VitalsPersistSleepDataRequested();
+}
+
+/// Debug-only: download and keep SEQUENCE_DATA SLEEP_DETAILS on disk.
+final class VitalsPersistSleepDictRequested extends VitalsEvent {
+  const VitalsPersistSleepDictRequested();
+}
+
 final class VitalsReloadRequested extends VitalsEvent {
   const VitalsReloadRequested();
 }

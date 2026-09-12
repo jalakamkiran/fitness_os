@@ -112,7 +112,7 @@ Firmware string for freeze table: **not recorded in Gate A interrupt matrix** �
 | stages REM+ (HarmonyOS 5 claim) | contested | **2** | `unobserved` | |
 | ACC ~1/min activity bytes | `sleep_data.bin` TAG_ACC | **3** | `present` (file sizes observed; tags unparsed) | **Not** high-rate IMU; `POC-2026-08-11-trusleep-fd` 694564 B init; `POC-2026-08-16-physio-probe` transfer 68172 B |
 | PPG compressed | `sleep_data.bin` TAG_PPG | **3** | `present` (file sizes observed; tags unparsed) | Overnight-summary **keys empty** on 2026-08-16 observe |
-| Overnight HRV / sleep HR / RR / sleep SpO₂ | dict / `SLEEP_DETAILS` / `sleep_data` keys | **2** | `absent-in-observed-sessions` | `ABSENT-overnight-summary` `ABSENT-companion` `capture:POC-2026-08-16-physio-probe`. Watch Sleep health tiles **present** (Health app not opened). Do not promote companion summaries |
+| Overnight HRV / sleep HR / RR / sleep SpO₂ | dict / `SLEEP_DETAILS` / SEQUENCE_DATA | **3** | `present` (product Sync) | `capture:POC-2026-09-12-seq-dict` — FileDownload `sequence_data` type `0x16` dictId `700013`; product Sync parses summary+stages, wipes body, merges into enrich `trusleepSummary` + stage side-files (prefer over message `0x0D`). |
 | Sleep score | watch Sleep tile | **2** | watch-ui `present` | Companion dict/sleep_data keys empty — not a companion SoT |
 | High-rate IMU/PPG dump | — | **0** | n/a | R11 |
 
