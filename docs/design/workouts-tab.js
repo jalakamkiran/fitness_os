@@ -4,8 +4,8 @@
   const railToggle = document.getElementById("themeToggleRail");
   const sportTabs = document.getElementById("sportTabs");
   const swimPanel = document.getElementById("swimPanel");
+  const strengthPanel = document.getElementById("strengthPanel");
   const emptyRun = document.getElementById("emptyRun");
-  const emptyStrength = document.getElementById("emptyStrength");
 
   function setTheme(next) {
     root.setAttribute("data-theme", next);
@@ -28,8 +28,8 @@
     const isRun = sport === "run";
     const isStrength = sport === "strength";
     swimPanel?.classList.toggle("hide", !isSwim);
+    strengthPanel?.classList.toggle("hide", !isStrength);
     emptyRun?.classList.toggle("show", isRun);
-    emptyStrength?.classList.toggle("show", isStrength);
   }
 
   phoneToggle?.addEventListener("click", toggleTheme);

@@ -170,7 +170,8 @@
   margin-top: 14px;
 }
 
-#swimPanel.hide { display: none; }
+#swimPanel.hide,
+#strengthPanel.hide { display: none; }
 
 .rail .eyebrow {
   margin: 0 0 8px;

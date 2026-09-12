@@ -1,0 +1,351 @@
+/* Strength session analytics — extends swim analytics shell */
+
+.strength-page .scroll {
+  display: flex;
+  flex-direction: column;
+}
+
+.st-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.st-kicker {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  font-weight: 700;
+}
+
+.st-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.st-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--ink-dim);
+  background: var(--bg-elev);
+}
+
+.st-pill.ok {
+  color: var(--up);
+  border-color: color-mix(in srgb, var(--up) 35%, var(--line));
+  background: color-mix(in srgb, var(--up) 10%, var(--bg-elev));
+}
+
+.st-pill.warn {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 40%, var(--line));
+  background: color-mix(in srgb, var(--amber) 10%, var(--bg-elev));
+}
+
+.st-p0 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.st-p0 .signal {
+  padding: 10px 10px 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-elev) 88%, var(--accent) 12%);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+.st-p0 .signal .label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.st-p0 .signal .value {
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.st-impact {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.st-impact .hero-stat {
+  padding: 16px 14px;
+  border-radius: 16px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+}
+
+.st-impact .hero-stat .label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.st-impact .hero-stat .value {
+  font-family: var(--font-mono);
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.st-impact .hero-stat .hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.st-derived {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.st-derived .cell {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.st-derived .cell .label {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 700;
+}
+
+.st-derived .cell .value {
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  margin-top: 4px;
+}
+
+.st-card {
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+}
+
+.st-card .chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.st-card .chart-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.st-card .chart-head .caption {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  text-align: right;
+}
+
+.st-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 88px;
+  padding: 0 2px;
+}
+
+.st-bars .bar {
+  flex: 1;
+  border-radius: 6px 6px 2px 2px;
+  background: color-mix(in srgb, var(--accent) 55%, var(--gauge-track, var(--line)));
+  min-height: 4px;
+  position: relative;
+}
+
+.st-bars .bar.current {
+  background: var(--accent);
+}
+
+.st-bars .bar span {
+  position: absolute;
+  bottom: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--ink-faint);
+}
+
+.st-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 18px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+.st-stress {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.st-stress .meter {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px dashed color-mix(in srgb, var(--amber) 40%, var(--line));
+  background: color-mix(in srgb, var(--amber) 6%, var(--bg-elev));
+}
+
+.st-stress .meter .label {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  font-weight: 700;
+}
+
+.st-stress .meter .value {
+  font-family: var(--font-mono);
+  font-size: 1.35rem;
+  margin: 6px 0 4px;
+}
+
+.st-stress .meter .hint {
+  font-size: 10px;
+  color: var(--ink-faint);
+  line-height: 1.35;
+}
+
+.st-context {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.st-context .row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+}
+
+.st-context .row strong {
+  font-size: 0.95rem;
+}
+
+.st-context .row span {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+}
+
+.st-context .row.muted {
+  opacity: 0.85;
+}
+
+.st-context .row .tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+
+.st-guard {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--hot) 28%, var(--line));
+  background: color-mix(in srgb, var(--hot) 8%, var(--bg-elev));
+}
+
+.st-guard h3 {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+}
+
+.st-guard ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--ink-dim);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.st-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.st-actions button,
+.st-actions a.action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--ink);
+  background: var(--bg-elev);
+}
+
+.st-actions button.primary,
+.st-actions a.action.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+
+.st-actions .hint {
+  text-align: center;
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin: 0;
+}
+
+.strength-page .rail-note {
+  margin: 0 0 16px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  line-height: 1.45;
+}
