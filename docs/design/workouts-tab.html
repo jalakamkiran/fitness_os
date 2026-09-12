@@ -33,7 +33,7 @@
             Run<span class="soon">Soon</span>
           </button>
           <button class="sport-tab" type="button" role="tab" aria-selected="false" data-sport="strength">
-            Strength<span class="soon">Soon</span>
+            Strength
           </button>
         </div>
 
@@ -118,10 +118,78 @@
           <span class="chip-static">Empty · OK</span>
         </div>
 
-        <div class="empty-sport" id="emptyStrength" role="status">
-          <h2>Strength</h2>
-          <p>Scaffolding only. Strength history stays off Swim and never borrows vitals trends.</p>
-          <span class="chip-static">Empty · OK</span>
+        <div id="strengthPanel" class="hide">
+          <div class="list-head">
+            <h1>Sessions</h1>
+            <span class="count">21 · strength</span>
+          </div>
+
+          <ul class="session-list" aria-label="Strength sessions">
+            <li>
+              <a class="session-row" href="strength-analytics.html">
+                <div class="session-top">
+                  <div>
+                    <p class="session-title">Strength · #64</p>
+                    <p class="session-when">Thu 11 Sep · 18:42</p>
+                  </div>
+                  <span class="session-chev" aria-hidden="true">›</span>
+                </div>
+                <div class="session-meta">
+                  <div><p>Load</p><strong>12</strong></div>
+                  <div><p>Recovery</p><strong>1h</strong></div>
+                  <div><p>Cal</p><strong>200</strong></div>
+                </div>
+              </a>
+            </li>
+            <li>
+              <a class="session-row" href="strength-analytics.html">
+                <div class="session-top">
+                  <div>
+                    <p class="session-title">Strength · #61</p>
+                    <p class="session-when">Mon 8 Sep · 19:10</p>
+                  </div>
+                  <span class="session-chev" aria-hidden="true">›</span>
+                </div>
+                <div class="session-meta">
+                  <div><p>Load</p><strong>8</strong></div>
+                  <div><p>Recovery</p><strong>45m</strong></div>
+                  <div><p>Cal</p><strong>160</strong></div>
+                </div>
+              </a>
+            </li>
+            <li>
+              <a class="session-row" href="strength-analytics.html">
+                <div class="session-top">
+                  <div>
+                    <p class="session-title">Strength · #58</p>
+                    <p class="session-when">Thu 4 Sep · 18:05</p>
+                  </div>
+                  <span class="session-chev" aria-hidden="true">›</span>
+                </div>
+                <div class="session-meta">
+                  <div><p>Load</p><strong>6</strong></div>
+                  <div><p>Recovery</p><strong>30m</strong></div>
+                  <div><p>Cal</p><strong>140</strong></div>
+                </div>
+              </a>
+            </li>
+            <li>
+              <a class="session-row" href="strength-analytics.html">
+                <div class="session-top">
+                  <div>
+                    <p class="session-title">Strength · #55</p>
+                    <p class="session-when">Sat 30 Aug · 10:22</p>
+                  </div>
+                  <span class="session-chev" aria-hidden="true">›</span>
+                </div>
+                <div class="session-meta">
+                  <div><p>Load</p><strong>9</strong></div>
+                  <div><p>Recovery</p><strong>1h</strong></div>
+                  <div><p>Cal</p><strong>185</strong></div>
+                </div>
+              </a>
+            </li>
+          </ul>
         </div>
       </main>
 
@@ -136,21 +204,22 @@
       <p class="rail-back"><a href="index.html">← Design review hub</a></p>
       <p class="eyebrow">Owner review · Workouts</p>
       <h1>Session history</h1>
-      <p class="lede">Workouts owns the sport list and path into swim detail. Charts, diagnoses, and reasoner live on the locked session surface — not on this list.</p>
+      <p class="lede">Workouts owns the sport list and path into session detail. Charts and denser analytics live on the session surface — not on this list.</p>
       <ol class="rail-list">
-        <li><strong>Owns</strong> — sport tabs, swim session rows, entry to detail.</li>
+        <li><strong>Owns</strong> — sport tabs, swim + strength rows, entry to detail.</li>
         <li><strong>Never</strong> — full chart dump, vitals trend charts, live sync theater.</li>
-        <li><strong>Path</strong> — row → <code>swim-analytics.html</code> (locked).</li>
+        <li><strong>Path</strong> — Swim → <code>swim-analytics.html</code> · Strength → <code>strength-analytics.html</code>.</li>
       </ol>
-      <p class="rail-note">List rows may show one short flag (e.g. pace decay) as a teaser. No Pace/SWOLF/strokes charts here.</p>
+      <p class="rail-note">List rows may show one short flag as a teaser. No Pace/SWOLF/load charts on the list.</p>
       <div class="own-matrix">
         <strong>IA lock</strong><br />
-        Swim populated now · Run / Strength empty scaffolding<br />
-        Detail: <code>swim-analytics.html</code>
+        Swim + Strength populated · Run empty scaffolding<br />
+        Detail: <code>swim-analytics.html</code> · <code>strength-analytics.html</code>
       </div>
       <div class="rail-actions">
         <button type="button" id="themeToggleRail">Toggle theme</button>
-        <a class="btn primary" href="swim-analytics.html">Open swim detail →</a>
+        <a class="btn primary" href="strength-analytics.html">Open strength detail →</a>
+        <a class="btn ghost" href="swim-analytics.html">Swim detail →</a>
         <a class="btn ghost" href="vitals-tab.html">Vitals tab →</a>
       </div>
     </aside>
