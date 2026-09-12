@@ -1,6 +1,6 @@
-# Outdoor Run session export schema (v1)
+# Run/Walk session export schema (v1)
 
-Owner-initiated dump of **one Outdoor Run** session from Run detail (“Export for AI”). **Not a backup.** Do not commit real exports or leftover bodies.
+Owner-initiated dump of **one Walk / Outdoor Run / Indoor run** session from Run/Walk detail (“Export for AI”). **Not a backup.** Do not commit real exports or leftover bodies.
 
 ## Envelope
 
@@ -17,8 +17,8 @@ Owner-initiated dump of **one Outdoor Run** session from Run detail (“Export f
 | `workout` | Present decoded lean prefs fields (`WorkoutSummary.toJson`) |
 | `countHints` | `dataCount` / `paceCount` / `sampleCount` when present |
 | `honesty` | Enrichment + leftovers / dataPages / paceBlocks stamps |
-| `leftovers` | `refs` (id+len), optional on-device `bodies` (base64), `sideFilePresent` |
-| `dataPages` / `paceBlocks` | Honesty, page meta, item id+len, `noPagesHint` / `partial` flags — **not** GPS |
+| `leftovers` | `refs` (id+len), on-device `bodies` (base64), `sideFilePresent` |
+| `dataPages` / `paceBlocks` | Honesty, page meta, item id+len, **on-device `bodies`**, `noPagesHint` / `partial` — not decoded GPS series |
 
 Cache: `{temp}/run_session_exports/` (peer to app-data `exports/` and day-food caches).
 
@@ -37,7 +37,8 @@ Cache: `{temp}/run_session_exports/` (peer to app-data `exports/` and day-food c
 |-----------------------------------|--------|
 | Present decoded Totals / session scalars | From lean workout JSON |
 | Leftover TLV **bodies** | Session dump only — never commit. Opaque bytes are not GPS-scrubbed; confirm dialog discloses that undecoded leftovers may contain location-related wire data until catalogued. |
-| Sample / pace **id+len** + honesty / no-pages flags | Bodies not required for honesty |
+| WorkoutData / Pace **bodies** | Same on-device share path as leftovers (base64 per TLV). Structured GPS series keys still forbidden. |
+| Sample / pace **id+len** + honesty / no-pages flags | Always present when side-files exist |
 | Count hints | From prefs |
 
 ## Busy / Forget

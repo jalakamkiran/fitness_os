@@ -1007,11 +1007,53 @@ class HuaweiWorkoutSync(
             when (tlv.tag) {
                 0x02 -> { /* workoutNumber — ignore for summary */ }
                 0x03 -> index = u16(tlv.value)
-                0x04 -> timestamp = u32(tlv.value)
-                0x05 -> intervalSec = parseScalarU32OrU16(tlv)
-                0x06 -> sampleCount = parseScalarU32OrU16(tlv)
-                0x07 -> dataLength = parseScalarU32OrU16(tlv)
-                0x08 -> bitmap = parseScalarU32OrU16(tlv)
+                0x04 -> {
+                    // Short timestamp (u32) or longer header blob — keep opaque when long.
+                    if (tlv.value.size == 4) {
+                        timestamp = u32(tlv.value)
+                    } else {
+                        keepLeftover(leftoverTlvs, tlv)
+                        unknownTags.add(EnrichmentTagRef(tlv.tag, tlv.value.size))
+                    }
+                }
+                0x05 -> {
+                    // GB oracle: short 0x05 = interval. GT5 Walk/Run pages put the
+                    // packed sample stream in a long VarInt-sized 0x05 (often ~240B).
+                    if (tlv.value.size <= 4) {
+                        intervalSec = parseScalarU32OrU16(tlv)
+                    } else {
+                        keepLeftover(leftoverTlvs, tlv)
+                        unknownTags.add(EnrichmentTagRef(0x05, tlv.value.size))
+                        if (sampleCount == null) {
+                            sampleCount = estimateSampleCount(tlv.value)
+                        }
+                        if (dataLength == null) dataLength = tlv.value.size
+                    }
+                }
+                0x06 -> {
+                    if (tlv.value.size <= 4) {
+                        sampleCount = parseScalarU32OrU16(tlv)
+                    } else {
+                        keepLeftover(leftoverTlvs, tlv)
+                        unknownTags.add(EnrichmentTagRef(tlv.tag, tlv.value.size))
+                    }
+                }
+                0x07 -> {
+                    if (tlv.value.size <= 4) {
+                        dataLength = parseScalarU32OrU16(tlv)
+                    } else {
+                        keepLeftover(leftoverTlvs, tlv)
+                        unknownTags.add(EnrichmentTagRef(tlv.tag, tlv.value.size))
+                    }
+                }
+                0x08 -> {
+                    if (tlv.value.size <= 4) {
+                        bitmap = parseScalarU32OrU16(tlv)
+                    } else {
+                        keepLeftover(leftoverTlvs, tlv)
+                        unknownTags.add(EnrichmentTagRef(tlv.tag, tlv.value.size))
+                    }
+                }
                 else -> {
                     // Opaque sample / unmatched bodies — equivalent points until bitmap promote.
                     keepLeftover(leftoverTlvs, tlv)
@@ -1059,6 +1101,24 @@ class HuaweiWorkoutSync(
             pageTlvs.add(HuaweiFraming.Tlv(0x81, HuaweiFraming.encodeTlvs(inner)))
         }
         return HuaweiFraming.encodeTlvs(pageTlvs)
+    }
+
+    /** Count `00 00 23 …` 8-byte records for logging / sampleCount hint. */
+    private fun estimateSampleCount(stream: ByteArray): Int {
+        var count = 0
+        var i = 0
+        while (i + 8 <= stream.size) {
+            if (stream[i] == 0.toByte() &&
+                stream[i + 1] == 0.toByte() &&
+                stream[i + 2] == 0x23.toByte()
+            ) {
+                count++
+                i += 8
+            } else {
+                i++
+            }
+        }
+        return count
     }
 
     fun parsePaceBlock(frame: HuaweiFraming.Frame, paceIndex: Int): PaceBlockSummary? {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fitness_os/core/di/injector.dart';
+import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/run_pace_splits_table.dart';
@@ -103,10 +104,14 @@ class _RunSessionStreamsSectionState extends State<RunSessionStreamsSection> {
     try {
       final pacePages = await store.loadPaceBlocks(workoutNumber);
       final dataPages = await store.loadDataPages(workoutNumber);
-      return _RunStreamsBundle(
-        splits: runPaceSplitsFromPages(pacePages),
-        points: decodeRunSamplePoints(dataPages),
+      final splits = runPaceSplitsFromPages(pacePages);
+      final hrSamples = decodeRunSamplePoints(dataPages);
+      final paceSteps = runPaceSeriesFromSplits(splits);
+      final points = mergeRunStreamPaceAndHr(
+        hrSamples: hrSamples,
+        paceSteps: paceSteps,
       );
+      return _RunStreamsBundle(splits: splits, points: points);
     } catch (_) {
       return const _RunStreamsBundle(splits: [], points: []);
     }
@@ -176,6 +181,10 @@ class RunThisRunTrainingCard extends StatelessWidget {
               ),
             if (metrics.sessionLoad != null)
               _MetricRow('Session load', '${metrics.sessionLoad}'),
+            if (metrics.trainingPoints != null)
+              _MetricRow('Training points', '${metrics.trainingPoints}'),
+            if (metrics.maxMetRaw != null)
+              _MetricRow('maxMET (raw)', '${metrics.maxMetRaw}'),
           ],
         ),
       ),
@@ -225,6 +234,14 @@ class RunNativeZonesCard extends StatelessWidget {
             if (metrics.hrZoneMinutes != null)
               for (var i = 0; i < metrics.hrZoneMinutes!.length; i++)
                 _MetricRow('Zone ${i + 1}', '${metrics.hrZoneMinutes![i]} min'),
+            if (metrics.hrZoneMinutes == null)
+              Text(
+                'Native zone minutes not on wire for this session '
+                '(not invented from HR series).',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
           ],
         ),
       ),
@@ -270,20 +287,284 @@ class RunFormTilesCard extends StatelessWidget {
             if (metrics.gctMs != null)
               _MetricRow('Ground contact', '${metrics.gctMs} ms'),
             if (metrics.elevGainM != null)
-              _MetricRow('Elevation gain', '${metrics.elevGainM} m'),
+              _MetricRow(
+                'Elevation gain',
+                '${metrics.elevGainM!.toStringAsFixed(1)} m',
+              ),
+            if (metrics.elevLossM != null)
+              _MetricRow(
+                'Elevation loss / descent',
+                '${metrics.elevLossM!.toStringAsFixed(1)} m',
+              ),
+            if (metrics.maxAltitudeM != null)
+              _MetricRow(
+                'Max altitude',
+                '${metrics.maxAltitudeM!.toStringAsFixed(1)} m',
+              ),
+            if (metrics.minAltitudeM != null)
+              _MetricRow(
+                'Min altitude',
+                '${metrics.minAltitudeM!.toStringAsFixed(1)} m',
+              ),
+            if (metrics.avgAltitudeM != null)
+              _MetricRow(
+                'Avg altitude',
+                '${metrics.avgAltitudeM!.toStringAsFixed(1)} m',
+              ),
+            if (metrics.activeCalories != null)
+              _MetricRow('Active calories', '${metrics.activeCalories} kcal'),
+            if (metrics.avgHrBpm != null)
+              _MetricRow('Avg HR', '${metrics.avgHrBpm} bpm'),
             if (metrics.vo2Max != null)
               _MetricRow('VO₂ max', metrics.vo2Max!.toStringAsFixed(1)),
-            // Invent-guard: VO/balance only when decoded (separate from form
-            // list promotion — still gated on non-null).
-            if (metrics.verticalOscillationMm != null)
+            if (metrics.maxMetRaw != null && metrics.vo2Max == null)
+              _MetricRow('maxMET (raw)', '${metrics.maxMetRaw}'),
+            if (metrics.verticalOscillationCm != null)
               _MetricRow(
                 'Vertical oscillation',
-                '${metrics.verticalOscillationMm!.toStringAsFixed(1)} mm',
+                '${metrics.verticalOscillationCm!.toStringAsFixed(1)} cm',
               ),
             if (metrics.balancePct != null)
               _MetricRow(
-                'Balance',
-                '${metrics.balancePct!.toStringAsFixed(0)}%',
+                'Balance (L)',
+                '${metrics.balancePct!.toStringAsFixed(1)}%',
+              ),
+            if (metrics.gctMs == null &&
+                metrics.verticalOscillationCm == null &&
+                metrics.balancePct == null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'GCT / VO / balance scalars missing from leftovers.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Loads Totals leftovers → fills training/form/altitude tiles + wire dump.
+///
+/// Fetch-verification surface: show everything we can decode from side-files
+/// without inventing missing series (GCT/VO/balance graphs stay omitted).
+class RunSessionEnrichmentSection extends StatefulWidget {
+  const RunSessionEnrichmentSection({
+    super.key,
+    required this.workoutNumber,
+    required this.baseMetrics,
+    this.distanceM,
+    this.store,
+    this.preloadedLeftovers,
+  });
+
+  final int workoutNumber;
+  final RunSessionMetrics baseMetrics;
+  final int? distanceM;
+  final RunSessionStore? store;
+
+  /// Test seam: skip side-file IO.
+  final List<LeftoverTlvBody>? preloadedLeftovers;
+
+  @override
+  State<RunSessionEnrichmentSection> createState() =>
+      _RunSessionEnrichmentSectionState();
+}
+
+class _RunSessionEnrichmentSectionState
+    extends State<RunSessionEnrichmentSection> {
+  Future<RunSessionMetrics>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.preloadedLeftovers != null) {
+      return;
+    }
+    final store = widget.store ?? sl<RunSessionStore>();
+    _future = _load(
+      store,
+      widget.workoutNumber,
+      widget.baseMetrics,
+      distanceM: widget.distanceM,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.preloadedLeftovers != null) {
+      final m = widget.preloadedLeftovers!.isEmpty
+          ? widget.baseMetrics
+          : RunSessionMetrics.fromLeftovers(
+              widget.preloadedLeftovers!,
+              steps: widget.baseMetrics.steps,
+              distanceM: widget.distanceM,
+            ).mergeSummary(widget.baseMetrics);
+      return _body(m);
+    }
+
+    return FutureBuilder<RunSessionMetrics>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Loading Totals leftovers…',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          );
+        }
+        return _body(snap.data ?? widget.baseMetrics);
+      },
+    );
+  }
+
+  Widget _body(RunSessionMetrics metrics) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (metrics.hasThisRunTraining) ...[
+          RunThisRunTrainingCard(metrics: metrics),
+          const SizedBox(height: 12),
+        ],
+        if (metrics.hasNativeZones) ...[
+          RunNativeZonesCard(metrics: metrics),
+          const SizedBox(height: 12),
+        ],
+        if (metrics.hasFormTiles ||
+            metrics.hasAltitude ||
+            metrics.hasVerticalOscillation ||
+            metrics.hasBalance) ...[
+          RunFormTilesCard(metrics: metrics),
+          const SizedBox(height: 12),
+        ],
+        if (metrics.decodedLeftovers.isNotEmpty)
+          RunLeftoversDumpCard(rows: metrics.decodedLeftovers),
+      ],
+    );
+  }
+
+  static Future<RunSessionMetrics> _load(
+    RunSessionStore store,
+    int workoutNumber,
+    RunSessionMetrics base, {
+    int? distanceM,
+  }) async {
+    try {
+      final leftovers = await store.loadTotalsLeftovers(workoutNumber);
+      if (leftovers.isEmpty) return base;
+      var merged = RunSessionMetrics.fromLeftovers(
+        leftovers,
+        steps: base.steps,
+        distanceM: distanceM,
+      ).mergeSummary(base);
+
+      // Avg HR from sample stream when present (locked vs watch avg 153).
+      final dataPages = await store.loadDataPages(workoutNumber);
+      final samples = decodeRunSamplePoints(dataPages);
+      final hrs = samples.map((p) => p.hrBpm).whereType<int>().toList();
+      if (hrs.isNotEmpty) {
+        final avg = (hrs.reduce((a, b) => a + b) / hrs.length).round();
+        merged = merged.copyWith(avgHrBpm: avg);
+      }
+      return merged;
+    } catch (_) {
+      return base;
+    }
+  }
+}
+
+/// Raw Totals leftover probe — id, oracle name, value, hex.
+class RunLeftoversDumpCard extends StatelessWidget {
+  const RunLeftoversDumpCard({super.key, required this.rows});
+
+  final List<RunLeftoverDecoded> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      child: Theme(
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: true,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          title: Text(
+            'Totals leftovers (fetch probe)',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          subtitle: Text(
+            '${rows.length} TLV(s) · oracle names · provisional scales',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          children: [
+            for (final r in rows)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 52,
+                      child: Text(
+                        '0x${r.id.toRadixString(16)}',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontFamily: 'monospace',
+                          color: r.mappedToTile
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            r.oracleName,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            r.display ??
+                                (r.rawBe != null
+                                    ? 'be=${r.rawBe} · ${r.rawHex}'
+                                    : r.rawHex),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontFamily: 'monospace',
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '${r.len}B',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
           ],
         ),

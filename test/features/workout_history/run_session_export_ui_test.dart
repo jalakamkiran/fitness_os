@@ -38,29 +38,39 @@ void main() {
     }
   });
 
-  testWidgets('Outdoor detail shows Export for AI; Indoor does not (R12)',
+  testWidgets('Run/Walk detail shows Export for AI for Walk, Indoor, Outdoor',
       (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: WorkoutDetailScreen(
-          workout: _run(number: 9),
-          runSessionStore: store,
-          preloadedPaceSplits: const [],
-          preloadedStreamPoints: const [],
-          sessionExportOverride: () async =>
-              const RunSessionExportResult.failed('unused'),
-          sessionExportBusyOverride: () => false,
-          shareSessionExport: (_) async {},
+    Future<void> pumpType(int type) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: WorkoutDetailScreen(
+            workout: _run(number: 60, type: type),
+            runSessionStore: store,
+            preloadedPaceSplits: const [],
+            preloadedStreamPoints: const [],
+            sessionExportOverride: () async =>
+                const RunSessionExportResult.failed('unused'),
+            sessionExportBusyOverride: () => false,
+            shareSessionExport: (_) async {},
+          ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
+    }
+
+    await pumpType(2);
+    expect(find.byTooltip('Export for AI'), findsOneWidget);
+
+    await pumpType(1);
+    expect(find.byTooltip('Export for AI'), findsOneWidget);
+
+    await pumpType(5);
     expect(find.byTooltip('Export for AI'), findsOneWidget);
 
     await tester.pumpWidget(
       MaterialApp(
         home: WorkoutDetailScreen(
-          workout: _run(number: 11, type: 5),
+          workout: _run(number: 34, type: 140),
           runSessionStore: store,
           preloadedPaceSplits: const [],
           preloadedStreamPoints: const [],

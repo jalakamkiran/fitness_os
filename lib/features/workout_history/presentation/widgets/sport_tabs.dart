@@ -39,7 +39,7 @@ class SportTabs extends StatelessWidget {
             ),
             Expanded(
               child: _Tab(
-                label: 'Run',
+                label: 'Run/Walk',
                 selected: selected == WorkoutSportTab.run,
                 onTap: () => onSelected(WorkoutSportTab.run),
               ),

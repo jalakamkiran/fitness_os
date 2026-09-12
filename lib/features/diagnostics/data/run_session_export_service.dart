@@ -9,7 +9,7 @@ import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/diagnostics/data/run_session_export_envelope.dart';
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 
-/// Assembles / writes / prunes a single Outdoor Run session dump for AI share.
+/// Assembles / writes / prunes a single Run/Walk session dump for AI share.
 ///
 /// On-device sensitive path: may include Totals leftover **bodies**. Full app
 /// export ([AppDataExportService]) must never embed those bodies — IDs/len only.
@@ -66,16 +66,17 @@ class RunSessionExportService {
         'Distance / duration: $distance / $duration';
   }
 
-  /// Outdoor Run prove path only — mirrors [isOutdoorRunWorkout] (type == 2).
-  static bool isOutdoorSession(WorkoutSummary workout) => workout.type == 2;
+  /// Walk (1), Outdoor Run (2), Indoor run (5) — matches Run/Walk tab filter.
+  static bool isExportableSession(WorkoutSummary workout) =>
+      workout.type == 1 || workout.type == 2 || workout.type == 5;
 
   /// Assemble, redact, write under run-session export cache, prune prior files.
   Future<RunSessionExportResult> exportSessionToCache(
     WorkoutSummary workout,
   ) async {
-    if (!isOutdoorSession(workout)) {
+    if (!isExportableSession(workout)) {
       return const RunSessionExportResult.failed(
-        'Session export is Outdoor Run only',
+        'Session export is Run/Walk only',
       );
     }
     if (isBusy) {
@@ -159,6 +160,8 @@ class RunSessionExportService {
             ],
             'bodyCount': p.bodies.length,
             'bodiesPresent': p.bodies.isNotEmpty,
+            // On-device AI path — same sensitivity class as Totals leftovers.
+            'bodies': [for (final b in p.bodies) b.toJson()],
           },
         )
         .toList(growable: false);
@@ -174,6 +177,7 @@ class RunSessionExportService {
             ],
             'bodyCount': p.bodies.length,
             'bodiesPresent': p.bodies.isNotEmpty,
+            'bodies': [for (final b in p.bodies) b.toJson()],
           },
         )
         .toList(growable: false);

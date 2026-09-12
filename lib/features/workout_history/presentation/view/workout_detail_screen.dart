@@ -22,7 +22,7 @@ import 'package:fitness_os/features/workout_history/domain/swim_stroke_label.dar
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/coach_settings_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
-import 'package:fitness_os/features/workout_history/presentation/widgets/run_session_sections.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/run_session_analytics.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/strength_session_analytics.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_session_charts.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_stroke_icon.dart';
@@ -34,6 +34,7 @@ class WorkoutDetailScreen extends StatefulWidget {
     this.runSessionStore,
     this.preloadedPaceSplits,
     this.preloadedStreamPoints,
+    this.preloadedLeftovers,
     this.runSessionExportService,
     this.shareSessionExport,
     this.sessionExportOverride,
@@ -55,6 +56,9 @@ class WorkoutDetailScreen extends StatefulWidget {
 
   /// Test seam: inject chart points without side-file IO.
   final List<RunStreamPoint>? preloadedStreamPoints;
+
+  /// Test seam: inject Totals leftovers without side-file IO.
+  final List<LeftoverTlvBody>? preloadedLeftovers;
 
   /// Test seam — production uses GetIt [RunSessionExportService].
   final RunSessionExportService? runSessionExportService;
@@ -253,21 +257,18 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final isRun = isRunWorkout(workout.type);
-    final isOutdoor = isOutdoorRunWorkout(workout.type);
     final isStrength = _isStrength;
     final swim = isRun || isStrength
         ? null
         : CanonicalSwimSession.fromWorkoutSummary(workout);
     final analytics = swim == null ? null : analyzeSwimSession(swim.p0);
-    final runMetrics =
-        isRun ? RunSessionMetrics.fromSummary(workout) : null;
 
     return Scaffold(
       appBar: AppBar(
         title: Text('${_typeLabel(workout.type)} #${workout.number}'),
         actions: [
-          if (isOutdoor)
-            _OutdoorRunExportAction(
+          if (isRun)
+            _RunSessionExportAction(
               workout: workout,
               exportService: widget.runSessionExportService,
               shareExport: widget.shareSessionExport,
@@ -288,7 +289,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   ? null
                   : _onExportThisSession,
             ),
-          if (!isStrength)
+          if (!isStrength && !isRun)
             IconButton(
               tooltip: 'Reasoner settings',
               icon: const Icon(Icons.psychology_outlined),
@@ -318,6 +319,15 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                     onExport: _sessionRemoved ? null : _onExportThisSession,
                     onAllSessions: () => Navigator.of(context).maybePop(),
                   ),
+                ] else if (isRun) ...[
+                  RunSessionAnalytics(
+                    workout: workout,
+                    runSessionStore: widget.runSessionStore,
+                    preloadedPaceSplits: widget.preloadedPaceSplits,
+                    preloadedStreamPoints: widget.preloadedStreamPoints,
+                    preloadedLeftovers: widget.preloadedLeftovers,
+                    onAllSessions: () => Navigator.of(context).maybePop(),
+                  ),
                 ] else ...[
                   _CountHintsCard(workout: workout),
                   const SizedBox(height: 16),
@@ -336,146 +346,109 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                         _Row('Calories', '${workout.calories} kcal'),
                       if (workout.distanceM != null)
                         _Row('Distance', '${workout.distanceM} m'),
-                      // Steps live under Form on the Run path (IA 4).
-                      if (!isRun && workout.steps != null)
+                      if (workout.steps != null)
                         _Row('Steps', '${workout.steps}'),
                     ],
                   ),
-                  if (isRun && runMetrics != null) ...[
-                    if (runMetrics.hasThisRunTraining) ...[
+                  if (_hasHr(workout)) ...[
+                    const SizedBox(height: 12),
+                    _SectionCard(
+                      title: 'Heart rate',
+                      children: [
+                        if (workout.hrMin != null)
+                          _Row('Min', '${workout.hrMin} bpm'),
+                        if (workout.hrMax != null)
+                          _Row('Max', '${workout.hrMax} bpm'),
+                        if (workout.hrPeak != null)
+                          _Row('Peak', '${workout.hrPeak} bpm'),
+                      ],
+                    ),
+                  ],
+                  if (_hasSwim(workout)) ...[
+                    const SizedBox(height: 12),
+                    _SectionCard(
+                      title: 'Swim',
+                      children: [
+                        if (workout.swimType != null)
+                          _Row(
+                            'Swim type',
+                            swimStrokeLabel(workout.swimType!),
+                          ),
+                        if (workout.strokes != null)
+                          _Row('Strokes', '${workout.strokes}'),
+                        if (workout.strokeRate != null)
+                          _Row('Stroke rate', '${workout.strokeRate} /min'),
+                        if (workout.avgSwolf != null)
+                          _Row('Avg SWOLF', '${workout.avgSwolf}'),
+                        if (workout.poolLength != null)
+                          _Row(
+                            'Pool length',
+                            _formatPoolLength(workout.poolLength!),
+                          ),
+                        if (workout.laps != null)
+                          _Row('Laps', '${workout.laps}'),
+                      ],
+                    ),
+                  ],
+                  if (swim != null) ...[
+                    const SizedBox(height: 12),
+                    _P0MetricsCard(session: swim),
+                    if (analytics != null) ...[
                       const SizedBox(height: 12),
-                      RunThisRunTrainingCard(metrics: runMetrics),
-                    ],
-                    if (runMetrics.hasNativeZones) ...[
-                      const SizedBox(height: 12),
-                      RunNativeZonesCard(metrics: runMetrics),
-                    ],
-                    if (runMetrics.hasFormTiles) ...[
-                      const SizedBox(height: 12),
-                      RunFormTilesCard(metrics: runMetrics),
-                    ],
-                    if (_hasHr(workout)) ...[
-                      const SizedBox(height: 12),
-                      _SectionCard(
-                        title: 'Heart rate',
-                        children: [
-                          if (workout.hrMin != null)
-                            _Row('Min', '${workout.hrMin} bpm'),
-                          if (workout.hrMax != null)
-                            _Row('Max', '${workout.hrMax} bpm'),
-                          if (workout.hrPeak != null)
-                            _Row('Peak', '${workout.hrPeak} bpm'),
-                        ],
-                      ),
+                      _SessionAnalyticsCard(analytics: analytics),
                     ],
                     const SizedBox(height: 12),
-                    RunSessionStreamsSection(
-                      workoutNumber: workout.number,
-                      store: widget.runSessionStore,
-                      preloadedSplits: widget.preloadedPaceSplits,
-                      preloadedPoints: widget.preloadedStreamPoints,
+                    _DiagnosesLoader(workoutNumber: workout.number),
+                    const SizedBox(height: 12),
+                    _CoachRecsLoader(workoutNumber: workout.number),
+                  ],
+                  if (swim != null && swim.p0.laps.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _SwimChartsAndIntervals(
+                      laps: swim.p0.laps,
+                      poolLengthM: swim.poolLengthM,
+                      hrCoverage: swim.p0.hrCoverage,
                     ),
-                  ] else ...[
-                    if (_hasHr(workout)) ...[
-                      const SizedBox(height: 12),
-                      _SectionCard(
-                        title: 'Heart rate',
-                        children: [
-                          if (workout.hrMin != null)
-                            _Row('Min', '${workout.hrMin} bpm'),
-                          if (workout.hrMax != null)
-                            _Row('Max', '${workout.hrMax} bpm'),
-                          if (workout.hrPeak != null)
-                            _Row('Peak', '${workout.hrPeak} bpm'),
-                        ],
-                      ),
-                    ],
-                    if (_hasSwim(workout)) ...[
-                      const SizedBox(height: 12),
-                      _SectionCard(
-                        title: 'Swim',
-                        children: [
-                          if (workout.swimType != null)
-                            _Row(
-                              'Swim type',
-                              swimStrokeLabel(workout.swimType!),
-                            ),
-                          if (workout.strokes != null)
-                            _Row('Strokes', '${workout.strokes}'),
-                          if (workout.strokeRate != null)
-                            _Row('Stroke rate', '${workout.strokeRate} /min'),
-                          if (workout.avgSwolf != null)
-                            _Row('Avg SWOLF', '${workout.avgSwolf}'),
-                          if (workout.poolLength != null)
-                            _Row(
-                              'Pool length',
-                              _formatPoolLength(workout.poolLength!),
-                            ),
-                          if (workout.laps != null)
-                            _Row('Laps', '${workout.laps}'),
-                        ],
-                      ),
-                    ],
-                    if (swim != null) ...[
-                      const SizedBox(height: 12),
-                      _P0MetricsCard(session: swim),
-                      if (analytics != null) ...[
-                        const SizedBox(height: 12),
-                        _SessionAnalyticsCard(analytics: analytics),
+                  ] else if (workout.segments != null &&
+                      workout.segments!.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _LapTable(segments: workout.segments!),
+                  ],
+                  if (workout.sampleCount != null &&
+                      workout.sampleCount! > 0) ...[
+                    const SizedBox(height: 12),
+                    _SectionCard(
+                      title: 'Samples',
+                      children: [
+                        _Row('Sample count', '${workout.sampleCount}'),
                       ],
-                      const SizedBox(height: 12),
-                      _DiagnosesLoader(workoutNumber: workout.number),
-                      const SizedBox(height: 12),
-                      _CoachRecsLoader(workoutNumber: workout.number),
-                    ],
-                    if (swim != null && swim.p0.laps.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _SwimChartsAndIntervals(
-                        laps: swim.p0.laps,
-                        poolLengthM: swim.poolLengthM,
-                        hrCoverage: swim.p0.hrCoverage,
-                      ),
-                    ] else if (workout.segments != null &&
-                        workout.segments!.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _LapTable(segments: workout.segments!),
-                    ],
-                    if (workout.sampleCount != null &&
-                        workout.sampleCount! > 0) ...[
-                      const SizedBox(height: 12),
-                      _SectionCard(
-                        title: 'Samples',
-                        children: [
-                          _Row('Sample count', '${workout.sampleCount}'),
-                        ],
-                      ),
-                    ],
-                    if (workout.enrichmentTags != null &&
-                        workout.enrichmentTags!.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _SectionCard(
-                        title: 'Enrichment tags',
-                        subtitle:
-                            '${workout.enrichmentTags!.length} tag(s) on wire',
-                        children: [
-                          for (final tag in workout.enrichmentTags!)
-                            _Row('Tag ${tag.id}', 'len ${tag.len}'),
-                        ],
-                      ),
-                    ],
-                    if (!_hasEnrichment(workout)) ...[
-                      const SizedBox(height: 12),
-                      BpContainer(
-                        padding: EdgeInsets.zero,
-                        child: Text(
-                          'No enrichment counts or tags on this workout yet — '
-                          'sync again after a watch session with data/pace/segments.',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
+                    ),
+                  ],
+                  if (workout.enrichmentTags != null &&
+                      workout.enrichmentTags!.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _SectionCard(
+                      title: 'Enrichment tags',
+                      subtitle:
+                          '${workout.enrichmentTags!.length} tag(s) on wire',
+                      children: [
+                        for (final tag in workout.enrichmentTags!)
+                          _Row('Tag ${tag.id}', 'len ${tag.len}'),
+                      ],
+                    ),
+                  ],
+                  if (!_hasEnrichment(workout)) ...[
+                    const SizedBox(height: 12),
+                    BpContainer(
+                      padding: EdgeInsets.zero,
+                      child: Text(
+                        'No enrichment counts or tags on this workout yet — '
+                        'sync again after a watch session with data/pace/segments.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
-                    ],
+                    ),
                   ],
                 ],
               ],
@@ -484,8 +457,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   }
 }
 
-class _OutdoorRunExportAction extends StatefulWidget {
-  const _OutdoorRunExportAction({
+/// Run/Walk AppBar action: Export for AI (confirm → assemble → share).
+class _RunSessionExportAction extends StatefulWidget {
+  const _RunSessionExportAction({
     required this.workout,
     this.exportService,
     this.shareExport,
@@ -500,11 +474,11 @@ class _OutdoorRunExportAction extends StatefulWidget {
   final bool Function()? exportBusyOverride;
 
   @override
-  State<_OutdoorRunExportAction> createState() =>
-      _OutdoorRunExportActionState();
+  State<_RunSessionExportAction> createState() =>
+      _RunSessionExportActionState();
 }
 
-class _OutdoorRunExportActionState extends State<_OutdoorRunExportAction> {
+class _RunSessionExportActionState extends State<_RunSessionExportAction> {
   bool _assembling = false;
 
   RunSessionExportService get _export =>
@@ -551,7 +525,7 @@ class _OutdoorRunExportActionState extends State<_OutdoorRunExportAction> {
         title: const Text('Export for AI?'),
         content: Text(
           '$identity\n\n'
-          'This creates a JSON dump of this Outdoor Run session. It contains '
+          'This creates a JSON dump of this Run/Walk session. It contains '
           'non-anonymized health biometrics (heart rate, form metrics, and '
           'opaque leftover payloads). Structured GPS/location series are '
           'omitted, but undecoded leftover bytes may still include '
@@ -609,7 +583,7 @@ class _OutdoorRunExportActionState extends State<_OutdoorRunExportAction> {
         await SharePlus.instance.share(
           ShareParams(
             files: [XFile(file.path, mimeType: 'application/json')],
-            subject: 'Fathom Outdoor Run session export',
+            subject: 'Fathom Run/Walk session export',
           ),
         );
       }

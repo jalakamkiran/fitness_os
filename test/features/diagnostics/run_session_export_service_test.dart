@@ -138,13 +138,78 @@ void main() {
       expect(body.contains('"latitude"'), isFalse);
     });
 
-    test('Indoor Run refused — not Outdoor prove', () async {
+    test('dataPages and paceBlocks include bodyBase64 (not inventory-only)',
+        () async {
+      final workout = _outdoor(
+        number: 60,
+        type: 1,
+        dataCount: 1,
+        paceCount: 1,
+        leftoversStatus: WorkoutStreamHonesty.present,
+        dataPagesStatus: WorkoutStreamHonesty.present,
+        paceBlocksStatus: WorkoutStreamHonesty.present,
+      );
+      await store.save(
+        PeeledWorkoutPayload(
+          workoutNumber: workout.number,
+          totalsLeftovers: const [
+            LeftoverTlvBody(id: 0x0a, len: 2, bodyBase64: 'ABE='),
+          ],
+          dataPages: [
+            PeeledPageBodies(
+              index: 0,
+              bodies: const [
+                LeftoverTlvBody(id: 9, len: 4, bodyBase64: 'AQIDBA=='),
+              ],
+            ),
+          ],
+          paceBlocks: [
+            PeeledPageBodies(
+              index: 0,
+              bodies: const [
+                LeftoverTlvBody(id: 0x83, len: 4, bodyBase64: 'BQYHCA=='),
+              ],
+            ),
+          ],
+          leftoversStatus: WorkoutStreamHonesty.present,
+          dataPagesStatus: WorkoutStreamHonesty.present,
+          paceBlocksStatus: WorkoutStreamHonesty.present,
+        ),
+      );
+
       final service = await buildService();
-      final result = await service.exportSessionToCache(_outdoor(type: 5));
-      expect(result.isSuccess, isFalse);
-      expect(result.status, RunSessionExportStatus.failed);
-      expect(result.message, contains('Outdoor Run only'));
-      expect(result.file, isNull);
+      final result = await service.exportSessionToCache(workout);
+      expect(result.isSuccess, isTrue);
+      final dump =
+          jsonDecode(await result.file!.readAsString()) as Map<String, dynamic>;
+
+      final dataPages = dump['dataPages'] as Map<String, dynamic>;
+      final dataPage0 = (dataPages['pages'] as List).first as Map;
+      expect(dataPage0['bodiesPresent'], isTrue);
+      expect((dataPage0['bodies'] as List).single['bodyBase64'], 'AQIDBA==');
+
+      final pace = dump['paceBlocks'] as Map<String, dynamic>;
+      final pace0 = (pace['pages'] as List).first as Map;
+      expect(pace0['bodiesPresent'], isTrue);
+      expect((pace0['bodies'] as List).single['bodyBase64'], 'BQYHCA==');
+    });
+
+    test('Walk and Indoor Run export; Strength refused', () async {
+      final service = await buildService();
+
+      final walk = await service.exportSessionToCache(_outdoor(type: 1));
+      expect(walk.isSuccess, isTrue);
+      expect(walk.file, isNotNull);
+
+      final indoor = await service.exportSessionToCache(_outdoor(type: 5));
+      expect(indoor.isSuccess, isTrue);
+      expect(indoor.file, isNotNull);
+
+      final strength = await service.exportSessionToCache(_outdoor(type: 140));
+      expect(strength.isSuccess, isFalse);
+      expect(strength.status, RunSessionExportStatus.failed);
+      expect(strength.message, contains('Run/Walk only'));
+      expect(strength.file, isNull);
     });
 
     test('busy Sync blocks; cancel path has no file when not exported', () async {

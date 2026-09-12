@@ -1,12 +1,209 @@
+import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
 
-/// Pace-block splits table — shown only when blocks have distance and/or pace.
+/// Pace-block splits — shown only when blocks have distance and/or pace.
 ///
-/// No sample-derived splits this cut. Missing meta → [SizedBox.shrink].
+/// [narrative] matches `run-analytics.html`: Fastest / Walk tags + elapsed.
 class RunPaceSplitsTable extends StatelessWidget {
-  const RunPaceSplitsTable({super.key, required this.splits});
+  const RunPaceSplitsTable({
+    super.key,
+    required this.splits,
+    this.narrative = false,
+  });
+
+  final List<RunPaceSplit> splits;
+
+  /// Product narrative layout (km · pace · time · tag).
+  final bool narrative;
+
+  @override
+  Widget build(BuildContext context) {
+    if (narrative) {
+      return _NarrativeSplits(splits: splits);
+    }
+    return _LegacySplitsTable(splits: splits);
+  }
+}
+
+class _NarrativeSplits extends StatelessWidget {
+  const _NarrativeSplits({required this.splits});
+
+  final List<RunPaceSplit> splits;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = annotateRunSplits(splits);
+    if (rows.isEmpty) return const SizedBox.shrink();
+
+    final colors = FathomColors.of(context);
+    final theme = Theme.of(context);
+    final hasWalk = rows.any((r) => r.isWalk);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: colors.bgElev,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colors.line),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: Row(
+                  children: [
+                    _Head(colors, 'Km', flex: 2),
+                    _Head(colors, 'Pace', flex: 3),
+                    _Head(colors, 'Time', flex: 3),
+                    const Expanded(flex: 4, child: SizedBox.shrink()),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: colors.line),
+              for (var i = 0; i < rows.length; i++) ...[
+                if (i > 0) Divider(height: 1, color: colors.line.withValues(alpha: 0.8)),
+                _SplitRow(row: rows[i], colors: colors, theme: theme),
+              ],
+            ],
+          ),
+        ),
+        if (hasWalk) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Mode change tagged — walk km not scored as fade',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.inkFaint,
+              fontSize: 10,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _Head extends StatelessWidget {
+  const _Head(this.colors, this.label, {required this.flex});
+
+  final FathomColors colors;
+  final String label;
+  final int flex;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      flex: flex,
+      child: Text(
+        label.toUpperCase(),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: colors.inkFaint,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+              fontSize: 10,
+            ),
+      ),
+    );
+  }
+}
+
+class _SplitRow extends StatelessWidget {
+  const _SplitRow({
+    required this.row,
+    required this.colors,
+    required this.theme,
+  });
+
+  final AnnotatedRunSplit row;
+  final FathomColors colors;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    final pace = formatPaceSecPerKm(row.split.paceSec) ?? '—';
+    final time = formatDurationClock(row.elapsedSec);
+    final dist = row.split.distanceM;
+    final partial = dist != null && dist > 0 && dist < 950;
+    String? tag;
+    Color? tagColor;
+    Color? bg;
+    if (row.isFastest) {
+      tag = 'Fastest';
+      tagColor = colors.up;
+      bg = Color.lerp(colors.bgElev, colors.up, 0.08);
+    } else if (row.isWalk) {
+      tag = partial ? '${(dist / 1000).toStringAsFixed(2)} · Walk' : 'Walk';
+      tagColor = colors.amber;
+      bg = Color.lerp(colors.bgElev, colors.amber, 0.07);
+    } else {
+      tag = 'Run';
+      tagColor = colors.inkFaint;
+    }
+
+    return Container(
+      color: bg,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              '${row.index + 1}',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontFamily: 'IBM Plex Mono',
+                fontWeight: FontWeight.w700,
+                color: colors.ink,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              pace,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontFamily: 'IBM Plex Mono',
+                fontWeight: FontWeight.w600,
+                color: row.isWalk ? colors.amber : colors.accent,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              time,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontFamily: 'IBM Plex Mono',
+                color: colors.inkDim,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 4,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                tag.toUpperCase(),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                  fontSize: 10,
+                  color: tagColor,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LegacySplitsTable extends StatelessWidget {
+  const _LegacySplitsTable({required this.splits});
 
   final List<RunPaceSplit> splits;
 
@@ -38,7 +235,7 @@ class RunPaceSplitsTable extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              'Pace blocks · this run',
+              'Watch pace blocks · this run',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),
@@ -64,7 +261,11 @@ class RunPaceSplitsTable extends StatelessWidget {
                         DataCell(
                           Text(formatDistanceM(chartable[i].distanceM)),
                         ),
-                        DataCell(Text(_paceCell(chartable[i].paceSec))),
+                        DataCell(
+                          Text(
+                            formatPaceSecPerKm(chartable[i].paceSec) ?? '—',
+                          ),
+                        ),
                       ],
                     ),
                 ],
@@ -74,12 +275,5 @@ class RunPaceSplitsTable extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _paceCell(int? paceSec) {
-    if (paceSec == null || paceSec <= 0) return '—';
-    final m = paceSec ~/ 60;
-    final s = paceSec % 60;
-    return '$m:${s.toString().padLeft(2, '0')} /km';
   }
 }
