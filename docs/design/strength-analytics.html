@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fathom — Strength session</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="home-prototype/styles.css" />
+  <link rel="stylesheet" href="swim-analytics.css" />
+  <link rel="stylesheet" href="strength-analytics.css" />
+</head>
+<body class="analytics-page strength-page">
+  <button class="theme fixed-theme" id="themeToggle" type="button">Dark</button>
+
+  <div class="stage analytics-stage">
+    <div class="phone" id="phone">
+      <header class="app-header">
+        <a class="icon-round" href="workouts-tab.html" aria-label="Back to workouts">←</a>
+        <div class="brand">
+          <span class="brand-mark">F</span>
+          <div>
+            <p class="brand-title">Strength</p>
+            <p class="brand-sub mono">Thu 11 Sep · 18:42</p>
+          </div>
+        </div>
+        <button class="theme-toggle" id="themeTogglePhone" type="button">Dark</button>
+      </header>
+
+      <main class="scroll">
+        <section class="st-block" aria-label="Session basics">
+          <div class="st-p0">
+            <div class="signal">
+              <span class="label">Duration</span>
+              <span class="value">53m</span>
+            </div>
+            <div class="signal">
+              <span class="label">Calories</span>
+              <span class="value">200</span>
+            </div>
+            <div class="signal">
+              <span class="label">Heart rate</span>
+              <span class="value">86–146</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="st-block" aria-label="Session impact">
+          <span class="st-kicker">This session</span>
+          <div class="st-impact">
+            <div class="hero-stat">
+              <span class="label">Training load</span>
+              <span class="value">12</span>
+              <span class="hint">How hard this session was</span>
+            </div>
+            <div class="hero-stat">
+              <span class="label">Recovery time</span>
+              <span class="value">1h</span>
+              <span class="hint">Suggested before the next hard effort</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="st-block" aria-label="Session intensity">
+          <span class="st-kicker">Intensity</span>
+          <div class="st-derived">
+            <div class="cell">
+              <div class="label">Calories / min</div>
+              <div class="value">3.8</div>
+            </div>
+            <div class="cell">
+              <div class="label">Load / hour</div>
+              <div class="value">13.6</div>
+            </div>
+            <div class="cell">
+              <div class="label">Aerobic</div>
+              <div class="value">9</div>
+            </div>
+            <div class="cell">
+              <div class="label">Anaerobic</div>
+              <div class="value">0</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="st-block" aria-label="Recent load">
+          <div class="st-card">
+            <div class="chart-head">
+              <h3>Recent training load</h3>
+              <span class="caption">Last 8 sessions</span>
+            </div>
+            <div class="st-bars" aria-hidden="true">
+              <div class="bar" style="height:42%"><span>4</span></div>
+              <div class="bar" style="height:58%"><span>7</span></div>
+              <div class="bar" style="height:33%"><span>3</span></div>
+              <div class="bar" style="height:75%"><span>9</span></div>
+              <div class="bar" style="height:50%"><span>6</span></div>
+              <div class="bar" style="height:67%"><span>8</span></div>
+              <div class="bar" style="height:25%"><span>2</span></div>
+              <div class="bar current" style="height:100%"><span>12</span></div>
+            </div>
+            <div class="st-bar-labels">
+              <span>Earlier</span>
+              <span>Today</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="st-block" aria-label="After this session">
+          <span class="st-kicker">After this session</span>
+          <div class="st-context">
+            <div class="row">
+              <div>
+                <strong>Sleep</strong>
+                <div class="tag">Night after</div>
+              </div>
+              <span>Waiting for data</span>
+            </div>
+            <div class="row">
+              <div>
+                <strong>How you felt</strong>
+                <div class="tag">Morning check-in</div>
+              </div>
+              <span>Not logged</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="st-actions" aria-label="Actions">
+          <button type="button" class="primary" id="exportPrimary">Export session</button>
+          <a class="action" href="workouts-tab.html">All strength sessions</a>
+        </section>
+      </main>
+    </div>
+
+    <aside class="rail">
+      <p class="eyebrow">Fathom · Design</p>
+      <h1>Strength session</h1>
+      <p class="lede">
+        Product session detail for strength workouts. Phone copy stays user-facing;
+        load and recovery time are primary; density and history sit below.
+      </p>
+      <ol class="rail-list">
+        <li>Hero: duration, calories, heart rate range</li>
+        <li>Training load + recovery time</li>
+        <li>Intensity: rate metrics + aerobic / anaerobic</li>
+        <li>Recent load history</li>
+        <li>Sleep and feel check-ins after the session</li>
+      </ol>
+      <p class="rail-note">
+        Design note (not in product UI): recovery % and in-session HR curve stay out until watch proof exists.
+      </p>
+      <a class="btn primary" href="workouts-tab.html">← Workouts tab</a>
+      <a class="btn ghost" href="swim-analytics.html">Swim peer</a>
+      <a class="btn ghost" href="index.html">Design hub</a>
+    </aside>
+  </div>
+
+  <script src="strength-analytics.js"></script>
+</body>
+</html>

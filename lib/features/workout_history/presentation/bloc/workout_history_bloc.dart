@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fitness_os/core/storage/store_invalidation.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_event.dart';
@@ -6,19 +9,39 @@ import 'package:fitness_os/features/workout_history/presentation/bloc/workout_hi
 
 class WorkoutHistoryBloc
     extends Bloc<WorkoutHistoryEvent, WorkoutHistoryState> {
-  WorkoutHistoryBloc({required WorkoutHistoryRepository repository})
-      : _repository = repository,
+  WorkoutHistoryBloc({
+    required WorkoutHistoryRepository repository,
+    StoreInvalidation? invalidation,
+  })  : _repository = repository,
         super(const WorkoutHistoryState()) {
     on<WorkoutHistoryStarted>(_onStarted);
     on<WorkoutHistorySyncRequested>(_onSync);
+    on<WorkoutHistoryReloadRequested>(_onReload);
+    if (invalidation != null) {
+      _sub = invalidation.stream.listen((_) {
+        if (!isClosed) add(const WorkoutHistoryReloadRequested());
+      });
+    }
   }
 
   final WorkoutHistoryRepository _repository;
+  StreamSubscription<void>? _sub;
 
   Future<void> _onStarted(
     WorkoutHistoryStarted event,
     Emitter<WorkoutHistoryState> emit,
   ) async {
+    await _reload(emit);
+  }
+
+  Future<void> _onReload(
+    WorkoutHistoryReloadRequested event,
+    Emitter<WorkoutHistoryState> emit,
+  ) async {
+    await _reload(emit);
+  }
+
+  Future<void> _reload(Emitter<WorkoutHistoryState> emit) async {
     final passed = await _repository.isGateAPassed();
     final local = await _repository.loadLocal();
     emit(
@@ -71,5 +94,11 @@ class WorkoutHistoryBloc
           ),
         );
     }
+  }
+
+  @override
+  Future<void> close() async {
+    await _sub?.cancel();
+    return super.close();
   }
 }

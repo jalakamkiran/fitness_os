@@ -11,6 +11,8 @@ abstract final class GateAPrefs {
   static const lastActivitySyncCursor = 'last_activity_sync_cursor';
   /// Bumped when activity Sync merge rules change; forces one wide-window re-pull.
   static const activitySyncImplVersion = 'activity_sync_impl_version';
+  /// Legacy leftover-keep one-shot stamp — cleared on Forget; Sync no longer reads it.
+  static const leftoverKeepImplVersion = 'leftover_keep_impl_version';
   static const lastR11Path = 'last_r11_winning_path';
   /// Bumped when swim segment wire parse changes; stamped after successful Sync.
   static const swimSegmentParserVersion = 'swim_segment_parser_version';
@@ -47,6 +49,10 @@ abstract final class GateAPrefs {
   static const workoutPaceBlocksDir = 'workouts/pace_blocks';
   /// Temp-dir cache for Outdoor Run session AI exports (Forget wipe + verify).
   static const runSessionExportsDir = 'run_session_exports';
+  /// Native-persisted workout HR sample point files (path+counts on channel; never series).
+  static const workoutHrSamplesDir = 'workouts/hr_samples';
+  /// Dart-persisted Totals leftover / recovery-HR opaque blobs (len+path in prefs; never bodies).
+  static const workoutLeftoversDir = 'workouts/leftovers';
   /// Gemini API key for W4 coach (device-local; never commit).
   static const geminiApiKey = 'gemini_api_key';
   /// Last explicit Enable auto-tracking result (outcomes-only allowlist).

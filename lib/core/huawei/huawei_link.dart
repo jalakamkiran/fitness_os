@@ -252,9 +252,13 @@ class HuaweiLink {
 
   /// Gate B radio call. Requires authenticated session (`connected` or
   /// `gateAIncomplete`). Product unlock is enforced by workout_history.
+  ///
+  /// [enrichStartUnix] optionally narrows Data/Pace/Swim enrich relative to
+  /// Count [startUnix]. Defaults to [startUnix] when omitted.
   Future<WorkoutSyncResult> syncWorkouts({
     required int startUnix,
     required int endUnix,
+    int? enrichStartUnix,
   }) async {
     if (_syncInFlight) {
       return const WorkoutSyncResult(
@@ -276,6 +280,7 @@ class HuaweiLink {
       );
     }
     _syncInFlight = true;
+    final enrichFloor = enrichStartUnix ?? startUnix;
     final window = SentrySyncInstrumentation.windowClass(
       startUnix: startUnix,
       endUnix: endUnix,
@@ -291,7 +296,7 @@ class HuaweiLink {
     );
     span?.setTag('window', window);
     FosHuaweiLog.i(
-      'syncWorkouts window=[$startUnix,$endUnix]',
+      'syncWorkouts window=[$startUnix,$endUnix] enrichStart=$enrichFloor',
       op: 'sync',
     );
     try {
@@ -300,6 +305,7 @@ class HuaweiLink {
         future: _channel.syncWorkouts(
           startUnix: startUnix,
           endUnix: endUnix,
+          enrichStartUnix: enrichFloor,
         ),
         timeout: budget,
         channel: 'syncWorkouts',
@@ -1597,6 +1603,17 @@ class WorkoutSummary {
     this.sessionFlag,
     this.poolLength,
     this.laps,
+    this.load,
+    this.aerobicEffect,
+    this.anaerobicEffect,
+    this.recoveryTime,
+    this.trainingPoints,
+    this.leftoverLen,
+    this.leftoverPresent,
+    this.leftoverPath,
+    this.leftoverBytes,
+    this.samplePath,
+    this.sampleFetch,
     this.enrichmentTags,
     this.segments,
     this.observedType,
@@ -1634,6 +1651,28 @@ class WorkoutSummary {
   final String? sessionFlag;
   final int? poolLength;
   final int? laps;
+
+  /// Locked Totals scalars — omit when absent (null ≠ 0).
+  final int? load;
+  final int? aerobicEffect;
+  final int? anaerobicEffect;
+  final int? recoveryTime;
+  final int? trainingPoints;
+
+  /// Lean leftover index: length + present + relative path. Never bodies in prefs.
+  final int? leftoverLen;
+  final bool? leftoverPresent;
+  final String? leftoverPath;
+
+  /// Channel-only Totals leftover body. Cleared before prefs write; never in [toJson].
+  final Uint8List? leftoverBytes;
+
+  /// Relative path under [GateAPrefs.workoutHrSamplesDir] when native wrote points.
+  final String? samplePath;
+
+  /// Sample-page fetch honesty: `none` | `ok` | `partial` | `timeout`.
+  final String? sampleFetch;
+
   final List<EnrichmentTagRef>? enrichmentTags;
   final List<WorkoutSegment>? segments;
 
@@ -1687,6 +1726,22 @@ class WorkoutSummary {
           .map((e) => EnrichmentTagRef.fromMap(Map<String, dynamic>.from(e)))
           .toList();
     }
+    // Channel may deliver leftover as Uint8List; prefs must never re-embed it.
+    Uint8List? leftoverBytes;
+    final rawLeftover = map['leftover'];
+    if (rawLeftover is Uint8List) {
+      leftoverBytes = rawLeftover;
+    } else if (rawLeftover is List) {
+      leftoverBytes = Uint8List.fromList(
+        rawLeftover.map((e) => (e as num).toInt()).toList(),
+      );
+    }
+    final leftoverLen =
+        asInt(map['leftoverLen']) ?? leftoverBytes?.length;
+    final leftoverPresent = map['leftoverPresent'] as bool? ??
+        (leftoverBytes != null && leftoverBytes.isNotEmpty
+            ? true
+            : (map['leftoverPath'] != null ? true : null));
     return WorkoutSummary(
       number: asInt(map['number']) ?? 0,
       startTime: asInt(map['startTime']) ?? 0,
@@ -1711,6 +1766,23 @@ class WorkoutSummary {
       sessionFlag: map['sessionFlag'] as String?,
       poolLength: asInt(map['poolLength']),
       laps: asInt(map['laps']),
+      load: asInt(map['load']),
+      aerobicEffect: asInt(map['aerobicEffect']),
+      anaerobicEffect: asInt(map['anaerobicEffect']),
+      recoveryTime: asInt(map['recoveryTime']),
+      trainingPoints: asInt(map['trainingPoints']),
+      leftoverLen: leftoverLen,
+      leftoverPresent: leftoverPresent,
+      leftoverPath: _relativeWorkoutPath(
+        map['leftoverPath']?.toString(),
+        expectedDir: 'workouts/leftovers',
+      ),
+      leftoverBytes: leftoverBytes,
+      samplePath: _relativeWorkoutPath(
+        map['samplePath']?.toString(),
+        expectedDir: 'workouts/hr_samples',
+      ),
+      sampleFetch: map['sampleFetch'] as String?,
       enrichmentTags: tags,
       segments: segments,
       observedType: asInt(map['observedType']),
@@ -1723,6 +1795,56 @@ class WorkoutSummary {
       parserGeneration: asInt(map['parserGeneration']),
     );
   }
+
+  /// Lean prefs / Coach Settings index — never leftover bodies or HR series.
+  Map<String, dynamic> toJson() => {
+        'number': number,
+        'startTime': startTime,
+        'endTime': endTime,
+        'durationSec': durationSec,
+        'type': type,
+        if (calories != null) 'calories': calories,
+        if (distanceM != null) 'distanceM': distanceM,
+        if (steps != null) 'steps': steps,
+        if (dataCount != null) 'dataCount': dataCount,
+        if (paceCount != null) 'paceCount': paceCount,
+        if (segmentsCount != null) 'segmentsCount': segmentsCount,
+        if (sampleCount != null) 'sampleCount': sampleCount,
+        if (enrichmentStatus != null) 'enrichmentStatus': enrichmentStatus,
+        if (hrMin != null) 'hrMin': hrMin,
+        if (hrMax != null) 'hrMax': hrMax,
+        if (hrPeak != null) 'hrPeak': hrPeak,
+        if (swimType != null) 'swimType': swimType,
+        if (strokes != null) 'strokes': strokes,
+        if (strokeRate != null) 'strokeRate': strokeRate,
+        if (avgSwolf != null) 'avgSwolf': avgSwolf,
+        if (sessionFlag != null) 'sessionFlag': sessionFlag,
+        if (poolLength != null) 'poolLength': poolLength,
+        if (laps != null) 'laps': laps,
+        if (load != null) 'load': load,
+        if (aerobicEffect != null) 'aerobicEffect': aerobicEffect,
+        if (anaerobicEffect != null) 'anaerobicEffect': anaerobicEffect,
+        if (recoveryTime != null) 'recoveryTime': recoveryTime,
+        if (trainingPoints != null) 'trainingPoints': trainingPoints,
+        if (leftoverLen != null) 'leftoverLen': leftoverLen,
+        if (leftoverPresent != null) 'leftoverPresent': leftoverPresent,
+        if (leftoverPath != null) 'leftoverPath': leftoverPath,
+        if (samplePath != null) 'samplePath': samplePath,
+        if (sampleFetch != null) 'sampleFetch': sampleFetch,
+        if (enrichmentTags != null && enrichmentTags!.isNotEmpty)
+          'enrichmentTags': enrichmentTags!.map((t) => t.toJson()).toList(),
+        if (segments != null && segments!.isNotEmpty)
+          'segments': segments!.map((s) => s.toJson()).toList(),
+        if (observedType != null) 'observedType': observedType,
+        if (leftoversStatus != null) 'leftoversStatus': leftoversStatus,
+        if (dataPagesStatus != null) 'dataPagesStatus': dataPagesStatus,
+        if (paceBlocksStatus != null) 'paceBlocksStatus': paceBlocksStatus,
+        if (leftoverRefs != null && leftoverRefs!.isNotEmpty)
+          'leftoverRefs': leftoverRefs!.map((t) => t.toJson()).toList(),
+        if (dataPagesStored != null) 'dataPagesStored': dataPagesStored,
+        if (paceBlocksStored != null) 'paceBlocksStored': paceBlocksStored,
+        if (parserGeneration != null) 'parserGeneration': parserGeneration,
+      };
 
   WorkoutSummary copyWith({
     int? number,
@@ -1748,6 +1870,19 @@ class WorkoutSummary {
     String? sessionFlag,
     int? poolLength,
     int? laps,
+    int? load,
+    int? aerobicEffect,
+    int? anaerobicEffect,
+    int? recoveryTime,
+    int? trainingPoints,
+    int? leftoverLen,
+    bool? leftoverPresent,
+    String? leftoverPath,
+    Uint8List? leftoverBytes,
+    bool clearLeftoverBytes = false,
+    bool clearLeftoverPath = false,
+    String? samplePath,
+    String? sampleFetch,
     List<EnrichmentTagRef>? enrichmentTags,
     List<WorkoutSegment>? segments,
     int? observedType,
@@ -1783,6 +1918,19 @@ class WorkoutSummary {
       sessionFlag: sessionFlag ?? this.sessionFlag,
       poolLength: poolLength ?? this.poolLength,
       laps: laps ?? this.laps,
+      load: load ?? this.load,
+      aerobicEffect: aerobicEffect ?? this.aerobicEffect,
+      anaerobicEffect: anaerobicEffect ?? this.anaerobicEffect,
+      recoveryTime: recoveryTime ?? this.recoveryTime,
+      trainingPoints: trainingPoints ?? this.trainingPoints,
+      leftoverLen: leftoverLen ?? this.leftoverLen,
+      leftoverPresent: leftoverPresent ?? this.leftoverPresent,
+      leftoverPath:
+          clearLeftoverPath ? null : (leftoverPath ?? this.leftoverPath),
+      leftoverBytes:
+          clearLeftoverBytes ? null : (leftoverBytes ?? this.leftoverBytes),
+      samplePath: samplePath ?? this.samplePath,
+      sampleFetch: sampleFetch ?? this.sampleFetch,
       enrichmentTags: enrichmentTags ?? this.enrichmentTags,
       segments: segments ?? this.segments,
       observedType: observedType ?? this.observedType,
@@ -1795,45 +1943,25 @@ class WorkoutSummary {
       parserGeneration: parserGeneration ?? this.parserGeneration,
     );
   }
-
-  Map<String, dynamic> toJson() => {
-        'number': number,
-        'startTime': startTime,
-        'endTime': endTime,
-        'durationSec': durationSec,
-        'type': type,
-        if (calories != null) 'calories': calories,
-        if (distanceM != null) 'distanceM': distanceM,
-        if (steps != null) 'steps': steps,
-        if (dataCount != null) 'dataCount': dataCount,
-        if (paceCount != null) 'paceCount': paceCount,
-        if (segmentsCount != null) 'segmentsCount': segmentsCount,
-        if (sampleCount != null) 'sampleCount': sampleCount,
-        if (enrichmentStatus != null) 'enrichmentStatus': enrichmentStatus,
-        if (hrMin != null) 'hrMin': hrMin,
-        if (hrMax != null) 'hrMax': hrMax,
-        if (hrPeak != null) 'hrPeak': hrPeak,
-        if (swimType != null) 'swimType': swimType,
-        if (strokes != null) 'strokes': strokes,
-        if (strokeRate != null) 'strokeRate': strokeRate,
-        if (avgSwolf != null) 'avgSwolf': avgSwolf,
-        if (sessionFlag != null) 'sessionFlag': sessionFlag,
-        if (poolLength != null) 'poolLength': poolLength,
-        if (laps != null) 'laps': laps,
-        if (enrichmentTags != null && enrichmentTags!.isNotEmpty)
-          'enrichmentTags': enrichmentTags!.map((t) => t.toJson()).toList(),
-        if (segments != null && segments!.isNotEmpty)
-          'segments': segments!.map((s) => s.toJson()).toList(),
-        if (observedType != null) 'observedType': observedType,
-        if (leftoversStatus != null) 'leftoversStatus': leftoversStatus,
-        if (dataPagesStatus != null) 'dataPagesStatus': dataPagesStatus,
-        if (paceBlocksStatus != null) 'paceBlocksStatus': paceBlocksStatus,
-        if (leftoverRefs != null && leftoverRefs!.isNotEmpty)
-          'leftoverRefs': leftoverRefs!.map((t) => t.toJson()).toList(),
-        if (dataPagesStored != null) 'dataPagesStored': dataPagesStored,
-        if (paceBlocksStored != null) 'paceBlocksStored': paceBlocksStored,
-        if (parserGeneration != null) 'parserGeneration': parserGeneration,
-      };
+}
+/// Keep relative paths under a registered workouts side-file dir; drop absolutes.
+String? _relativeWorkoutPath(String? raw, {required String expectedDir}) {
+  if (raw == null) return null;
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return null;
+  final normalized = trimmed.replaceAll('\\', '/');
+  final marker = '$expectedDir/';
+  final idx = normalized.indexOf(marker);
+  if (idx >= 0) {
+    final rel = normalized.substring(idx);
+    if (rel.contains('..')) return null;
+    return rel;
+  }
+  // Bare filename from native — nest under the registered dir.
+  if (!normalized.contains('/') && !normalized.startsWith('/')) {
+    return '$marker$normalized';
+  }
+  return null;
 }
 
 class WorkoutSyncResult {
@@ -1976,6 +2104,24 @@ abstract final class WorkoutEnrichmentMerge {
       sessionFlag: totalsScalar(existing.sessionFlag, incoming.sessionFlag),
       poolLength: totalsScalar(existing.poolLength, incoming.poolLength),
       laps: totalsScalar(existing.laps, incoming.laps),
+      load: totalsScalar(existing.load, incoming.load),
+      aerobicEffect:
+          totalsScalar(existing.aerobicEffect, incoming.aerobicEffect),
+      anaerobicEffect:
+          totalsScalar(existing.anaerobicEffect, incoming.anaerobicEffect),
+      recoveryTime:
+          totalsScalar(existing.recoveryTime, incoming.recoveryTime),
+      trainingPoints:
+          totalsScalar(existing.trainingPoints, incoming.trainingPoints),
+      leftoverLen: totalsScalar(existing.leftoverLen, incoming.leftoverLen),
+      leftoverPresent:
+          totalsScalar(existing.leftoverPresent, incoming.leftoverPresent),
+      leftoverPath:
+          totalsScalar(existing.leftoverPath, incoming.leftoverPath),
+      leftoverBytes:
+          totalsScalar(existing.leftoverBytes, incoming.leftoverBytes),
+      samplePath: totalsScalar(existing.samplePath, incoming.samplePath),
+      sampleFetch: totalsScalar(existing.sampleFetch, incoming.sampleFetch),
       enrichmentTags: _preferTagList(
         existing.enrichmentTags,
         incoming.enrichmentTags,

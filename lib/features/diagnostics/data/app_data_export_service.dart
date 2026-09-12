@@ -15,6 +15,8 @@ class AppDataExportService {
     required bool Function() isVitalsSyncOrMergeInFlight,
     required bool Function() isForgetInFlight,
     required Future<bool> Function() isQwenInstalled,
+    bool Function()? isWorkoutSyncOrMergeInFlight,
+    bool Function()? isStrengthExportInFlight,
     Directory? Function()? sideFileRootOverride,
     Directory? Function()? exportCacheRootOverride,
     DateTime Function()? clock,
@@ -22,6 +24,8 @@ class AppDataExportService {
         _isSyncInFlight = isSyncInFlight,
         _isVitalsSyncOrMergeInFlight = isVitalsSyncOrMergeInFlight,
         _isForgetInFlight = isForgetInFlight,
+        _isWorkoutSyncOrMergeInFlight = isWorkoutSyncOrMergeInFlight,
+        _isStrengthExportInFlight = isStrengthExportInFlight,
         _isQwenInstalled = isQwenInstalled,
         _sideFileRootOverride = sideFileRootOverride,
         _exportCacheRootOverride = exportCacheRootOverride,
@@ -31,6 +35,8 @@ class AppDataExportService {
   final bool Function() _isSyncInFlight;
   final bool Function() _isVitalsSyncOrMergeInFlight;
   final bool Function() _isForgetInFlight;
+  final bool Function()? _isWorkoutSyncOrMergeInFlight;
+  final bool Function()? _isStrengthExportInFlight;
   final Future<bool> Function() _isQwenInstalled;
   final Directory? Function()? _sideFileRootOverride;
   final Directory? Function()? _exportCacheRootOverride;
@@ -44,7 +50,16 @@ class AppDataExportService {
       _isSyncInFlight() ||
       _isVitalsSyncOrMergeInFlight() ||
       _isForgetInFlight() ||
+      (_isWorkoutSyncOrMergeInFlight?.call() ?? false) ||
+      (_isStrengthExportInFlight?.call() ?? false) ||
       _exportInFlight;
+
+  bool get _externalBusy =>
+      _isSyncInFlight() ||
+      _isVitalsSyncOrMergeInFlight() ||
+      _isForgetInFlight() ||
+      (_isWorkoutSyncOrMergeInFlight?.call() ?? false) ||
+      (_isStrengthExportInFlight?.call() ?? false);
 
   /// Assemble, redact, write under export cache, prune prior files.
   Future<AppDataExportResult> exportToCache() async {
@@ -62,10 +77,7 @@ class AppDataExportService {
         );
       }
       // Re-check external busy immediately before write (ignore self flag).
-      final externalBusy = _isSyncInFlight() ||
-          _isVitalsSyncOrMergeInFlight() ||
-          _isForgetInFlight();
-      if (externalBusy) {
+      if (_externalBusy) {
         return const AppDataExportResult.blocked(
           'Export blocked — sync or Forget started during assemble',
         );
