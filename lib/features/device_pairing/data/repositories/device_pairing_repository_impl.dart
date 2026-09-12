@@ -15,17 +15,23 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
     Future<void> Function()? onForgetWipeExtras,
     void Function()? onForgot,
     bool Function()? isForgetBlocked,
+    Directory? Function()? supportRootOverride,
+    Directory? Function()? tempRootOverride,
   })  : _link = link,
         _prefs = prefs,
         _onForgetWipeExtras = onForgetWipeExtras,
         _onForgot = onForgot,
-        _isForgetBlocked = isForgetBlocked;
+        _isForgetBlocked = isForgetBlocked,
+        _supportRootOverride = supportRootOverride,
+        _tempRootOverride = tempRootOverride;
 
   final HuaweiLink _link;
   final SharedPreferences _prefs;
   Future<void> Function()? _onForgetWipeExtras;
   void Function()? _onForgot;
   bool Function()? _isForgetBlocked;
+  final Directory? Function()? _supportRootOverride;
+  final Directory? Function()? _tempRootOverride;
   bool _forgetInFlight = false;
 
   /// True while [forgetDevice] body is running (not the same as isForgetBlocked).
@@ -226,7 +232,7 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
 
       // Verify no meal / leftover / sample / export-cache residue (food-meals bar).
       try {
-        final root = await getApplicationSupportDirectory();
+        final root = await _supportRoot();
         final mealsDir = Directory('${root.path}/${GateAPrefs.foodMealsDir}');
         if (await _dirHasFiles(mealsDir)) {
           return const Left(
@@ -246,6 +252,15 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
           );
         }
 
+        // Lean workouts prefs must be cleared with the privacy unit.
+        if (_prefs.containsKey(GateAPrefs.workoutsJson)) {
+          return const Left(
+            ValidationFailure(
+              'Forget verify failed — workouts prefs residue remains',
+            ),
+          );
+        }
+
         final samplesDir =
             Directory('${root.path}/${GateAPrefs.workoutHrSamplesDir}');
         if (await _dirHasFiles(samplesDir)) {
@@ -256,7 +271,34 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
           );
         }
 
-        final temp = await getTemporaryDirectory();
+        // R14: run leftover / sample / pace dirs must be empty after wipe.
+        for (final rel in [
+          GateAPrefs.workoutTotalsLeftoversDir,
+          GateAPrefs.workoutDataPagesDir,
+          GateAPrefs.workoutPaceBlocksDir,
+        ]) {
+          final dir = Directory('${root.path}/$rel');
+          if (await _dirHasFiles(dir)) {
+            return Left(
+              ValidationFailure(
+                'Forget verify failed — run session files residue remains ($rel)',
+              ),
+            );
+          }
+        }
+
+        final temp = await _tempRoot();
+        final runExportDir = Directory(
+          '${temp.path}/${GateAPrefs.runSessionExportsDir}',
+        );
+        if (await _dirHasFiles(runExportDir)) {
+          return const Left(
+            ValidationFailure(
+              'Forget verify failed — run session export cache residue remains',
+            ),
+          );
+        }
+
         final strengthExport = Directory(
           '${temp.path}/$strengthSessionExportCacheDirName',
         );
@@ -291,6 +333,16 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
     } finally {
       _forgetInFlight = false;
     }
+  }
+
+  Future<Directory> _supportRoot() async {
+    final override = _supportRootOverride?.call();
+    return override ?? await getApplicationSupportDirectory();
+  }
+
+  Future<Directory> _tempRoot() async {
+    final override = _tempRootOverride?.call();
+    return override ?? await getTemporaryDirectory();
   }
 
   @override

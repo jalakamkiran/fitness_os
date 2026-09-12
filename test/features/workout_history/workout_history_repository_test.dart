@@ -9,6 +9,7 @@ import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/workout_history/data/repositories/workout_history_repository_impl.dart';
+import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/data/workout_leftover_store.dart';
 
 class _StubLink extends HuaweiLink {
@@ -17,6 +18,7 @@ class _StubLink extends HuaweiLink {
   WorkoutSyncResult? result;
   int syncCalls = 0;
   int? lastStartUnix;
+  int? lastEndUnix;
   int? lastEnrichStartUnix;
 
   @override
@@ -27,12 +29,22 @@ class _StubLink extends HuaweiLink {
   }) async {
     syncCalls++;
     lastStartUnix = startUnix;
+    lastEndUnix = endUnix;
     lastEnrichStartUnix = enrichStartUnix ?? startUnix;
     return result ??
         const WorkoutSyncResult(
           status: WorkoutSyncStatus.empty,
           workouts: [],
         );
+  }
+}
+
+class _ThrowingRunSessionStore extends RunSessionStore {
+  _ThrowingRunSessionStore({super.rootOverride});
+
+  @override
+  Future<void> save(PeeledWorkoutPayload payload) async {
+    throw const FileSystemException('simulated side-file write failure');
   }
 }
 
@@ -57,6 +69,8 @@ void main() {
       const cursor = 1_700_000_000;
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
         GateAPrefs.lastSyncCursor: cursor,
         GateAPrefs.swimSegmentParserVersion:
             WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
@@ -103,6 +117,8 @@ void main() {
     test('cold-start sync uses last N days when no cursor', () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final link = _StubLink(
@@ -130,6 +146,8 @@ void main() {
       const partialStart = 1_699_000_000;
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
         GateAPrefs.lastSyncCursor: cursor,
         GateAPrefs.swimSegmentParserVersion:
             WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
@@ -159,6 +177,8 @@ void main() {
       const partialStart = 1_699_000_000;
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
         GateAPrefs.lastSyncCursor: cursor,
         GateAPrefs.swimSegmentParserVersion:
             WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
@@ -188,6 +208,8 @@ void main() {
       const cursor = 1_700_000_000;
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
         GateAPrefs.lastSyncCursor: cursor,
         GateAPrefs.swimSegmentParserVersion: 1,
       });
@@ -232,6 +254,8 @@ void main() {
       const cursor = 1_700_000_000;
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
         GateAPrefs.lastSyncCursor: cursor,
         // Stale vs current — still delta; no full-history force.
         GateAPrefs.swimSegmentParserVersion: 1,
@@ -289,6 +313,8 @@ void main() {
       const cursor = 1_700_000_000;
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
         GateAPrefs.lastSyncCursor: cursor,
       });
       final prefs = await SharedPreferences.getInstance();
@@ -342,6 +368,8 @@ void main() {
         () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_swim_style_');
@@ -384,6 +412,8 @@ void main() {
     test('busy while activity in flight does not wipe workout list', () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
         GateAPrefs.workoutsJson:
             '[{"number":1,"startTime":100,"endTime":200,"durationSec":100,"type":1}]',
       });
@@ -410,6 +440,8 @@ void main() {
         const cursor = 1_700_000_000;
         SharedPreferences.setMockInitialValues({
           GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
           GateAPrefs.lastSyncCursor: cursor,
           GateAPrefs.swimSegmentParserVersion:
               WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
@@ -464,6 +496,7 @@ void main() {
           leftoverStore: leftoverStore,
           leftoverRootOverride: () => tmp,
           sideFileRootOverride: () => tmp,
+          runSessionStore: RunSessionStore(rootOverride: () => tmp),
         );
 
         final out = await repo.syncFromWatch();
@@ -520,6 +553,8 @@ void main() {
         const cursor = 1_700_000_000;
         SharedPreferences.setMockInitialValues({
           GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
           GateAPrefs.lastSyncCursor: cursor,
           GateAPrefs.swimSegmentParserVersion:
               WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
@@ -592,6 +627,8 @@ void main() {
       // AE7: empty Dart-abandon stuck stays blocked.
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
         GateAPrefs.lastSyncCursor: 1_700_000_000,
         GateAPrefs.workoutsJson:
             '[{"number":7,"startTime":100,"endTime":200,"durationSec":100,"type":140,"load":9}]',
@@ -622,6 +659,8 @@ void main() {
     test('ok sync persists canonical swim side-file for pool workout', () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_swim_');
@@ -677,6 +716,8 @@ void main() {
         () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_leftover_ok_');
@@ -753,6 +794,8 @@ void main() {
         () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_sample_ref_');
@@ -809,6 +852,8 @@ void main() {
         () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_leftover_fail_');
@@ -891,6 +936,8 @@ void main() {
     test('clearLocal wipes leftover and sample side-file dirs', () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_clear_local_');
@@ -935,6 +982,8 @@ void main() {
         () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_u7_keep_');
@@ -1021,6 +1070,8 @@ void main() {
         () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_u7_richer_');
@@ -1089,6 +1140,8 @@ void main() {
         () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_u7_new_session_');
@@ -1181,6 +1234,8 @@ void main() {
         () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_ghost_leftover_');
@@ -1246,6 +1301,8 @@ void main() {
         () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_toctou_');
@@ -1298,6 +1355,8 @@ void main() {
         () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_u7_swim_');
@@ -1379,6 +1438,8 @@ void main() {
     test('header-only Data must not wipe persisted sample points refs', () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_u7_header_');
@@ -1440,6 +1501,957 @@ void main() {
       expect(local.single.sampleCount, 90);
       expect(local.single.sampleFetch, 'ok');
     });
+
+    // --- Run session metrics (from feat/gt5-running-session-metrics) ---
+
+    test('stale runSessionParserVersion force-full-history Count (one-shot)',
+        () async {
+      const cursor = 1_700_000_000;
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.lastSyncCursor: cursor,
+        GateAPrefs.runSessionParserVersion: 2, // stale vs current=3
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_run_force_full_');
+      addTearDown(() => tmp.delete(recursive: true));
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 90,
+              startTime: 1_700_000_100,
+              endTime: 1_700_003_600,
+              durationSec: 3500,
+              type: 2,
+              distanceM: 5000,
+            ),
+          ],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: RunSessionStore(rootOverride: () => tmp),
+        swimRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      expect(
+        link.lastStartUnix,
+        WorkoutHistoryRepositoryImpl.fullHistoryStartUnix,
+      );
+      expect(
+        prefs.getInt(GateAPrefs.runSessionParserVersion),
+        WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
+      );
+
+      // Second Sync is delta again (stamp consumed).
+      final cursorBeforeSecond = prefs.getInt(GateAPrefs.lastSyncCursor)!;
+      link.result = const WorkoutSyncResult(
+        status: WorkoutSyncStatus.ok,
+        workouts: [
+          WorkoutSummary(
+            number: 91,
+            startTime: 1_700_010_000,
+            endTime: 1_700_011_000,
+            durationSec: 1000,
+            type: 2,
+            distanceM: 1000,
+          ),
+        ],
+      );
+      await repo.syncFromWatch();
+      expect(
+        link.lastStartUnix,
+        cursorBeforeSecond - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
+      );
+    });
+
+    test('explicit forceFullHistory uses FALLBACK even when parser current',
+        () async {
+      const cursor = 1_700_000_000;
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.lastSyncCursor: cursor,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.empty,
+          workouts: [],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(link: link, prefs: prefs);
+      await repo.syncFromWatch(forceFullHistory: true);
+      expect(
+        link.lastStartUnix,
+        WorkoutHistoryRepositoryImpl.fullHistoryStartUnix,
+      );
+    });
+
+    test('force-wide empty Sync still consumes one-shot stamp', () async {
+      const cursor = 1_700_000_000;
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.lastSyncCursor: cursor,
+        GateAPrefs.runSessionParserVersion: 0,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.empty,
+          workouts: [],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(link: link, prefs: prefs);
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      expect(
+        prefs.getInt(GateAPrefs.runSessionParserVersion),
+        WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
+      );
+      expect(
+        link.lastStartUnix,
+        WorkoutHistoryRepositoryImpl.fullHistoryStartUnix,
+      );
+    });
+
+    test('partial_batch with Totals merges prefs + leftovers; stamps partial',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u3_pb_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final link = _StubLink(
+        result: WorkoutSyncResult.fromMap({
+          'status': 'partial_batch',
+          'message': 'Workout Sync incomplete — retry after reconnect',
+          'workouts': [
+            {
+              'number': 70,
+              'startTime': 1_700_000_000,
+              'endTime': 1_700_003_600,
+              'durationSec': 3600,
+              'type': 2,
+              'distanceM': 5000,
+              'calories': 400,
+              'leftoverBodies': [
+                {'id': 0x66, 'len': 2, 'bodyBase64': 'qqo='},
+              ],
+            },
+          ],
+        }),
+      );
+      final store = RunSessionStore(rootOverride: () => tmp);
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: store,
+        swimRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      final local = await repo.loadLocal();
+      expect(local, hasLength(1));
+      expect(local.single.distanceM, 5000);
+      expect(local.single.calories, 400);
+      expect(local.single.enrichmentStatus, 'partial');
+      expect(local.single.leftoversStatus, WorkoutStreamHonesty.present);
+      // Honesty: partial ≠ “tiles absent”
+      expect(prefs.getString(GateAPrefs.workoutsJson)!.contains('absent'),
+          isFalse);
+      expect((await store.loadTotalsLeftovers(70)).single.bodyBase64, 'qqo=');
+    });
+
+    test('stuck with earlier Totals merges those; incomplete overall', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u3_stuck_');
+      addTearDown(() => tmp.delete(recursive: true));
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.stuck,
+          message: 'Sync stuck — disconnect and reconnect',
+          workouts: [
+            WorkoutSummary(
+              number: 71,
+              startTime: 1_700_000_000,
+              endTime: 1_700_001_000,
+              durationSec: 1000,
+              type: 2,
+              distanceM: 3200,
+              dataCount: 1,
+            ),
+          ],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: RunSessionStore(rootOverride: () => tmp),
+        swimRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      final local = await repo.loadLocal();
+      expect(local.single.distanceM, 3200);
+      expect(local.single.enrichmentStatus, 'partial');
+    });
+
+    test('stuck empty workouts stays Left (blocked honesty)', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
+        GateAPrefs.workoutsJson:
+            '[{"number":1,"startTime":100,"endTime":200,"durationSec":100,"type":1}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.stuck,
+          message: 'Sync stuck — disconnect and reconnect',
+          workouts: [],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(link: link, prefs: prefs);
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Left>());
+      expect(await repo.loadLocal(), hasLength(1));
+    });
+
+    test('hard fail / notReady → Left; no absence claims; keeps prior',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
+        GateAPrefs.workoutsJson:
+            '[{"number":9,"startTime":100,"endTime":200,"durationSec":100,'
+                '"type":2,"distanceM":1000}]',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.notReady,
+          message: 'Session not ready — reconnect',
+          workouts: [],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(link: link, prefs: prefs);
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Left>());
+      final local = await repo.loadLocal();
+      expect(local.single.distanceM, 1000);
+      expect(prefs.getString(GateAPrefs.workoutsJson)!.contains('absent'),
+          isFalse);
+    });
+
+    test('full ok stamps ok only when refs+files agree', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u3_ok_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final link = _StubLink(
+        result: WorkoutSyncResult.fromMap({
+          'status': 'ok',
+          'workouts': [
+            {
+              'number': 72,
+              'startTime': 1_700_000_000,
+              'endTime': 1_700_003_600,
+              'durationSec': 3600,
+              'type': 2,
+              'distanceM': 5000,
+              'dataCount': 1,
+              'paceCount': 1,
+              'leftoverBodies': [
+                {'id': 0x66, 'len': 2, 'bodyBase64': 'qqo='},
+              ],
+              'dataPages': [
+                {
+                  'index': 0,
+                  'leftoverBodies': [
+                    {'id': 0x7a, 'len': 1, 'bodyBase64': 'AQ=='},
+                  ],
+                },
+              ],
+              'paceBlocks': [
+                {
+                  'index': 0,
+                  'leftoverBodies': [
+                    {'id': 0x7c, 'len': 1, 'bodyBase64': 'Aw=='},
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      final store = RunSessionStore(rootOverride: () => tmp);
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: store,
+        swimRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      final local = await repo.loadLocal();
+      expect(local.single.enrichmentStatus, 'ok');
+      expect(local.single.leftoversStatus, WorkoutStreamHonesty.present);
+      expect(local.single.dataPagesStatus, WorkoutStreamHonesty.present);
+      expect(local.single.paceBlocksStatus, WorkoutStreamHonesty.present);
+      expect(await store.loadTotalsLeftovers(72), hasLength(1));
+      expect(await store.loadDataPages(72), hasLength(1));
+      expect(await store.loadPaceBlocks(72), hasLength(1));
+    });
+
+    test('later Totals-only Sync does not wipe richer side-files', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u3_mono_');
+      addTearDown(() => tmp.delete(recursive: true));
+      final store = RunSessionStore(rootOverride: () => tmp);
+
+      final link = _StubLink(
+        result: WorkoutSyncResult.fromMap({
+          'status': 'ok',
+          'workouts': [
+            {
+              'number': 73,
+              'startTime': 1_700_000_000,
+              'endTime': 1_700_003_600,
+              'durationSec': 3600,
+              'type': 2,
+              'distanceM': 5000,
+              'dataCount': 1,
+              'paceCount': 1,
+              'leftoverBodies': [
+                {'id': 0x66, 'len': 2, 'bodyBase64': 'qqo='},
+              ],
+              'dataPages': [
+                {
+                  'index': 0,
+                  'leftoverBodies': [
+                    {'id': 0x7a, 'len': 1, 'bodyBase64': 'AQ=='},
+                  ],
+                },
+              ],
+              'paceBlocks': [
+                {
+                  'index': 0,
+                  'leftoverBodies': [
+                    {'id': 0x7c, 'len': 1, 'bodyBase64': 'Aw=='},
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: store,
+        swimRootOverride: () => tmp,
+      );
+      await repo.syncFromWatch();
+      expect(await store.loadDataPages(73), hasLength(1));
+
+      // Totals-only re-sync (no stream bodies) — must retain side-files + stamps.
+      link.result = WorkoutSyncResult.fromMap({
+        'status': 'ok',
+        'workouts': [
+          {
+            'number': 73,
+            'startTime': 1_700_000_000,
+            'endTime': 1_700_003_600,
+            'durationSec': 3600,
+            'type': 2,
+            'distanceM': 5100,
+            'calories': 450,
+            'dataCount': 1,
+            'paceCount': 1,
+          },
+        ],
+      });
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      final local = await repo.loadLocal();
+      expect(local.single.distanceM, 5100);
+      expect(local.single.calories, 450);
+      expect(local.single.dataPagesStatus, WorkoutStreamHonesty.present);
+      expect(local.single.paceBlocksStatus, WorkoutStreamHonesty.present);
+      expect(local.single.leftoversStatus, WorkoutStreamHonesty.present);
+      expect(await store.loadDataPages(73), hasLength(1));
+      expect(await store.loadPaceBlocks(73), hasLength(1));
+      expect((await store.loadTotalsLeftovers(73)).single.bodyBase64, 'qqo=');
+    });
+
+    test('denser 1-page bodies are not replaced by more sparse pages', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u3_dense_');
+      addTearDown(() => tmp.delete(recursive: true));
+      final store = RunSessionStore(rootOverride: () => tmp);
+      final link = _StubLink(
+        result: WorkoutSyncResult.fromMap({
+          'status': 'ok',
+          'workouts': [
+            {
+              'number': 80,
+              'startTime': 1_700_000_000,
+              'endTime': 1_700_003_600,
+              'durationSec': 3600,
+              'type': 2,
+              'dataCount': 1,
+              'dataPages': [
+                {
+                  'index': 0,
+                  'leftoverBodies': [
+                    {'id': 0x7a, 'len': 4, 'bodyBase64': 'AQIDBA=='},
+                    {'id': 0x7b, 'len': 2, 'bodyBase64': 'BQc='},
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: store,
+        swimRootOverride: () => tmp,
+      );
+      await repo.syncFromWatch();
+      expect((await store.loadDataPages(80)).single.bodies, hasLength(2));
+
+      // Two scalar-only / sparse pages score higher on page count but lower
+      // on body density — must not clobber the denser 1-page payload.
+      link.result = WorkoutSyncResult.fromMap({
+        'status': 'partial_batch',
+        'workouts': [
+          {
+            'number': 80,
+            'startTime': 1_700_000_000,
+            'endTime': 1_700_003_600,
+            'durationSec': 3600,
+            'type': 2,
+            'dataCount': 2,
+            'dataPages': [
+              {'index': 0, 'leftoverBodies': []},
+              {
+                'index': 1,
+                'leftoverBodies': [
+                  {'id': 0x7a, 'len': 1, 'bodyBase64': 'AQ=='},
+                ],
+              },
+            ],
+          },
+        ],
+      });
+      await repo.syncFromWatch();
+      final pages = await store.loadDataPages(80);
+      expect(pages, hasLength(1));
+      expect(pages.single.bodies, hasLength(2));
+      expect(pages.single.bodies.first.bodyBase64, 'AQIDBA==');
+    });
+
+    test('sparser leftovers without parserGeneration bump keep denser disk',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u3_leftover_');
+      addTearDown(() => tmp.delete(recursive: true));
+      final store = RunSessionStore(rootOverride: () => tmp);
+      final link = _StubLink(
+        result: WorkoutSyncResult.fromMap({
+          'status': 'ok',
+          'workouts': [
+            {
+              'number': 81,
+              'startTime': 1_700_000_000,
+              'endTime': 1_700_003_600,
+              'durationSec': 3600,
+              'type': 2,
+              'leftoverBodies': [
+                {'id': 0x66, 'len': 2, 'bodyBase64': 'qqo='},
+                {'id': 0x10, 'len': 4, 'bodyBase64': 'AQIDBA=='},
+              ],
+            },
+          ],
+        }),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: store,
+        swimRootOverride: () => tmp,
+      );
+      await repo.syncFromWatch();
+      expect(await store.loadTotalsLeftovers(81), hasLength(2));
+
+      link.result = WorkoutSyncResult.fromMap({
+        'status': 'ok',
+        'workouts': [
+          {
+            'number': 81,
+            'startTime': 1_700_000_000,
+            'endTime': 1_700_003_600,
+            'durationSec': 3600,
+            'type': 2,
+            'leftoverBodies': [
+              {'id': 0x66, 'len': 2, 'bodyBase64': 'qqo='},
+            ],
+          },
+        ],
+      });
+      await repo.syncFromWatch();
+      final leftovers = await store.loadTotalsLeftovers(81);
+      expect(leftovers, hasLength(2));
+      expect(leftovers.map((b) => b.id).toList(), [0x66, 0x10]);
+    });
+
+    test('partial merge → next Sync start extends via partial-window overlap',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.lastSyncCursor: 1_690_000_000,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_u3_cursor_');
+      addTearDown(() => tmp.delete(recursive: true));
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.partialBatch,
+          workouts: [
+            WorkoutSummary(
+              number: 74,
+              startTime: 1_700_000_000,
+              endTime: 1_700_001_000,
+              durationSec: 1000,
+              type: 2,
+              distanceM: 2000,
+              dataCount: 1,
+            ),
+          ],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: RunSessionStore(rootOverride: () => tmp),
+        swimRootOverride: () => tmp,
+      );
+
+      final first = await repo.syncFromWatch();
+      expect(first, isA<Right>());
+      expect((await repo.loadLocal()).single.enrichmentStatus, 'partial');
+      expect(prefs.getInt(GateAPrefs.lastSyncCursor), 1_700_001_001);
+
+      link.result = const WorkoutSyncResult(
+        status: WorkoutSyncStatus.empty,
+        workouts: [],
+      );
+      await repo.syncFromWatch();
+      expect(
+        link.lastStartUnix,
+        1_700_000_000 - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
+      );
+    });
+
+    test('full ok Sync clears sticky enrichmentStatus partial', () {
+      final merged = WorkoutEnrichmentMerge.mergeRow(
+        existing: const WorkoutSummary(
+          number: 78,
+          startTime: 1_700_000_000,
+          endTime: 1_700_001_000,
+          durationSec: 1000,
+          type: 2,
+          enrichmentStatus: 'partial',
+          leftoversStatus: WorkoutStreamHonesty.present,
+          leftoverRefs: [EnrichmentTagRef(id: 0x66, len: 2)],
+          parserGeneration: 1,
+        ),
+        incoming: const WorkoutSummary(
+          number: 78,
+          startTime: 1_700_000_000,
+          endTime: 1_700_001_000,
+          durationSec: 1000,
+          type: 2,
+          enrichmentStatus: 'ok',
+          leftoversStatus: WorkoutStreamHonesty.present,
+          leftoverRefs: [EnrichmentTagRef(id: 0x66, len: 2)],
+          parserGeneration: 1,
+        ),
+        currentParserGeneration: 1,
+      );
+      expect(merged.enrichmentStatus, 'ok');
+    });
+
+    test('parserGeneration bump allows leftover/scalar replacement', () async {
+      final merged = WorkoutEnrichmentMerge.mergeRow(
+        existing: const WorkoutSummary(
+          number: 77,
+          startTime: 1_700_000_000,
+          endTime: 1_700_001_000,
+          durationSec: 1000,
+          type: 2,
+          distanceM: 4000,
+          calories: 300,
+          leftoversStatus: WorkoutStreamHonesty.present,
+          leftoverRefs: [EnrichmentTagRef(id: 0x11, len: 4)],
+          parserGeneration: 1,
+        ),
+        incoming: const WorkoutSummary(
+          number: 77,
+          startTime: 1_700_000_000,
+          endTime: 1_700_001_000,
+          durationSec: 1000,
+          type: 2,
+          distanceM: 4200,
+          calories: 310,
+          leftoversStatus: WorkoutStreamHonesty.present,
+          leftoverRefs: [EnrichmentTagRef(id: 0x66, len: 2)],
+          parserGeneration: 2,
+        ),
+        currentParserGeneration: 2,
+      );
+      expect(merged.distanceM, 4200);
+      expect(merged.calories, 310);
+      expect(merged.leftoverRefs!.single.id, 0x66);
+      expect(merged.parserGeneration, 2);
+    });
+
+    test('ok sync peels bodies into side-files; prefs lean without bodies',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_run_peel_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final link = _StubLink(
+        result: WorkoutSyncResult.fromMap({
+          'status': 'ok',
+          'workouts': [
+            {
+              'number': 55,
+              'startTime': 1_700_000_000,
+              'endTime': 1_700_003_600,
+              'durationSec': 3600,
+              'type': 2,
+              'distanceM': 5000,
+              'dataCount': 1,
+              'paceCount': 1,
+              'observedType': 2,
+              'leftoverBodies': [
+                {'id': 0x66, 'len': 2, 'bodyBase64': 'qqo='},
+              ],
+              'dataPages': [
+                {
+                  'index': 0,
+                  'leftoverBodies': [
+                    {'id': 0x7a, 'len': 1, 'bodyBase64': 'AQ=='},
+                  ],
+                },
+              ],
+              'paceBlocks': [
+                {
+                  'index': 0,
+                  'leftoverBodies': [
+                    {'id': 0x7c, 'len': 1, 'bodyBase64': 'Aw=='},
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      final store = RunSessionStore(rootOverride: () => tmp);
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: store,
+        swimRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+
+      final prefsRaw = prefs.getString(GateAPrefs.workoutsJson)!;
+      expect(prefsRaw.contains('bodyBase64'), isFalse);
+      expect(prefsRaw.contains('leftoverBodies'), isFalse);
+      expect(prefsRaw.contains('"dataPages"'), isFalse);
+      expect(prefsRaw.contains('"paceBlocks"'), isFalse);
+      expect(prefsRaw.contains('dataPagesStatus'), isTrue);
+      expect(prefsRaw.contains('paceBlocksStatus'), isTrue);
+
+      final local = await repo.loadLocal();
+      expect(local.single.leftoversStatus, WorkoutStreamHonesty.present);
+      expect(local.single.dataPagesStatus, WorkoutStreamHonesty.present);
+      expect(local.single.paceBlocksStatus, WorkoutStreamHonesty.present);
+      expect(local.single.leftoverRefs!.single.id, 0x66);
+      expect(local.single.observedType, 2);
+
+      final leftovers = await store.loadTotalsLeftovers(55);
+      expect(leftovers.single.bodyBase64, 'qqo=');
+      expect((await store.loadDataPages(55)).single.bodies.single.bodyBase64,
+          'AQ==');
+      expect((await store.loadPaceBlocks(55)).single.bodies.single.bodyBase64,
+          'Aw==');
+    });
+
+    test('ok sync Count=0 stamps unobserved and writes no stream files',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_run_count0_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final link = _StubLink(
+        result: WorkoutSyncResult.fromMap({
+          'status': 'ok',
+          'workouts': [
+            {
+              'number': 56,
+              'startTime': 1_700_000_000,
+              'endTime': 1_700_001_000,
+              'durationSec': 1000,
+              'type': 2,
+              'dataCount': 0,
+              'paceCount': 0,
+            },
+          ],
+        }),
+      );
+      final store = RunSessionStore(rootOverride: () => tmp);
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: store,
+        swimRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      final local = await repo.loadLocal();
+      expect(local.single.dataPagesStatus, WorkoutStreamHonesty.unobserved);
+      expect(local.single.paceBlocksStatus, WorkoutStreamHonesty.unobserved);
+      expect(local.single.leftoversStatus, WorkoutStreamHonesty.unobserved);
+      expect(
+        await Directory('${tmp.path}/${GateAPrefs.workoutDataPagesDir}/56')
+            .exists(),
+        isFalse,
+      );
+    });
+
+    test('partial pages persist arrived and stamp partial', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_run_partial_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final link = _StubLink(
+        result: WorkoutSyncResult.fromMap({
+          'status': 'ok',
+          'workouts': [
+            {
+              'number': 57,
+              'startTime': 1_700_000_000,
+              'endTime': 1_700_001_000,
+              'durationSec': 1000,
+              'type': 2,
+              'dataCount': 3,
+              'paceCount': 2,
+              'dataPages': [
+                {
+                  'index': 0,
+                  'leftoverBodies': [
+                    {'id': 0x7a, 'len': 1, 'bodyBase64': 'AQ=='},
+                  ],
+                },
+              ],
+              'paceBlocks': [
+                {
+                  'index': 0,
+                  'leftoverBodies': [
+                    {'id': 0x7c, 'len': 1, 'bodyBase64': 'Aw=='},
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      final store = RunSessionStore(rootOverride: () => tmp);
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: store,
+        swimRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      final local = await repo.loadLocal();
+      expect(local.single.dataPagesStatus, WorkoutStreamHonesty.partial);
+      expect(local.single.paceBlocksStatus, WorkoutStreamHonesty.partial);
+      expect(await store.loadDataPages(57), hasLength(1));
+      expect(await store.loadPaceBlocks(57), hasLength(1));
+    });
+
+    test('side-file write failure stamps incomplete; Totals still merge',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_run_fail_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final link = _StubLink(
+        result: WorkoutSyncResult.fromMap({
+          'status': 'ok',
+          'workouts': [
+            {
+              'number': 58,
+              'startTime': 1_700_000_000,
+              'endTime': 1_700_001_000,
+              'durationSec': 1000,
+              'type': 2,
+              'distanceM': 4200,
+              'calories': 300,
+              'dataCount': 1,
+              'leftoverBodies': [
+                {'id': 0x66, 'len': 2, 'bodyBase64': 'qqo='},
+              ],
+              'dataPages': [
+                {
+                  'index': 0,
+                  'leftoverBodies': [
+                    {'id': 0x7a, 'len': 1, 'bodyBase64': 'AQ=='},
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: _ThrowingRunSessionStore(rootOverride: () => tmp),
+        swimRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      final local = await repo.loadLocal();
+      expect(local, hasLength(1));
+      expect(local.single.distanceM, 4200);
+      expect(local.single.calories, 300);
+      expect(local.single.leftoversStatus, WorkoutStreamHonesty.incomplete);
+      expect(local.single.dataPagesStatus, WorkoutStreamHonesty.incomplete);
+      // Prefs still lean — Totals mergeable for U3 even when streams incomplete.
+      final prefsRaw = prefs.getString(GateAPrefs.workoutsJson)!;
+      expect(prefsRaw.contains('bodyBase64'), isFalse);
+      expect(prefsRaw.contains('"distanceM":4200'), isTrue);
+    });
+
+    test('run session clearLocal empties dirs after sync write', () async {
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_run_wipe_');
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final link = _StubLink(
+        result: WorkoutSyncResult.fromMap({
+          'status': 'ok',
+          'workouts': [
+            {
+              'number': 59,
+              'startTime': 1_700_000_000,
+              'endTime': 1_700_001_000,
+              'durationSec': 1000,
+              'type': 2,
+              'dataCount': 1,
+              'leftoverBodies': [
+                {'id': 0x66, 'len': 2, 'bodyBase64': 'qqo='},
+              ],
+              'dataPages': [
+                {
+                  'index': 0,
+                  'leftoverBodies': [
+                    {'id': 0x7a, 'len': 1, 'bodyBase64': 'AQ=='},
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      final store = RunSessionStore(rootOverride: () => tmp);
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: store,
+        swimRootOverride: () => tmp,
+      );
+      await repo.syncFromWatch();
+      expect(
+        await Directory('${tmp.path}/${GateAPrefs.workoutTotalsLeftoversDir}/59')
+            .exists(),
+        isTrue,
+      );
+      await store.clearLocal();
+      expect(
+        await Directory('${tmp.path}/${GateAPrefs.workoutTotalsLeftoversDir}')
+            .exists(),
+        isFalse,
+      );
+      expect(
+        await Directory('${tmp.path}/${GateAPrefs.workoutDataPagesDir}')
+            .exists(),
+        isFalse,
+      );
+    });
+
   });
 }
 

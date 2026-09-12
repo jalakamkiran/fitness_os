@@ -23,6 +23,18 @@ List<({String label, String value})> strengthSessionMeta(WorkoutSummary w) {
     (label: 'Cal', value: w.calories?.toString() ?? '—'),
   ];
 }
+
+List<({String label, String value})> runSessionMeta(WorkoutSummary w) {
+  return [
+    (label: 'Distance', value: formatDistanceKm(w.distanceM) ?? '—'),
+    (label: 'Time', value: formatDurationClock(w.durationSec)),
+    (
+      label: 'Pace',
+      value: formatAvgPaceSecPerKm(w.distanceM, w.durationSec) ?? '—',
+    ),
+  ];
+}
+
 class WorkoutHistoryScreen extends StatelessWidget {
   const WorkoutHistoryScreen({
     super.key,
@@ -231,23 +243,83 @@ class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
           BlocBuilder<WorkoutHistoryBloc, WorkoutHistoryState>(
             builder: (context, state) {
               final syncing = state.phase == WorkoutHistoryPhase.syncing;
-              return IconButton(
-                tooltip: 'Sync all history',
-                onPressed: !state.gateAPassed || syncing
-                    ? null
-                    : () => context
-                        .read<WorkoutHistoryBloc>()
-                        .add(const WorkoutHistorySyncRequested()),
-                icon: syncing
-                    ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: colors.accent,
+              final canSync = state.gateAPassed && !syncing;
+              if (syncing) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: colors.accent,
+                      ),
+                    ),
+                  ),
+                );
+              }
+              return PopupMenuButton<_WorkoutSyncMenu>(
+                tooltip: 'Sync',
+                enabled: canSync,
+                icon: Icon(
+                  Icons.sync,
+                  color: canSync ? null : colors.inkFaint,
+                ),
+                onSelected: (choice) async {
+                  if (!canSync || !context.mounted) return;
+                  if (choice == _WorkoutSyncMenu.delta) {
+                    context.read<WorkoutHistoryBloc>().add(
+                          const WorkoutHistorySyncRequested(),
+                        );
+                    return;
+                  }
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Force Sync (full history)?'),
+                      content: const Text(
+                        'Asks the watch for workouts since mid-2022 '
+                        '(not just since the last Sync cursor). Use this '
+                        'when a session is on-wrist but missing here, or '
+                        'when Load / Recovery look empty after a bad Sync.\n\n'
+                        'Wait until the watch shows linked / connected — if '
+                        'Force Sync runs while still authenticating it is '
+                        'skipped and older strength sessions are not repaired.\n\n'
+                        'Still hint-gated: does not force-empty Data/Pace. '
+                        'The watch may still omit sessions it already '
+                        'marked synced.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel'),
                         ),
-                      )
-                    : const Icon(Icons.sync),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Force Sync'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (ok == true && context.mounted) {
+                    context.read<WorkoutHistoryBloc>().add(
+                          const WorkoutHistorySyncRequested(
+                            forceFullHistory: true,
+                          ),
+                        );
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: _WorkoutSyncMenu.delta,
+                    child: Text('Sync'),
+                  ),
+                  PopupMenuItem(
+                    value: _WorkoutSyncMenu.forceFullHistory,
+                    child: Text('Force Sync (full history)'),
+                  ),
+                ],
               );
             },
           ),
@@ -292,13 +364,15 @@ class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
                   WorkoutSportTab.run => _SportSessionPanel(
                       workouts: state.workouts,
                       match: isRunWorkout,
-                      countSuffix: 'run',
+                      countSuffix: 'run/walk',
                       emptyBody:
-                          'No run sessions yet.\n'
-                          'Complete a run on the watch, then Sync.',
-                      thirdLabel: 'Calories',
+                          'No run or walk sessions yet.\n'
+                          'Complete one on the watch, then Sync.',
+                      thirdLabel: 'Pace',
                       thirdValue: (w) =>
-                          w.calories == null ? '—' : '${w.calories}',
+                          formatAvgPaceSecPerKm(w.distanceM, w.durationSec) ??
+                          '—',
+                      metaColumns: runSessionMeta,
                     ),
                   WorkoutSportTab.strength => _SportSessionPanel(
                       workouts: state.workouts,
@@ -460,3 +534,5 @@ class _SportSessionPanel extends StatelessWidget {
     );
   }
 }
+
+enum _WorkoutSyncMenu { delta, forceFullHistory }

@@ -164,6 +164,7 @@ class AppDataExportService {
       root,
       _dayKeysFromSummaries(hrSummarySection.items),
     );
+    final runSessionInventory = await _inventoryRunSessionSideFiles(root);
 
     final hasCoachOutputs =
         _prefs.containsKey('ephemeral_coach_reasoner_outputs') ||
@@ -239,9 +240,11 @@ class AppDataExportService {
           'orphanCanonicalSwim': swimInventory.orphans,
           'hrSeriesMissingDays': hrInventory.missing,
           'hrSeriesOrphanDays': hrInventory.orphans,
+          'runSessionSideFiles': runSessionInventory.toJson(),
           'parseErrors': [
             ...swimInventory.parseErrors,
             ...hrInventory.parseErrors,
+            ...runSessionInventory.parseErrors,
           ],
         },
       },
@@ -494,6 +497,135 @@ class AppDataExportService {
     );
   }
 
+  /// IDs/lengths only for run leftover / data-page / pace side-files — never bodies.
+  Future<_RunSessionSideInventory> _inventoryRunSessionSideFiles(
+    Directory? root,
+  ) async {
+    if (root == null) {
+      return const _RunSessionSideInventory(
+        totalsLeftovers: [],
+        dataPages: [],
+        paceBlocks: [],
+        parseErrors: [],
+      );
+    }
+    final leftovers = await _inventoryIdLenDir(
+      root,
+      GateAPrefs.workoutTotalsLeftoversDir,
+      flat: true,
+    );
+    final dataPages = await _inventoryIdLenDir(
+      root,
+      GateAPrefs.workoutDataPagesDir,
+      flat: false,
+    );
+    final paceBlocks = await _inventoryIdLenDir(
+      root,
+      GateAPrefs.workoutPaceBlocksDir,
+      flat: false,
+    );
+    return _RunSessionSideInventory(
+      totalsLeftovers: leftovers.entries,
+      dataPages: dataPages.entries,
+      paceBlocks: paceBlocks.entries,
+      parseErrors: [
+        ...leftovers.parseErrors,
+        ...dataPages.parseErrors,
+        ...paceBlocks.parseErrors,
+      ],
+    );
+  }
+
+  Future<_IdLenDirScan> _inventoryIdLenDir(
+    Directory root,
+    String relDir, {
+    required bool flat,
+  }) async {
+    final entries = <Map<String, dynamic>>[];
+    final parseErrors = <String>[];
+    final dir = Directory('${root.path}/$relDir');
+    if (!await dir.exists()) {
+      return _IdLenDirScan(entries: entries, parseErrors: parseErrors);
+    }
+    await for (final entity in dir.list()) {
+      if (entity is! Directory) continue;
+      final name = entity.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      final workoutNumber = int.tryParse(name);
+      if (workoutNumber == null) continue;
+      final metaFile = File('${entity.path}/meta.json');
+      if (!await metaFile.exists()) {
+        entries.add({
+          'workoutNumber': workoutNumber,
+          'parseStatus': AppDataExportEnvelope.parseAbsent,
+          'items': <Map<String, dynamic>>[],
+        });
+        continue;
+      }
+      try {
+        final decoded = jsonDecode(await metaFile.readAsString());
+        if (decoded is! Map) {
+          parseErrors.add('$relDir/$workoutNumber/meta.json: not a map');
+          entries.add({
+            'workoutNumber': workoutNumber,
+            'parseStatus': AppDataExportEnvelope.parseCorrupt,
+            'items': <Map<String, dynamic>>[],
+          });
+          continue;
+        }
+        final items = <Map<String, dynamic>>[];
+        if (flat) {
+          final rawItems = decoded['items'];
+          if (rawItems is List) {
+            for (final item in rawItems.whereType<Map>()) {
+              items.add({
+                'id': (item['id'] as num?)?.toInt() ?? 0,
+                'len': (item['len'] as num?)?.toInt() ?? 0,
+              });
+            }
+          }
+        } else {
+          final pages = decoded['pages'];
+          if (pages is List) {
+            for (final page in pages.whereType<Map>()) {
+              final pageItems = page['items'];
+              final pageRefs = <Map<String, dynamic>>[];
+              if (pageItems is List) {
+                for (final item in pageItems.whereType<Map>()) {
+                  pageRefs.add({
+                    'id': (item['id'] as num?)?.toInt() ?? 0,
+                    'len': (item['len'] as num?)?.toInt() ?? 0,
+                  });
+                }
+              }
+              items.add({
+                'index': (page['index'] as num?)?.toInt() ?? 0,
+                'items': pageRefs,
+              });
+            }
+          }
+        }
+        entries.add({
+          'workoutNumber': workoutNumber,
+          'parseStatus': AppDataExportEnvelope.parseOk,
+          if (flat) 'items': items else 'pages': items,
+        });
+      } catch (e) {
+        parseErrors.add('$relDir/$workoutNumber/meta.json: $e');
+        entries.add({
+          'workoutNumber': workoutNumber,
+          'parseStatus': AppDataExportEnvelope.parseCorrupt,
+          'items': <Map<String, dynamic>>[],
+        });
+      }
+    }
+    entries.sort((a, b) {
+      final an = a['workoutNumber'] as int;
+      final bn = b['workoutNumber'] as int;
+      return an.compareTo(bn);
+    });
+    return _IdLenDirScan(entries: entries, parseErrors: parseErrors);
+  }
+
   Map<String, dynamic> _redactEnvelope(Map<String, dynamic> input) {
     final knownSecretValues = <String>{
       if (_prefs.getString(GateAPrefs.geminiApiKey) case final k?
@@ -623,7 +755,7 @@ class AppDataExportService {
           '${override.absolute.path}/${AppDataExportEnvelope.exportCacheDirName}';
       return path == cache || path.startsWith('$cache/');
     }
-    final marker = '/${AppDataExportEnvelope.exportCacheDirName}/';
+    const marker = '/${AppDataExportEnvelope.exportCacheDirName}/';
     return path.contains(marker);
   }
 
@@ -719,5 +851,35 @@ class _HrInventory {
   final List<String> missing;
   final List<String> orphans;
   final List<Map<String, dynamic>> series;
+  final List<String> parseErrors;
+}
+
+class _RunSessionSideInventory {
+  const _RunSessionSideInventory({
+    required this.totalsLeftovers,
+    required this.dataPages,
+    required this.paceBlocks,
+    required this.parseErrors,
+  });
+
+  final List<Map<String, dynamic>> totalsLeftovers;
+  final List<Map<String, dynamic>> dataPages;
+  final List<Map<String, dynamic>> paceBlocks;
+  final List<String> parseErrors;
+
+  Map<String, dynamic> toJson() => {
+        'totalsLeftovers': totalsLeftovers,
+        'dataPages': dataPages,
+        'paceBlocks': paceBlocks,
+      };
+}
+
+class _IdLenDirScan {
+  const _IdLenDirScan({
+    required this.entries,
+    required this.parseErrors,
+  });
+
+  final List<Map<String, dynamic>> entries;
   final List<String> parseErrors;
 }

@@ -8,11 +8,13 @@ import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/device_pairing/data/repositories/device_pairing_repository_impl.dart';
 import 'package:fitness_os/features/device_pairing/domain/repositories/device_pairing_repository.dart';
 import 'package:fitness_os/features/diagnostics/data/app_data_export_service.dart';
+import 'package:fitness_os/features/diagnostics/data/run_session_export_service.dart';
 import 'package:fitness_os/features/food/data/food_day_export_service.dart';
 import 'package:fitness_os/features/food/data/food_meal_store.dart';
 import 'package:fitness_os/features/food/data/food_notification_scheduler.dart';
 import 'package:fitness_os/features/food/domain/food_capture_intent.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
+import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
@@ -25,7 +27,7 @@ import 'package:fitness_os/features/workout_history/domain/repositories/workout_
 ///
 /// Last-writer composition: vitals clear → app export prune → food clear →
 /// food export prune → workout clearLocal → strength export prune →
-/// share_plus prune → cancel notifs.
+/// share_plus prune → cancel notifs → run session store clear → run export prune.
 /// DO NOT assign onForgetWipeExtras from food_di or workout_history_di;
 /// this is the only site.
 Future<void> initDiagnosticsDependencies(GetIt sl) async {
@@ -55,10 +57,34 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
     },
   );
 
+  if (!sl.isRegistered<RunSessionExportService>()) {
+    sl.registerLazySingleton<RunSessionExportService>(
+      () {
+        final pairing = sl<DevicePairingRepository>();
+        final foodExport = sl.isRegistered<FoodDayExportService>()
+            ? sl<FoodDayExportService>()
+            : null;
+        return RunSessionExportService(
+          prefs: sl<SharedPreferences>(),
+          runSessionStore: sl<RunSessionStore>(),
+          isSyncInFlight: () => sl<HuaweiLink>().syncInFlight,
+          isForgetInFlight: () => pairing is DevicePairingRepositoryImpl
+              ? pairing.forgetInFlight
+              : false,
+          isAppExportInFlight: () => sl<AppDataExportService>().exportInFlight,
+          isFoodExportInFlight: () => foodExport?.exportInFlight ?? false,
+        );
+      },
+    );
+  }
+
   final pairing = sl<DevicePairingRepository>();
   if (pairing is DevicePairingRepositoryImpl) {
     final vitals = sl<VitalsRepository>();
     final export = sl<AppDataExportService>();
+    final runExport = sl<RunSessionExportService>();
+    final runStore =
+        sl.isRegistered<RunSessionStore>() ? sl<RunSessionStore>() : null;
     final foodStore =
         sl.isRegistered<FoodMealStore>() ? sl<FoodMealStore>() : null;
     final foodScheduler = sl.isRegistered<FoodNotificationScheduler>()
@@ -97,12 +123,17 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
         await foodScheduler.cancelAll();
         FoodCaptureIntent.clearPending();
       }
+      if (runStore != null) {
+        await runStore.clearLocal();
+      }
+      await runExport.pruneExportCache();
     };
 
     pairing.isForgetBlocked = () =>
         vitals.isSyncOrMergeInFlight ||
         export.exportInFlight ||
         (foodExport?.exportInFlight ?? false) ||
+        runExport.exportInFlight ||
         (strengthExport?.exportInFlight ?? false) ||
         (workouts?.isSyncOrMergeInFlight ?? false);
   }

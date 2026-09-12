@@ -267,17 +267,25 @@ class HuaweiLink {
         workouts: [],
       );
     }
-    if (state != LinkState.connected &&
-        state != LinkState.gateAIncomplete) {
-      FosHuaweiLog.w(
-        'syncWorkouts rejected — linkState=$state',
-        op: 'sync',
-      );
-      return const WorkoutSyncResult(
-        status: WorkoutSyncStatus.notReady,
-        message: 'Connect and authenticate first',
-        workouts: [],
-      );
+    if (!sessionReady) {
+      // Force Sync often lands mid-reconnect (authenticating). Wait briefly
+      // instead of soft-failing — otherwise only a later delta Sync runs and
+      // older strength sessions never re-fetch Load / Recovery.
+      final becameReady = await _awaitSessionReady();
+      if (!becameReady) {
+        FosHuaweiLog.w(
+          'syncWorkouts rejected — linkState=$state',
+          op: 'sync',
+        );
+        return WorkoutSyncResult(
+          status: WorkoutSyncStatus.notReady,
+          message: state == LinkState.connecting ||
+                  state == LinkState.authenticating
+              ? 'Watch still connecting — wait until linked, then Force Sync again'
+              : 'Connect and authenticate first',
+          workouts: const [],
+        );
+      }
     }
     _syncInFlight = true;
     final enrichFloor = enrichStartUnix ?? startUnix;
@@ -517,6 +525,39 @@ class HuaweiLink {
     } finally {
       _syncInFlight = false;
     }
+  }
+
+  /// Wait while the link is mid-handshake. Fail fast on terminal / idle states.
+  Future<bool> _awaitSessionReady({
+    Duration timeout = const Duration(seconds: 45),
+  }) async {
+    if (sessionReady) return true;
+    // Use [state] (not [_state]) so test doubles that override the getter work.
+    final current = state;
+    if (current != LinkState.connecting &&
+        current != LinkState.authenticating) {
+      return false;
+    }
+    FosHuaweiLog.i(
+      'syncWorkouts waiting for sessionReady (state=$current)',
+      op: 'sync',
+    );
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (sessionReady) {
+        FosHuaweiLog.i(
+          'syncWorkouts sessionReady after wait (state=$state)',
+          op: 'sync',
+        );
+        return true;
+      }
+      final s = state;
+      if (s != LinkState.connecting && s != LinkState.authenticating) {
+        return false;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    return sessionReady;
   }
 
   void markGateAPassed() {
@@ -1279,6 +1320,245 @@ class EnrichmentTagRef {
   Map<String, dynamic> toJson() => {'id': id, 'len': len};
 }
 
+/// Opaque Totals / sample / pace TLV body from native U1 channel maps.
+///
+/// Channel keys (per entry): `id`, `len`, `bodyBase64`.
+/// Workout-level list key: `leftoverBodies`. Same key on `dataPages` /
+/// `paceBlocks` entries when sample/pace bodies were captured.
+/// U2 peels these into side-files before lean [WorkoutSummary] prefs write.
+/// Never log or send to Sentry — length/id only outside the device.
+class LeftoverTlvBody {
+  const LeftoverTlvBody({
+    required this.id,
+    required this.len,
+    required this.bodyBase64,
+  });
+
+  final int id;
+  final int len;
+  final String bodyBase64;
+
+  factory LeftoverTlvBody.fromMap(Map<String, dynamic> map) {
+    int asInt(Object? v) => v == null ? 0 : (v as num).toInt();
+    return LeftoverTlvBody(
+      id: asInt(map['id']),
+      len: asInt(map['len']),
+      bodyBase64: map['bodyBase64'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'len': len,
+        'bodyBase64': bodyBase64,
+      };
+}
+
+/// Honesty stamps for leftover / sample / pace streams (prefs refs only).
+///
+/// Never stamp [present] unless channel refs and side-files agree after write.
+abstract final class WorkoutStreamHonesty {
+  static const present = 'present';
+  static const unobserved = 'unobserved';
+  static const partial = 'partial';
+  static const blocked = 'blocked';
+  static const incomplete = 'incomplete';
+}
+
+/// Sample or pace page bodies peeled from a channel map entry.
+///
+/// Pace channel summaries may also carry [distanceM] / [paceSec] without
+/// leftover bodies — those scalars survive into [RunSessionStore] meta for
+/// the splits table (U4). Opaque [bodies] alone never invent chart points.
+class PeeledPageBodies {
+  const PeeledPageBodies({
+    required this.index,
+    required this.bodies,
+    this.distanceM,
+    this.paceSec,
+  });
+
+  final int index;
+  final List<LeftoverTlvBody> bodies;
+
+  /// Pace-block distance (metres) when native summary decoded it.
+  final int? distanceM;
+
+  /// Pace-block pace (seconds) when native summary decoded it.
+  final int? paceSec;
+
+  bool get hasPersistableContent =>
+      bodies.isNotEmpty || distanceM != null || paceSec != null;
+}
+
+/// Bodies + honesty peeled from one native workout map before lean prefs write.
+class PeeledWorkoutPayload {
+  const PeeledWorkoutPayload({
+    required this.workoutNumber,
+    required this.totalsLeftovers,
+    required this.dataPages,
+    required this.paceBlocks,
+    required this.leftoversStatus,
+    required this.dataPagesStatus,
+    required this.paceBlocksStatus,
+    this.observedType,
+  });
+
+  final int workoutNumber;
+  final List<LeftoverTlvBody> totalsLeftovers;
+  final List<PeeledPageBodies> dataPages;
+  final List<PeeledPageBodies> paceBlocks;
+  final String leftoversStatus;
+  final String dataPagesStatus;
+  final String paceBlocksStatus;
+  final int? observedType;
+
+  bool get hasBodiesToPersist =>
+      totalsLeftovers.isNotEmpty ||
+      dataPages.any((p) => p.hasPersistableContent) ||
+      paceBlocks.any((p) => p.hasPersistableContent);
+
+  PeeledWorkoutPayload copyWith({
+    String? leftoversStatus,
+    String? dataPagesStatus,
+    String? paceBlocksStatus,
+  }) {
+    return PeeledWorkoutPayload(
+      workoutNumber: workoutNumber,
+      totalsLeftovers: totalsLeftovers,
+      dataPages: dataPages,
+      paceBlocks: paceBlocks,
+      leftoversStatus: leftoversStatus ?? this.leftoversStatus,
+      dataPagesStatus: dataPagesStatus ?? this.dataPagesStatus,
+      paceBlocksStatus: paceBlocksStatus ?? this.paceBlocksStatus,
+      observedType: observedType,
+    );
+  }
+}
+
+/// Helpers for U1 channel maps retained on [WorkoutSyncResult.rawWorkouts].
+///
+/// New / retained raw keys (U2 peel surface):
+/// - `leftoverBodies` — `List<{id, len, bodyBase64}>` on Totals workout maps
+/// - `observedType` — wire type from Totals TLV `0x14` when present (no enum claim)
+/// - `dataPages[]` / `paceBlocks[]` — may include nested `leftoverBodies` with
+///   sample/pace opaque bodies (not summary-only)
+/// Path-ref spill (`leftoverPath`) remains a U2 option if Binder size bites.
+abstract final class WorkoutChannelRawKeys {
+  static const leftoverBodies = 'leftoverBodies';
+  static const bodyBase64 = 'bodyBase64';
+  static const observedType = 'observedType';
+  static const dataPages = 'dataPages';
+  static const paceBlocks = 'paceBlocks';
+
+  static List<LeftoverTlvBody> parseLeftoverBodies(Object? raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => LeftoverTlvBody.fromMap(Map<String, dynamic>.from(e)))
+        .where((b) => b.bodyBase64.isNotEmpty)
+        .toList();
+  }
+}
+
+/// Peel leftover / sample / pace bodies from a native workout map.
+///
+/// Called from [WorkoutSyncResult.fromMap] (HuaweiLink sync path) before lean
+/// [WorkoutSummary] construction. Never logs body payloads — id/len only.
+abstract final class WorkoutChannelPeel {
+  static PeeledWorkoutPayload peel(Map<String, dynamic> raw) {
+    int? asInt(Object? v) => v == null ? null : (v as num).toInt();
+    final number = asInt(raw['number']) ?? 0;
+    final dataCount = asInt(raw['dataCount']) ?? 0;
+    final paceCount = asInt(raw['paceCount']) ?? 0;
+    final observedType = asInt(raw[WorkoutChannelRawKeys.observedType]);
+
+    final leftovers = WorkoutChannelRawKeys.parseLeftoverBodies(
+      raw[WorkoutChannelRawKeys.leftoverBodies],
+    );
+    final dataPages = _parsePagedBodies(raw[WorkoutChannelRawKeys.dataPages]);
+    final paceBlocks = _parsePagedBodies(raw[WorkoutChannelRawKeys.paceBlocks]);
+
+    return PeeledWorkoutPayload(
+      workoutNumber: number,
+      totalsLeftovers: leftovers,
+      dataPages: dataPages,
+      paceBlocks: paceBlocks,
+      leftoversStatus: leftovers.isEmpty
+          ? WorkoutStreamHonesty.unobserved
+          : WorkoutStreamHonesty.present,
+      dataPagesStatus: _streamStatus(
+        countHint: dataCount,
+        arrivedPages: dataPages.length,
+      ),
+      paceBlocksStatus: _streamStatus(
+        countHint: paceCount,
+        arrivedPages: paceBlocks.length,
+      ),
+      observedType: observedType,
+    );
+  }
+
+  /// Lean summary for prefs: scalars + refs/stamps; never bodies/series.
+  static WorkoutSummary leanSummary(
+    Map<String, dynamic> raw,
+    PeeledWorkoutPayload peeled,
+  ) {
+    final base = WorkoutSummary.fromMap(raw);
+    return base.copyWith(
+      observedType: peeled.observedType ?? base.observedType,
+      leftoversStatus: peeled.leftoversStatus,
+      dataPagesStatus: peeled.dataPagesStatus,
+      paceBlocksStatus: peeled.paceBlocksStatus,
+      leftoverRefs: peeled.totalsLeftovers
+          .map((b) => EnrichmentTagRef(id: b.id, len: b.len))
+          .toList(),
+      dataPagesStored:
+          peeled.dataPages.isEmpty ? null : peeled.dataPages.length,
+      paceBlocksStored:
+          peeled.paceBlocks.isEmpty ? null : peeled.paceBlocks.length,
+    );
+  }
+
+  static String _streamStatus({
+    required int countHint,
+    required int arrivedPages,
+  }) {
+    if (countHint <= 0) return WorkoutStreamHonesty.unobserved;
+    // Count promised pages but none arrived — partial/incomplete, not
+    // Count=0 unobserved (ok parse-fail or soft-incomplete before first page).
+    if (arrivedPages <= 0) return WorkoutStreamHonesty.partial;
+    if (arrivedPages < countHint) return WorkoutStreamHonesty.partial;
+    return WorkoutStreamHonesty.present;
+  }
+
+  static List<PeeledPageBodies> _parsePagedBodies(Object? raw) {
+    if (raw is! List) return const [];
+    int? asInt(Object? v) => v == null ? null : (v as num).toInt();
+    final out = <PeeledPageBodies>[];
+    for (final item in raw.whereType<Map>()) {
+      final map = Map<String, dynamic>.from(item);
+      final bodies = WorkoutChannelRawKeys.parseLeftoverBodies(
+        map[WorkoutChannelRawKeys.leftoverBodies],
+      );
+      final index = asInt(map['index']) ?? 0;
+      final distanceM = asInt(map['distanceM']);
+      final paceSec = asInt(map['paceSec']);
+      final page = PeeledPageBodies(
+        index: index,
+        bodies: bodies,
+        distanceM: distanceM,
+        paceSec: paceSec,
+      );
+      // Keep scalar-only pace summaries (distance/pace) even when no opaque
+      // leftover bodies — required for the U4 splits table.
+      if (!page.hasPersistableContent) continue;
+      out.add(page);
+    }
+    return out;
+  }
+}
+
 class WorkoutSegment {
   const WorkoutSegment({
     required this.index,
@@ -1377,6 +1657,14 @@ class WorkoutSummary {
     this.sampleFetch,
     this.enrichmentTags,
     this.segments,
+    this.observedType,
+    this.leftoversStatus,
+    this.dataPagesStatus,
+    this.paceBlocksStatus,
+    this.leftoverRefs,
+    this.dataPagesStored,
+    this.paceBlocksStored,
+    this.parserGeneration,
   });
 
   final int number;
@@ -1429,6 +1717,30 @@ class WorkoutSummary {
   final List<EnrichmentTagRef>? enrichmentTags;
   final List<WorkoutSegment>? segments;
 
+  /// Wire type from Totals TLV `0x14` when present (prove-session freeze input).
+  final int? observedType;
+
+  /// Honesty for Totals leftover side-files ([WorkoutStreamHonesty]).
+  final String? leftoversStatus;
+
+  /// Honesty for WorkoutData sample page side-files.
+  final String? dataPagesStatus;
+
+  /// Honesty for Pace block side-files.
+  final String? paceBlocksStatus;
+
+  /// Prefs-only leftover refs (id+len). Bodies live in [RunSessionStore].
+  final List<EnrichmentTagRef>? leftoverRefs;
+
+  /// Count of sample pages persisted to side-files (not an invented series).
+  final int? dataPagesStored;
+
+  /// Count of pace blocks persisted to side-files.
+  final int? paceBlocksStored;
+
+  /// Parser generation that wrote leftovers/scalars (monotonic escape hatch).
+  final int? parserGeneration;
+
   factory WorkoutSummary.fromMap(Map<String, dynamic> map) {
     int? asInt(Object? v) => v == null ? null : (v as num).toInt();
     List<EnrichmentTagRef>? tags;
@@ -1445,6 +1757,14 @@ class WorkoutSummary {
       segments = rawSegments
           .whereType<Map>()
           .map((e) => WorkoutSegment.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    List<EnrichmentTagRef>? leftoverRefs;
+    final rawLeftoverRefs = map['leftoverRefs'];
+    if (rawLeftoverRefs is List) {
+      leftoverRefs = rawLeftoverRefs
+          .whereType<Map>()
+          .map((e) => EnrichmentTagRef.fromMap(Map<String, dynamic>.from(e)))
           .toList();
     }
     // Channel may deliver leftover as Uint8List; prefs must never re-embed it.
@@ -1506,6 +1826,14 @@ class WorkoutSummary {
       sampleFetch: map['sampleFetch'] as String?,
       enrichmentTags: tags,
       segments: segments,
+      observedType: asInt(map['observedType']),
+      leftoversStatus: map['leftoversStatus'] as String?,
+      dataPagesStatus: map['dataPagesStatus'] as String?,
+      paceBlocksStatus: map['paceBlocksStatus'] as String?,
+      leftoverRefs: leftoverRefs,
+      dataPagesStored: asInt(map['dataPagesStored']),
+      paceBlocksStored: asInt(map['paceBlocksStored']),
+      parserGeneration: asInt(map['parserGeneration']),
     );
   }
 
@@ -1548,6 +1876,15 @@ class WorkoutSummary {
           'enrichmentTags': enrichmentTags!.map((t) => t.toJson()).toList(),
         if (segments != null && segments!.isNotEmpty)
           'segments': segments!.map((s) => s.toJson()).toList(),
+        if (observedType != null) 'observedType': observedType,
+        if (leftoversStatus != null) 'leftoversStatus': leftoversStatus,
+        if (dataPagesStatus != null) 'dataPagesStatus': dataPagesStatus,
+        if (paceBlocksStatus != null) 'paceBlocksStatus': paceBlocksStatus,
+        if (leftoverRefs != null && leftoverRefs!.isNotEmpty)
+          'leftoverRefs': leftoverRefs!.map((t) => t.toJson()).toList(),
+        if (dataPagesStored != null) 'dataPagesStored': dataPagesStored,
+        if (paceBlocksStored != null) 'paceBlocksStored': paceBlocksStored,
+        if (parserGeneration != null) 'parserGeneration': parserGeneration,
       };
 
   WorkoutSummary copyWith({
@@ -1589,6 +1926,14 @@ class WorkoutSummary {
     String? sampleFetch,
     List<EnrichmentTagRef>? enrichmentTags,
     List<WorkoutSegment>? segments,
+    int? observedType,
+    String? leftoversStatus,
+    String? dataPagesStatus,
+    String? paceBlocksStatus,
+    List<EnrichmentTagRef>? leftoverRefs,
+    int? dataPagesStored,
+    int? paceBlocksStored,
+    int? parserGeneration,
   }) {
     return WorkoutSummary(
       number: number ?? this.number,
@@ -1629,6 +1974,14 @@ class WorkoutSummary {
       sampleFetch: sampleFetch ?? this.sampleFetch,
       enrichmentTags: enrichmentTags ?? this.enrichmentTags,
       segments: segments ?? this.segments,
+      observedType: observedType ?? this.observedType,
+      leftoversStatus: leftoversStatus ?? this.leftoversStatus,
+      dataPagesStatus: dataPagesStatus ?? this.dataPagesStatus,
+      paceBlocksStatus: paceBlocksStatus ?? this.paceBlocksStatus,
+      leftoverRefs: leftoverRefs ?? this.leftoverRefs,
+      dataPagesStored: dataPagesStored ?? this.dataPagesStored,
+      paceBlocksStored: paceBlocksStored ?? this.paceBlocksStored,
+      parserGeneration: parserGeneration ?? this.parserGeneration,
     );
   }
 }
@@ -1657,11 +2010,24 @@ class WorkoutSyncResult {
     required this.status,
     required this.workouts,
     this.message,
+    this.rawWorkouts,
+    this.peeled,
   });
 
   final WorkoutSyncStatus status;
   final List<WorkoutSummary> workouts;
   final String? message;
+
+  /// Native workout maps before lean [WorkoutSummary] construction.
+  ///
+  /// Preserves U1 body-bearing keys (`leftoverBodies`, nested sample/pace
+  /// bodies on `dataPages` / `paceBlocks`, `observedType`) for U2 peel/store.
+  /// [WorkoutSummary.fromMap] still drops those keys by design.
+  final List<Map<String, dynamic>>? rawWorkouts;
+
+  /// Bodies peeled at [WorkoutSyncResult.fromMap] for [RunSessionStore] write.
+  /// Parallel to [workouts]; never log — length/id only outside the device.
+  final List<PeeledWorkoutPayload>? peeled;
 
   factory WorkoutSyncResult.fromMap(Map<String, dynamic> map) {
     final statusStr = map['status'] as String? ?? 'error';
@@ -1676,12 +2042,16 @@ class WorkoutSyncResult {
     };
     final rawList = map['workouts'];
     final workouts = <WorkoutSummary>[];
+    final rawWorkouts = <Map<String, dynamic>>[];
+    final peeled = <PeeledWorkoutPayload>[];
     if (rawList is List) {
       for (final item in rawList) {
         if (item is Map) {
-          workouts.add(
-            WorkoutSummary.fromMap(Map<String, dynamic>.from(item)),
-          );
+          final raw = Map<String, dynamic>.from(item);
+          rawWorkouts.add(raw);
+          final peel = WorkoutChannelPeel.peel(raw);
+          peeled.add(peel);
+          workouts.add(WorkoutChannelPeel.leanSummary(raw, peel));
         }
       }
     }
@@ -1689,6 +2059,289 @@ class WorkoutSyncResult {
       status: status,
       workouts: workouts,
       message: map['message'] as String?,
+      rawWorkouts: rawWorkouts.isEmpty ? null : rawWorkouts,
+      peeled: peeled.isEmpty ? null : peeled,
     );
   }
 }
+
+/// Enrichment-monotonic WorkoutSummary merge (workout-history-wide).
+///
+/// Prefer richer stream completeness; fill-null Totals scalars; retain denser
+/// swim segments. Allow leftover/scalar replacement when [incoming]'s
+/// parserGeneration (or [currentParserGeneration]) exceeds the existing row.
+abstract final class WorkoutEnrichmentMerge {
+  static WorkoutSummary mergeRow({
+    required WorkoutSummary existing,
+    required WorkoutSummary incoming,
+    required int currentParserGeneration,
+  }) {
+    final existingGen = existing.parserGeneration ?? 0;
+    final incomingGen =
+        incoming.parserGeneration ?? currentParserGeneration;
+    final allowReplace =
+        incomingGen > existingGen || currentParserGeneration > existingGen;
+
+    // Totals scalars: incoming non-null wins (watch Totals SoT); null keeps
+    // existing. Parser bump uses the same rule (incoming may remap).
+    T? totalsScalar<T>(T? existingV, T? incomingV) =>
+        incomingV ?? existingV;
+
+    final leftovers = _preferStream(
+      existingStatus: existing.leftoversStatus,
+      incomingStatus: incoming.leftoversStatus,
+      existingRefs: existing.leftoverRefs,
+      incomingRefs: incoming.leftoverRefs,
+      existingStored: existing.leftoverRefs?.length,
+      incomingStored: incoming.leftoverRefs?.length,
+      allowReplace: allowReplace,
+    );
+    final dataPages = _preferStream(
+      existingStatus: existing.dataPagesStatus,
+      incomingStatus: incoming.dataPagesStatus,
+      existingRefs: null,
+      incomingRefs: null,
+      existingStored: existing.dataPagesStored,
+      incomingStored: incoming.dataPagesStored,
+      allowReplace: allowReplace,
+    );
+    final paceBlocks = _preferStream(
+      existingStatus: existing.paceBlocksStatus,
+      incomingStatus: incoming.paceBlocksStatus,
+      existingRefs: null,
+      incomingRefs: null,
+      existingStored: existing.paceBlocksStored,
+      incomingStored: incoming.paceBlocksStored,
+      allowReplace: allowReplace,
+    );
+
+    return WorkoutSummary(
+      number: incoming.number != 0 ? incoming.number : existing.number,
+      startTime:
+          incoming.startTime != 0 ? incoming.startTime : existing.startTime,
+      endTime: incoming.endTime != 0 ? incoming.endTime : existing.endTime,
+      durationSec: incoming.durationSec != 0
+          ? incoming.durationSec
+          : existing.durationSec,
+      type: incoming.type != 0 ? incoming.type : existing.type,
+      calories: totalsScalar(existing.calories, incoming.calories),
+      distanceM: totalsScalar(existing.distanceM, incoming.distanceM),
+      steps: totalsScalar(existing.steps, incoming.steps),
+      dataCount: totalsScalar(existing.dataCount, incoming.dataCount),
+      paceCount: totalsScalar(existing.paceCount, incoming.paceCount),
+      segmentsCount: totalsScalar(existing.segmentsCount, incoming.segmentsCount),
+      sampleCount: totalsScalar(existing.sampleCount, incoming.sampleCount),
+      enrichmentStatus: _preferEnrichmentStatus(
+        existing.enrichmentStatus,
+        incoming.enrichmentStatus,
+      ),
+      hrMin: totalsScalar(existing.hrMin, incoming.hrMin),
+      hrMax: totalsScalar(existing.hrMax, incoming.hrMax),
+      hrPeak: totalsScalar(existing.hrPeak, incoming.hrPeak),
+      swimType: totalsScalar(existing.swimType, incoming.swimType),
+      strokes: totalsScalar(existing.strokes, incoming.strokes),
+      strokeRate: totalsScalar(existing.strokeRate, incoming.strokeRate),
+      avgSwolf: totalsScalar(existing.avgSwolf, incoming.avgSwolf),
+      sessionFlag: totalsScalar(existing.sessionFlag, incoming.sessionFlag),
+      poolLength: totalsScalar(existing.poolLength, incoming.poolLength),
+      laps: totalsScalar(existing.laps, incoming.laps),
+      load: totalsScalar(existing.load, incoming.load),
+      aerobicEffect:
+          totalsScalar(existing.aerobicEffect, incoming.aerobicEffect),
+      anaerobicEffect:
+          totalsScalar(existing.anaerobicEffect, incoming.anaerobicEffect),
+      recoveryTime:
+          totalsScalar(existing.recoveryTime, incoming.recoveryTime),
+      trainingPoints:
+          totalsScalar(existing.trainingPoints, incoming.trainingPoints),
+      leftoverLen: totalsScalar(existing.leftoverLen, incoming.leftoverLen),
+      leftoverPresent:
+          totalsScalar(existing.leftoverPresent, incoming.leftoverPresent),
+      leftoverPath:
+          totalsScalar(existing.leftoverPath, incoming.leftoverPath),
+      leftoverBytes:
+          totalsScalar(existing.leftoverBytes, incoming.leftoverBytes),
+      samplePath: totalsScalar(existing.samplePath, incoming.samplePath),
+      sampleFetch: totalsScalar(existing.sampleFetch, incoming.sampleFetch),
+      enrichmentTags: _preferTagList(
+        existing.enrichmentTags,
+        incoming.enrichmentTags,
+        allowReplace: allowReplace,
+      ),
+      segments: _preferSegments(
+        existing.segments,
+        incoming.segments,
+        allowReplace: allowReplace,
+      ),
+      observedType: totalsScalar(existing.observedType, incoming.observedType),
+      leftoversStatus: leftovers.status,
+      dataPagesStatus: dataPages.status,
+      paceBlocksStatus: paceBlocks.status,
+      leftoverRefs: leftovers.refs ??
+          (leftovers.preferIncoming
+              ? incoming.leftoverRefs
+              : existing.leftoverRefs),
+      dataPagesStored: dataPages.stored,
+      paceBlocksStored: paceBlocks.stored,
+      parserGeneration: allowReplace
+          ? (incomingGen > 0 ? incomingGen : currentParserGeneration)
+          : (existingGen > 0
+              ? existingGen
+              : (incomingGen > 0 ? incomingGen : currentParserGeneration)),
+    );
+  }
+
+  /// Session-level honesty: soft-incomplete or any stream partial/incomplete
+  /// → `partial`; otherwise `ok` only when no stream claims present without
+  /// agreeing refs (caller reconciles files before stamping).
+  static String sessionEnrichmentStatus({
+    required bool softIncomplete,
+    required WorkoutSummary workout,
+  }) {
+    if (softIncomplete) return 'partial';
+    if (_streamIncomplete(workout.leftoversStatus) ||
+        _streamIncomplete(workout.dataPagesStatus) ||
+        _streamIncomplete(workout.paceBlocksStatus)) {
+      return 'partial';
+    }
+    return 'ok';
+  }
+
+  static bool _streamIncomplete(String? status) =>
+      status == WorkoutStreamHonesty.partial ||
+      status == WorkoutStreamHonesty.incomplete;
+
+  static int streamRichness(String? status) {
+    return switch (status) {
+      WorkoutStreamHonesty.present => 4,
+      WorkoutStreamHonesty.partial => 3,
+      WorkoutStreamHonesty.incomplete => 2,
+      WorkoutStreamHonesty.unobserved => 1,
+      WorkoutStreamHonesty.blocked => 0,
+      _ => 0,
+    };
+  }
+
+  static String? _preferEnrichmentStatus(String? existing, String? incoming) {
+    // Full ok Sync must clear sticky partial so cursor overlap can shrink and
+    // UI honesty can leave "Sync: partial" (U3).
+    if (incoming == 'ok') return 'ok';
+    if (existing == 'partial' || incoming == 'partial') return 'partial';
+    return incoming ?? existing;
+  }
+
+  static List<EnrichmentTagRef>? _preferTagList(
+    List<EnrichmentTagRef>? existing,
+    List<EnrichmentTagRef>? incoming, {
+    required bool allowReplace,
+  }) {
+    if (allowReplace && incoming != null && incoming.isNotEmpty) {
+      return incoming;
+    }
+    final eLen = existing?.length ?? 0;
+    final iLen = incoming?.length ?? 0;
+    if (iLen > eLen) return incoming;
+    if (eLen > 0) return existing;
+    return incoming;
+  }
+
+  static List<WorkoutSegment>? _preferSegments(
+    List<WorkoutSegment>? existing,
+    List<WorkoutSegment>? incoming, {
+    required bool allowReplace,
+  }) {
+    if (allowReplace && incoming != null && incoming.isNotEmpty) {
+      return incoming;
+    }
+    final eScore = _segmentRichness(existing);
+    final iScore = _segmentRichness(incoming);
+    if (iScore > eScore) return incoming;
+    if (eScore > 0) return existing;
+    return incoming;
+  }
+
+  static int _segmentRichness(List<WorkoutSegment>? segments) {
+    if (segments == null || segments.isEmpty) return 0;
+    var score = segments.length * 10;
+    for (final s in segments) {
+      if (s.style != null) score += 3;
+      if (s.strokes != null) score += 2;
+      if (s.distanceM != null) score += 1;
+      if (s.durationSec != null) score += 1;
+    }
+    return score;
+  }
+
+  static _StreamPick _preferStream({
+    required String? existingStatus,
+    required String? incomingStatus,
+    required List<EnrichmentTagRef>? existingRefs,
+    required List<EnrichmentTagRef>? incomingRefs,
+    required int? existingStored,
+    required int? incomingStored,
+    required bool allowReplace,
+  }) {
+    if (allowReplace &&
+        streamRichness(incomingStatus) >= streamRichness(existingStatus) &&
+        (incomingStatus != null ||
+            (incomingStored ?? 0) > 0 ||
+            (incomingRefs?.isNotEmpty ?? false))) {
+      return _StreamPick(
+        status: incomingStatus ?? existingStatus,
+        refs: incomingRefs ?? existingRefs,
+        stored: incomingStored ?? existingStored,
+        preferIncoming: true,
+      );
+    }
+    final eR = streamRichness(existingStatus);
+    final iR = streamRichness(incomingStatus);
+    if (iR > eR) {
+      return _StreamPick(
+        status: incomingStatus,
+        refs: incomingRefs ?? existingRefs,
+        stored: incomingStored ?? existingStored,
+        preferIncoming: true,
+      );
+    }
+    if (eR > iR) {
+      return _StreamPick(
+        status: existingStatus,
+        refs: existingRefs ?? incomingRefs,
+        stored: existingStored ?? incomingStored,
+        preferIncoming: false,
+      );
+    }
+    // Tie on status — prefer denser stored count / refs.
+    final eStore = existingStored ?? existingRefs?.length ?? 0;
+    final iStore = incomingStored ?? incomingRefs?.length ?? 0;
+    if (iStore > eStore) {
+      return _StreamPick(
+        status: incomingStatus ?? existingStatus,
+        refs: incomingRefs ?? existingRefs,
+        stored: incomingStored ?? existingStored,
+        preferIncoming: true,
+      );
+    }
+    return _StreamPick(
+      status: existingStatus ?? incomingStatus,
+      refs: existingRefs ?? incomingRefs,
+      stored: existingStored ?? incomingStored,
+      preferIncoming: false,
+    );
+  }
+}
+
+class _StreamPick {
+  const _StreamPick({
+    required this.status,
+    required this.refs,
+    required this.stored,
+    required this.preferIncoming,
+  });
+
+  final String? status;
+  final List<EnrichmentTagRef>? refs;
+  final int? stored;
+  final bool preferIncoming;
+}
+

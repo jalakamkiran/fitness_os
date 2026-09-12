@@ -7,7 +7,9 @@ import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis
 abstract class WorkoutHistoryRepository {
   Future<bool> isGateAPassed();
   Future<List<WorkoutSummary>> loadLocal();
-  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch();
+  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch({
+    bool forceFullHistory = false,
+  });
 
   /// True while channel Sync or local merge/persist is in flight (Forget busy gate).
   bool get isSyncOrMergeInFlight;

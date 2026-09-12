@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fathom — Run / Walk session</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="home-prototype/styles.css" />
+  <link rel="stylesheet" href="swim-analytics.css" />
+  <link rel="stylesheet" href="strength-analytics.css" />
+  <link rel="stylesheet" href="run-analytics.css" />
+</head>
+<body class="analytics-page strength-page run-page">
+  <button class="theme fixed-theme" id="themeToggle" type="button">Dark</button>
+
+  <div class="stage analytics-stage">
+    <div class="phone" id="phone">
+      <header class="app-header">
+        <a class="icon-round" href="workouts-tab.html" aria-label="Back to workouts">←</a>
+        <div class="brand">
+          <span class="brand-mark">F</span>
+          <div>
+            <p class="brand-title">Walk · #60</p>
+            <p class="brand-sub mono">Tue 9 Sep · 07:14</p>
+          </div>
+        </div>
+        <button class="theme-toggle" id="themeTogglePhone" type="button">Dark</button>
+      </header>
+
+      <main class="scroll">
+        <section class="st-block" aria-label="Session basics">
+          <div class="rn-mode">
+            <span class="st-pill ok">Outdoor</span>
+            <span class="st-pill warn">Run → walk</span>
+            <span class="st-pill">GT5 locked</span>
+          </div>
+          <div class="st-p0 rn-p0">
+            <div class="signal">
+              <span class="label">Distance</span>
+              <span class="value">2.79 km</span>
+            </div>
+            <div class="signal">
+              <span class="label">Duration</span>
+              <span class="value">21:40</span>
+            </div>
+            <div class="signal">
+              <span class="label">Avg pace</span>
+              <span class="value">7'46"</span>
+            </div>
+            <div class="signal">
+              <span class="label">Calories</span>
+              <span class="value">248</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="st-block" aria-label="Session stimulus">
+          <span class="st-kicker">This session</span>
+          <div class="st-impact rn-stimulus">
+            <div class="hero-stat">
+              <span class="label">Aerobic TE</span>
+              <span class="value">2.3</span>
+              <span class="hint">Maintain band</span>
+            </div>
+            <div class="hero-stat">
+              <span class="label">Anaerobic TE</span>
+              <span class="value">1.7</span>
+              <span class="hint">Light anaerobic</span>
+            </div>
+          </div>
+          <div class="st-derived">
+            <div class="cell">
+              <div class="label">Training load</div>
+              <div class="value">66</div>
+            </div>
+            <div class="cell">
+              <div class="label">Recovery</div>
+              <div class="value">21h</div>
+            </div>
+            <div class="cell">
+              <div class="label">Heart rate</div>
+              <div class="value">84–181</div>
+            </div>
+            <div class="cell">
+              <div class="label">Avg HR</div>
+              <div class="value">153</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="st-block" aria-label="Session story">
+          <div class="st-card rn-story">
+            <div class="chart-head">
+              <h3>Session story</h3>
+              <span class="caption">Pace · HR · Cadence</span>
+            </div>
+            <div class="rn-chart-tabs" role="tablist" aria-label="Story metric">
+              <button type="button" class="rn-tab is-active" data-series="all" role="tab" aria-selected="true">All</button>
+              <button type="button" class="rn-tab" data-series="pace" role="tab" aria-selected="false">Pace</button>
+              <button type="button" class="rn-tab" data-series="hr" role="tab" aria-selected="false">HR</button>
+              <button type="button" class="rn-tab" data-series="cadence" role="tab" aria-selected="false">Cadence</button>
+            </div>
+            <div class="rn-chart-wrap" id="storyChart" aria-hidden="true">
+              <svg viewBox="0 0 320 148" class="rn-story-svg" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="hrFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="var(--hot)" stop-opacity="0.28" />
+                    <stop offset="100%" stop-color="var(--hot)" stop-opacity="0" />
+                  </linearGradient>
+                  <linearGradient id="paceFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.22" />
+                    <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
+                  </linearGradient>
+                </defs>
+                <!-- Mode change: ~13:00 into session -->
+                <line class="rn-mode-line" x1="192" y1="8" x2="192" y2="128" />
+                <text class="rn-mode-label" x="196" y="18">Walk</text>
+                <path class="rn-area rn-hr-area" d="M8,92 C40,78 70,52 100,48 C140,42 170,58 192,70 C230,88 270,96 312,102 L312,128 L8,128 Z" fill="url(#hrFill)" />
+                <path class="rn-line rn-hr-line" d="M8,92 C40,78 70,52 100,48 C140,42 170,58 192,70 C230,88 270,96 312,102" />
+                <path class="rn-line rn-pace-line" d="M8,58 L100,54 L192,50 L220,78 L312,118" />
+                <path class="rn-line rn-cad-line" d="M8,70 C50,62 90,55 140,52 C180,50 192,68 220,88 C260,108 290,112 312,114" />
+              </svg>
+              <div class="rn-legend">
+                <span><i class="sw pace"></i>Pace</span>
+                <span><i class="sw hr"></i>HR</span>
+                <span><i class="sw cad"></i>Cadence</span>
+              </div>
+              <div class="rn-scrub" id="scrubTip" hidden>
+                <strong class="t-title">12:40</strong>
+                <div class="t-mono">Pace 6'12" · HR 168 · Cad 162</div>
+              </div>
+            </div>
+            <p class="rn-chart-note">Synced scrubber · invent-guard: pace from locked km splits, not sample u16 invent</p>
+          </div>
+        </section>
+
+        <section class="st-block" aria-label="Splits">
+          <span class="st-kicker">Splits</span>
+          <div class="rn-splits" role="table" aria-label="Kilometer splits">
+            <div class="rn-split-head" role="row">
+              <span>Km</span>
+              <span>Pace</span>
+              <span>Time</span>
+              <span></span>
+            </div>
+            <div class="rn-split" role="row">
+              <span class="km">1</span>
+              <span class="pace">6'22"</span>
+              <span class="time">6:22</span>
+              <span class="tag">Run</span>
+            </div>
+            <div class="rn-split best" role="row">
+              <span class="km">2</span>
+              <span class="pace">6'09"</span>
+              <span class="time">12:31</span>
+              <span class="tag best">Fastest</span>
+            </div>
+            <div class="rn-split walk" role="row">
+              <span class="km">3</span>
+              <span class="pace">11'32"</span>
+              <span class="time">21:40</span>
+              <span class="tag walk">0.79 · Walk</span>
+            </div>
+          </div>
+          <p class="rn-chart-note">Mode change tagged — walk km not scored as fade</p>
+        </section>
+
+        <section class="st-block" aria-label="Form">
+          <span class="st-kicker">Form · session averages</span>
+          <div class="rn-form">
+            <div class="gauge">
+              <div class="label">GCT</div>
+              <div class="value">290<span>ms</span></div>
+              <div class="bar"><i style="width:58%"></i></div>
+            </div>
+            <div class="gauge">
+              <div class="label">Vertical osc.</div>
+              <div class="value">10.2<span>cm</span></div>
+              <div class="bar"><i style="width:42%"></i></div>
+            </div>
+            <div class="gauge">
+              <div class="label">Balance L/R</div>
+              <div class="value">50.1<span>%</span></div>
+              <div class="bar bal"><i class="l" style="width:50.1%"></i><i class="r"></i></div>
+              <div class="hint">Monitor only — not injury risk</div>
+            </div>
+            <div class="gauge">
+              <div class="label">Stride</div>
+              <div class="value">1.08<span>m</span></div>
+              <div class="bar"><i style="width:54%"></i></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="st-block" aria-label="Terrain">
+          <span class="st-kicker">Terrain</span>
+          <div class="st-derived">
+            <div class="cell">
+              <div class="label">Elev gain</div>
+              <div class="value">+2.7 m</div>
+            </div>
+            <div class="cell">
+              <div class="label">Elev loss</div>
+              <div class="value">−5.4 m</div>
+            </div>
+            <div class="cell">
+              <div class="label">Steps</div>
+              <div class="value">3,412</div>
+            </div>
+            <div class="cell">
+              <div class="label">Cadence avg</div>
+              <div class="value">134</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="st-block" aria-label="Improve next run">
+          <span class="st-kicker">Next run · from this session</span>
+          <div class="sa-dx">
+            <div class="dx priority">
+              <span class="tag">Cadence cue</span>
+              <h4>Hold ~160 spm on the run segment</h4>
+              <p>Evidence-backed lever: +5–10% cadence often lowers loading rate and VO. Cue only while running — not during the walk cool-down.</p>
+            </div>
+            <div class="dx">
+              <span class="tag">Stimulus</span>
+              <h4>TE 2.3 = maintain day</h4>
+              <p>Recovery clock 21h. Soft easy tomorrow; save hard work until the clock clears.</p>
+            </div>
+            <div class="dx">
+              <span class="tag">Pacing</span>
+              <h4>Negative split on the run half</h4>
+              <p>Km2 faster than km1 — keep that pattern on continuous runs; don’t read the walk split as fade.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="st-block" aria-label="After this session">
+          <span class="st-kicker">After this session</span>
+          <div class="st-context">
+            <div class="row">
+              <div>
+                <strong>Sleep</strong>
+                <div class="tag">Night after</div>
+              </div>
+              <span>Waiting for data</span>
+            </div>
+            <div class="row">
+              <div>
+                <strong>How you felt</strong>
+                <div class="tag">Morning check-in</div>
+              </div>
+              <span>Not logged</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="st-guard" aria-label="Invent guard">
+          <h3>Honesty · invent-guard</h3>
+          <ul>
+            <li>Zone minutes omitted until native list locks (no HR invent)</li>
+            <li>GCT / VO / balance are scalars — no fake time series</li>
+            <li>Balance is not medicalized</li>
+            <li>Huawei TE not cross-compared to Garmin absolutes</li>
+          </ul>
+        </section>
+
+        <section class="st-actions" aria-label="Actions">
+          <button type="button" class="primary" id="exportPrimary">Export session</button>
+          <a class="action" href="workouts-tab.html">All run sessions</a>
+        </section>
+      </main>
+    </div>
+
+    <aside class="rail">
+      <p class="eyebrow">Fathom · Design</p>
+      <h1>Run / Walk session</h1>
+      <p class="lede">
+        Product session detail for Outdoor Run and Walk. Phone copy stays
+        user-facing; session story + stimulus lead; form and coaching sit below.
+        Anchor: watch-locked Walk #60.
+      </p>
+      <ol class="rail-list">
+        <li>Hero: distance, duration, pace, calories + mode chips</li>
+        <li>Stimulus: aerobic / anaerobic TE, load, recovery, HR</li>
+        <li>Synced story chart (pace · HR · cadence) with run→walk mark</li>
+        <li>Splits as narrative (fastest / walk tags)</li>
+        <li>Form gauges from locked scalars</li>
+        <li>Next-run cues (cadence, TE band, pacing) — design review</li>
+        <li>Sleep / feel + invent-guard + export</li>
+      </ol>
+      <p class="rail-note">
+        Design note: form time series, zone minutes, and VO₂ stay out of product
+        UI until wire proof exists. Cadence series shape still partial vs watch.
+      </p>
+      <a class="btn primary" href="workouts-tab.html">← Workouts tab</a>
+      <a class="btn ghost" href="strength-analytics.html">Strength peer</a>
+      <a class="btn ghost" href="swim-analytics.html">Swim peer</a>
+      <a class="btn ghost" href="index.html">Design hub</a>
+    </aside>
+  </div>
+
+  <script src="run-analytics.js"></script>
+</body>
+</html>

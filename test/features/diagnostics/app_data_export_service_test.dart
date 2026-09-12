@@ -298,6 +298,56 @@ void main() {
       expect(omissions, contains('remembered_mac'));
       expect(omissions, contains('native_huawei_secrets'));
     });
+
+    test('run session side-files inventory IDs/lengths only — never bodies',
+        () async {
+      final leftoverDir = Directory(
+        '${tempRoot.path}/${GateAPrefs.workoutTotalsLeftoversDir}/7',
+      );
+      await leftoverDir.create(recursive: true);
+      await File('${leftoverDir.path}/0.bin').writeAsBytes([9, 9, 9, 9]);
+      await File('${leftoverDir.path}/meta.json').writeAsString(
+        jsonEncode({
+          'items': [
+            {'id': 0x7a, 'len': 4, 'file': '0.bin'},
+          ],
+        }),
+      );
+      final dataDir = Directory(
+        '${tempRoot.path}/${GateAPrefs.workoutDataPagesDir}/7',
+      );
+      await dataDir.create(recursive: true);
+      await File('${dataDir.path}/p0_0.bin').writeAsBytes([1]);
+      await File('${dataDir.path}/meta.json').writeAsString(
+        jsonEncode({
+          'pages': [
+            {
+              'index': 0,
+              'items': [
+                {'id': 1, 'len': 1, 'file': 'p0_0.bin'},
+              ],
+            },
+          ],
+        }),
+      );
+
+      final service = await buildService();
+      final envelope = await service.assembleEnvelope();
+      final inventory = (envelope['meta'] as Map)['sideFileInventory']
+          as Map<String, dynamic>;
+      final run = inventory['runSessionSideFiles'] as Map<String, dynamic>;
+      final leftovers = run['totalsLeftovers'] as List;
+      expect(leftovers, hasLength(1));
+      expect(leftovers.first['workoutNumber'], 7);
+      expect(leftovers.first['items'], [
+        {'id': 0x7a, 'len': 4},
+      ]);
+      final encoded = jsonEncode(envelope);
+      expect(encoded.contains('bodyBase64'), isFalse);
+      expect(encoded.contains('AQID'), isFalse);
+      // Binary body bytes must not appear as a JSON string payload.
+      expect(encoded.contains('"bodies"'), isFalse);
+    });
   });
 
   group('U2 write / redact / busy / prune', () {
