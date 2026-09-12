@@ -123,6 +123,8 @@ class HuaweiBtPlugin(
                         ?: HuaweiWorkoutSync.FALLBACK_START_UNIX
                     val endUnix = (call.argument<Number>("endUnix")?.toLong())
                         ?: (System.currentTimeMillis() / 1000L)
+                    val enrichStartUnix = (call.argument<Number>("enrichStartUnix")?.toLong())
+                        ?: startUnix
                     if (!syncLock.tryAcquire()) {
                         result.success(
                             mapOf(
@@ -142,7 +144,7 @@ class HuaweiBtPlugin(
                                     "workouts" to emptyList<Map<String, Any?>>(),
                                 )
                             } else {
-                                session?.syncWorkouts(startUnix, endUnix)
+                                session?.syncWorkouts(startUnix, endUnix, enrichStartUnix)
                                     ?: mapOf(
                                         "status" to "error",
                                         "message" to "No session",

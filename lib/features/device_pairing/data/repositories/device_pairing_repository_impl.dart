@@ -152,8 +152,27 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
         ),
       );
     }
+    // Fail closed: wipe extras must be registered so leftover/sample/export
+    // residue cannot survive a "successful" Forget (diagnostics_di last-writer).
+    final wipeExtras = _onForgetWipeExtras;
+    if (wipeExtras == null) {
+      return const Left(
+        ValidationFailure(
+          'Forget blocked — wipe extras not registered',
+        ),
+      );
+    }
     _forgetInFlight = true;
     try {
+      // Mid-flight busy re-check before any destructive mutation — export/sync
+      // that started after Forget began can still abort cleanly.
+      if (_link.syncInFlight || (_isForgetBlocked?.call() ?? false)) {
+        return const Left(
+          ValidationFailure(
+            'Sync in progress — wait for it to finish, then Forget',
+          ),
+        );
+      }
       await _prefs.remove(GateAPrefs.rememberedMac);
       await _prefs.remove(GateAPrefs.rememberedName);
       await _prefs.remove(GateAPrefs.gateAKillOk);
@@ -165,62 +184,105 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
       await _prefs.remove(GateAPrefs.activitySyncImplVersion);
       await _prefs.remove(GateAPrefs.fileSleepSotActive);
       await _prefs.remove(GateAPrefs.swimSegmentParserVersion);
+      // Peer to swimSegmentParserVersion — wipe here only (not also in workout
+      // clearLocal) so Forget has one owner for leftover-keep version.
+      await _prefs.remove(GateAPrefs.leftoverKeepImplVersion);
       await _prefs.remove(GateAPrefs.workoutsJson);
-      await _onForgetWipeExtras?.call();
-      // Verify vitals keys gone when wipe callback was registered.
-      if (_onForgetWipeExtras != null) {
-        final sleepLeft = _prefs.containsKey(GateAPrefs.sleepSessionsJson);
-        final hrLeft = _prefs.containsKey(GateAPrefs.dailyHrJson);
-        final totalsLeft = _prefs.containsKey(GateAPrefs.fitnessTotalsDayJson);
-        final enableLeft =
-            _prefs.containsKey(GateAPrefs.lastAutoTrackingEnableJson);
-        final activityCursorLeft =
-            _prefs.containsKey(GateAPrefs.lastActivitySyncCursor);
-        final activityVerLeft =
-            _prefs.containsKey(GateAPrefs.activitySyncImplVersion);
-        final fileSotLeft = _prefs.containsKey(GateAPrefs.fileSleepSotActive);
-        if (sleepLeft ||
-            hrLeft ||
-            totalsLeft ||
-            enableLeft ||
-            activityCursorLeft ||
-            activityVerLeft ||
-            fileSotLeft) {
+
+      await wipeExtras();
+      // Verify vitals / food / leftover / sample / export residue gone.
+      final sleepLeft = _prefs.containsKey(GateAPrefs.sleepSessionsJson);
+      final hrLeft = _prefs.containsKey(GateAPrefs.dailyHrJson);
+      final totalsLeft = _prefs.containsKey(GateAPrefs.fitnessTotalsDayJson);
+      final enableLeft =
+          _prefs.containsKey(GateAPrefs.lastAutoTrackingEnableJson);
+      final activityCursorLeft =
+          _prefs.containsKey(GateAPrefs.lastActivitySyncCursor);
+      final activityVerLeft =
+          _prefs.containsKey(GateAPrefs.activitySyncImplVersion);
+      final fileSotLeft = _prefs.containsKey(GateAPrefs.fileSleepSotActive);
+      final leftoverKeepLeft =
+          _prefs.containsKey(GateAPrefs.leftoverKeepImplVersion);
+      if (sleepLeft ||
+          hrLeft ||
+          totalsLeft ||
+          enableLeft ||
+          activityCursorLeft ||
+          activityVerLeft ||
+          fileSotLeft ||
+          leftoverKeepLeft) {
+        return const Left(
+          ValidationFailure('Forget verify failed — vitals residue remains'),
+        );
+      }
+
+      // Verify food keys and files gone
+      final foodIndexLeft = _prefs.containsKey(GateAPrefs.foodMealsIndexJson);
+      if (foodIndexLeft) {
+        return const Left(
+          ValidationFailure('Forget verify failed — food prefs residue remains'),
+        );
+      }
+
+      // Verify no meal / leftover / sample / export-cache residue (food-meals bar).
+      try {
+        final root = await getApplicationSupportDirectory();
+        final mealsDir = Directory('${root.path}/${GateAPrefs.foodMealsDir}');
+        if (await _dirHasFiles(mealsDir)) {
           return const Left(
-            ValidationFailure('Forget verify failed — vitals residue remains'),
+            ValidationFailure(
+              'Forget verify failed — food meal files residue remains',
+            ),
           );
         }
 
-        // Verify food keys and files gone
-        final foodIndexLeft = _prefs.containsKey(GateAPrefs.foodMealsIndexJson);
-        if (foodIndexLeft) {
+        final leftoversDir =
+            Directory('${root.path}/${GateAPrefs.workoutLeftoversDir}');
+        if (await _dirHasFiles(leftoversDir)) {
           return const Left(
-            ValidationFailure('Forget verify failed — food prefs residue remains'),
+            ValidationFailure(
+              'Forget verify failed — workout leftover files residue remains',
+            ),
           );
         }
 
-        // Verify no meal files under food/meals
-        try {
-          final root = await getApplicationSupportDirectory();
-          final mealsDir = Directory('${root.path}/${GateAPrefs.foodMealsDir}');
-          if (await mealsDir.exists()) {
-            final hasFiles = await mealsDir
-                .list(recursive: true)
-                .any((entity) => entity is File);
-            if (hasFiles) {
-              return const Left(
-                ValidationFailure(
-                  'Forget verify failed — food meal files residue remains',
-                ),
-              );
-            }
-          }
-        } catch (_) {
-          // If we can't check, fail safe
+        final samplesDir =
+            Directory('${root.path}/${GateAPrefs.workoutHrSamplesDir}');
+        if (await _dirHasFiles(samplesDir)) {
           return const Left(
-            ValidationFailure('Forget verify failed — could not verify food residue'),
+            ValidationFailure(
+              'Forget verify failed — workout HR sample files residue remains',
+            ),
           );
         }
+
+        final temp = await getTemporaryDirectory();
+        final strengthExport = Directory(
+          '${temp.path}/$strengthSessionExportCacheDirName',
+        );
+        if (await _dirHasFiles(strengthExport)) {
+          return const Left(
+            ValidationFailure(
+              'Forget verify failed — strength export cache residue remains',
+            ),
+          );
+        }
+
+        final sharePlus = Directory('${temp.path}/share_plus');
+        if (await _dirHasFiles(sharePlus)) {
+          return const Left(
+            ValidationFailure(
+              'Forget verify failed — share_plus cache residue remains',
+            ),
+          );
+        }
+      } catch (_) {
+        // If we can't check, fail safe
+        return const Left(
+          ValidationFailure(
+            'Forget verify failed — could not verify food/workout residue',
+          ),
+        );
       }
       await _link.clearSecrets();
       await _link.disconnect();
@@ -293,6 +355,14 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
     }
     return Right(status);
   }
+}
+
+/// Keep in sync with [StrengthSessionExportService.exportCacheDirName].
+const strengthSessionExportCacheDirName = 'strength_session_exports';
+
+Future<bool> _dirHasFiles(Directory dir) async {
+  if (!await dir.exists()) return false;
+  return dir.list(recursive: true).any((entity) => entity is File);
 }
 
 class PermissionFailure extends Failure {
