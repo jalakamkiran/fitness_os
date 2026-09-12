@@ -11,22 +11,32 @@ class WorkoutSessionRow extends StatelessWidget {
     required this.onTap,
     this.thirdLabel = 'SWOLF',
     this.thirdValue,
+    this.metaColumns,
   });
 
   final WorkoutSummary workout;
   final VoidCallback onTap;
 
-  /// Third meta column label (swim SWOLF, run/strength Calories, etc.).
+  /// Third meta column label (swim SWOLF, run Calories, etc.).
   final String thirdLabel;
 
   /// Third meta value; defaults to [WorkoutSummary.avgSwolf] when null.
   final String? thirdValue;
+
+  /// When set, replaces the default Distance / Time / third meta row.
+  final List<({String label, String value})>? metaColumns;
 
   @override
   Widget build(BuildContext context) {
     final colors = FathomColors.of(context);
     final theme = Theme.of(context);
     final third = thirdValue ?? (workout.avgSwolf?.toString() ?? '—');
+    final metas = metaColumns ??
+        [
+          (label: 'Distance', value: formatDistanceM(workout.distanceM)),
+          (label: 'Time', value: formatDurationClock(workout.durationSec)),
+          (label: thirdLabel, value: third),
+        ];
 
     return Material(
       color: colors.bgElev,
@@ -76,24 +86,15 @@ class WorkoutSessionRow extends StatelessWidget {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(
-                    child: _Meta(
-                      label: 'Distance',
-                      value: formatDistanceM(workout.distanceM),
+                  for (var i = 0; i < metas.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 4),
+                    Expanded(
+                      child: _Meta(
+                        label: metas[i].label,
+                        value: metas[i].value,
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    child: _Meta(
-                      label: 'Time',
-                      value: formatDurationClock(workout.durationSec),
-                    ),
-                  ),
-                  Expanded(
-                    child: _Meta(
-                      label: thirdLabel,
-                      value: third,
-                    ),
-                  ),
+                  ],
                 ],
               ),
               if (workout.sessionFlag != null &&

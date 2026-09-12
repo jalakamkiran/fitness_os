@@ -16,6 +16,17 @@ class HuaweiWorkoutSync(
         expectCmd: Int,
         timeoutMs: Long,
     ) -> HuaweiFraming.Frame?,
+    /**
+     * Optional native sample-file sink (peer to TruSleep persist). Relative path under
+     * GateAPrefs workout HR samples dir. Invoked only when opaque point bodies exist.
+     */
+    private val persistWorkoutSamples: ((id: String, bytes: ByteArray) -> String?)? = null,
+    /**
+     * Optional native leftover-file sink (peer to samples). Relative path under
+     * GateAPrefs workout leftovers dir. Used when leftover bodies would blow the
+     * MethodChannel binder budget — small leftovers still cross the channel once.
+     */
+    private val persistWorkoutLeftovers: ((id: String, bytes: ByteArray) -> String?)? = null,
 ) {
     companion object {
         private const val TAG = "FOS_HUAWEI"
@@ -28,6 +39,17 @@ class HuaweiWorkoutSync(
         private const val TIMEOUT_MS = 20_000L
         /** Same empty-history floor GB uses when no cursor exists. */
         const val FALLBACK_START_UNIX = 1_654_819_200L
+        /** Relative side-file dir — must match [GateAPrefs.workoutHrSamplesDir]. */
+        const val WORKOUT_HR_SAMPLES_DIR = "workouts/hr_samples"
+        /** Relative side-file dir — must match [GateAPrefs.workoutLeftoversDir]. */
+        const val WORKOUT_LEFTOVERS_DIR = "workouts/leftovers"
+        /**
+         * Soft cumulative binder budget for leftover bodies in one Sync result.
+         * Below Android TransactionTooLarge (~1MB) with headroom for other map fields.
+         */
+        const val LEFTOVER_CHANNEL_BUDGET_BYTES = 384 * 1024
+        /** Single leftover above this always spills when a sink is available. */
+        const val LEFTOVER_INLINE_MAX_BYTES = 64 * 1024
 
         fun u16(value: ByteArray, offset: Int = 0): Int {
             if (value.size < offset + 2) return 0
@@ -94,7 +116,11 @@ class HuaweiWorkoutSync(
         }
     }
 
-    /** WorkoutData page summary (0x17:0x0a) — no sample payload in channel map. */
+    /**
+     * WorkoutData page summary (0x17:0x0a).
+     * Channel map stays header metadata + id+len tags; opaque sample bodies ride
+     * [leftoverTlvs] for native file persist only (equivalent points until bitmap promote).
+     */
     data class WorkoutDataPageSummary(
         val index: Int,
         val timestamp: Long? = null,
@@ -103,7 +129,10 @@ class HuaweiWorkoutSync(
         val dataLength: Int? = null,
         val bitmap: Int? = null,
         val tags: List<EnrichmentTagRef> = emptyList(),
+        val leftoverTlvs: List<HuaweiFraming.Tlv> = emptyList(),
     ) {
+        val hasPointBodies: Boolean get() = leftoverTlvs.isNotEmpty()
+
         fun toMap(): Map<String, Any?> {
             val out = linkedMapOf<String, Any?>("index" to index)
             if (timestamp != null) out["timestamp"] = timestamp
@@ -152,9 +181,27 @@ class HuaweiWorkoutSync(
         val avgSwolf: Int? = null,
         val poolLength: Int? = null,
         val laps: Int? = null,
+        /** Training load — catalog tag 0x0d; omit when absent or width mismatch. */
+        val load: Int? = null,
+        /** Aerobic training stress — catalog tag 0x0e. */
+        val aerobicEffect: Int? = null,
+        /** Anaerobic training stress — catalog tag 0x20. */
+        val anaerobicEffect: Int? = null,
+        /** Session recovery time — catalog tag 0x11. */
+        val recoveryTime: Int? = null,
+        /** Training points — catalog tag 0x63. */
+        val trainingPoints: Int? = null,
         val enrichmentTags: List<EnrichmentTagRef> = emptyList(),
+        /**
+         * Unmatched / width-mismatched Totals TLVs kept as tag+len+body.
+         * Recovery-HR (0x66) rides here as an opaque blob. Logs use id+len only.
+         */
+        val leftoverTlvs: List<HuaweiFraming.Tlv> = emptyList(),
     ) {
-        fun toMap(): Map<String, Any?> {
+        fun toMap(
+            leftoverSink: ((id: String, bytes: ByteArray) -> String?)? = null,
+            forceSpill: Boolean = false,
+        ): Map<String, Any?> {
             val out = linkedMapOf<String, Any?>(
                 "number" to number,
                 "startTime" to startTime,
@@ -177,8 +224,44 @@ class HuaweiWorkoutSync(
             if (avgSwolf != null) out["avgSwolf"] = avgSwolf
             if (poolLength != null) out["poolLength"] = poolLength
             if (laps != null) out["laps"] = laps
+            if (load != null) out["load"] = load
+            if (aerobicEffect != null) out["aerobicEffect"] = aerobicEffect
+            if (anaerobicEffect != null) out["anaerobicEffect"] = anaerobicEffect
+            if (recoveryTime != null) out["recoveryTime"] = recoveryTime
+            if (trainingPoints != null) out["trainingPoints"] = trainingPoints
             if (enrichmentTags.isNotEmpty()) {
                 out["enrichmentTags"] = enrichmentTags.map { it.toMap() }
+            }
+            if (leftoverTlvs.isNotEmpty()) {
+                val leftoverBytes = HuaweiFraming.encodeTlvs(leftoverTlvs)
+                out["leftoverLen"] = leftoverBytes.size
+                val shouldSpill = forceSpill ||
+                    leftoverBytes.size > LEFTOVER_INLINE_MAX_BYTES
+                if (shouldSpill && leftoverSink != null) {
+                    val id = "${number}_$startTime"
+                    val path = leftoverSink(id, leftoverBytes)
+                    if (path != null) {
+                        out["leftoverPath"] = path
+                        out["leftoverPresent"] = true
+                        Log.i(
+                            TAG,
+                            "workout-sync leftover spilled number=$number " +
+                                "len=${leftoverBytes.size} path=$path",
+                        )
+                    } else {
+                        // Sink failed — fall back to inline so Dart can still persist.
+                        out["leftover"] = leftoverBytes
+                        out["leftoverPresent"] = true
+                        Log.w(
+                            TAG,
+                            "workout-sync leftover spill failed number=$number " +
+                                "len=${leftoverBytes.size} — inlining",
+                        )
+                    }
+                } else {
+                    out["leftover"] = leftoverBytes
+                    out["leftoverPresent"] = true
+                }
             }
             return out
         }
@@ -191,12 +274,20 @@ class HuaweiWorkoutSync(
     }
 
     /**
-     * @return status: ok | empty | stuck | error; workouts: list of totals maps
+     * @param enrichStartUnix floor for hint-gated Data/Pace/Swim (defaults to
+     * [startUnix]). Strength (`type=140` with `dataCount>0`) is always
+     * enrich-eligible.
+     * @return status: ok | empty | stuck | error | partial_batch; workouts: totals maps
      */
-    fun sync(startUnix: Long, endUnix: Long): Map<String, Any?> {
+    fun sync(
+        startUnix: Long,
+        endUnix: Long,
+        enrichStartUnix: Long = startUnix,
+    ): Map<String, Any?> {
         val start = startUnix.coerceAtLeast(0)
         val end = endUnix.coerceAtLeast(start)
-        Log.i(TAG, "workout-sync start window=[$start,$end]")
+        val enrichFloor = enrichStartUnix.coerceAtLeast(0)
+        Log.i(TAG, "workout-sync start window=[$start,$end] enrichStart=$enrichFloor")
 
         val countFrame = exchangeEncrypted(
             buildCountRequest(start, end),
@@ -224,6 +315,7 @@ class HuaweiWorkoutSync(
 
         val workouts = ArrayList<Map<String, Any?>>(numbers.size)
         var enrichmentPartial = false
+        var leftoverChannelBytes = 0
         for (ref in numbers) {
             val totalsFrame = exchangeEncrypted(
                 buildTotalsRequest(ref.workoutNumber),
@@ -250,13 +342,39 @@ class HuaweiWorkoutSync(
                     "start=${totals.startTime} duration=${totals.durationSec}s " +
                     "data=${totals.dataCount} pace=${totals.paceCount} seg=${totals.segmentsCount}",
             )
-            val workoutMap = LinkedHashMap(totals.toMap())
-            if (totals.segmentsCount > 0 || totals.dataCount > 0 || totals.paceCount > 0) {
+            val leftoverLenHint = if (totals.leftoverTlvs.isNotEmpty()) {
+                HuaweiFraming.encodeTlvs(totals.leftoverTlvs).size
+            } else {
+                0
+            }
+            val forceSpill = leftoverLenHint > 0 && (
+                leftoverLenHint > LEFTOVER_INLINE_MAX_BYTES ||
+                    leftoverChannelBytes + leftoverLenHint > LEFTOVER_CHANNEL_BUDGET_BYTES
+                )
+            val workoutMap = LinkedHashMap(
+                totals.toMap(
+                    leftoverSink = persistWorkoutLeftovers,
+                    forceSpill = forceSpill,
+                ),
+            )
+            if (workoutMap.containsKey("leftover")) {
+                leftoverChannelBytes += (workoutMap["leftoverLen"] as? Int) ?: 0
+            }
+            val hasHints =
+                totals.segmentsCount > 0 || totals.dataCount > 0 || totals.paceCount > 0
+            val strengthWithData = totals.type == 140 && totals.dataCount > 0
+            val inEnrichWindow = totals.startTime >= enrichFloor
+            // One-shot: Count+Totals for history; hint-gated enrich only for
+            // strength-with-data or already-recent rows — not years of swim/run Data.
+            if (hasHints && (strengthWithData || inEnrichWindow)) {
                 if (enrichWorkout(workoutMap, totals)) {
                     enrichmentPartial = true
                 }
             } else {
+                // Totals-only historical must not be enrichmentStatus=partial
+                // (Flutter clock 3 would otherwise reopen the 2022 Count floor).
                 workoutMap["enrichmentStatus"] = "none"
+                workoutMap["sampleFetch"] = "none"
             }
             workouts.add(workoutMap)
         }
@@ -313,8 +431,9 @@ class HuaweiWorkoutSync(
         }
 
         if (totals.dataCount > 0) {
-            val pages = ArrayList<Map<String, Any?>>()
+            val pages = ArrayList<WorkoutDataPageSummary>()
             var sampleTotal = 0
+            var dataTimedOut = false
             for (index in 0 until totals.dataCount) {
                 val frame = exchangeEncrypted(
                     buildWorkoutDataRequest(totals.number, index),
@@ -329,22 +448,50 @@ class HuaweiWorkoutSync(
                     )
                     partial = true
                     enrichmentTimedOut = true
+                    dataTimedOut = true
                     break
                 }
                 parseWorkoutDataPage(frame, index)?.let { page ->
-                    pages.add(page.toMap())
+                    pages.add(page)
                     sampleTotal += page.sampleCount ?: 0
                 }
             }
             if (pages.isNotEmpty()) {
-                out["dataPages"] = pages
+                // Channel: header metadata only — never the opaque point series.
+                out["dataPages"] = pages.map { it.toMap() }
                 if (sampleTotal > 0) out["sampleCount"] = sampleTotal
             }
-            Log.i(
-                TAG,
-                "workout-sync data number=${totals.number} " +
-                    "pages=${pages.size}/${totals.dataCount} samples=$sampleTotal",
-            )
+            val pointPages = pages.filter { it.hasPointBodies }
+            val sampleFetch = when {
+                dataTimedOut -> "timeout"
+                pointPages.isNotEmpty() -> "ok"
+                pages.isNotEmpty() -> "partial"
+                else -> "partial"
+            }
+            out["sampleFetch"] = sampleFetch
+            if (pointPages.isNotEmpty()) {
+                val fileBytes = encodeWorkoutSampleFile(pointPages)
+                val sampleId = "${totals.number}_${totals.startTime}"
+                val path = persistWorkoutSamples?.invoke(sampleId, fileBytes)
+                if (path != null) {
+                    out["samplePath"] = path
+                }
+                Log.i(
+                    TAG,
+                    "workout-sync data number=${totals.number} " +
+                        "pages=${pages.size}/${totals.dataCount} samples=$sampleTotal " +
+                        "pointsPages=${pointPages.size} persisted=${path != null}",
+                )
+            } else {
+                Log.i(
+                    TAG,
+                    "workout-sync data number=${totals.number} " +
+                        "pages=${pages.size}/${totals.dataCount} samples=$sampleTotal " +
+                        "pointsPages=0 sampleFetch=$sampleFetch",
+                )
+            }
+        } else {
+            out["sampleFetch"] = "none"
         }
 
         if (totals.paceCount > 0 && !enrichmentTimedOut) {
@@ -553,7 +700,13 @@ class HuaweiWorkoutSync(
         var avgSwolf: Int? = null
         var poolLength: Int? = null
         var laps: Int? = null
+        var load: Int? = null
+        var aerobicEffect: Int? = null
+        var anaerobicEffect: Int? = null
+        var recoveryTime: Int? = null
+        var trainingPoints: Int? = null
         val unknownTags = ArrayList<EnrichmentTagRef>()
+        val leftoverTlvs = ArrayList<HuaweiFraming.Tlv>()
         for (tlv in tlvs) {
             when (tlv.tag) {
                 0x02 -> number = u16(tlv.value)
@@ -573,6 +726,19 @@ class HuaweiWorkoutSync(
                     Log.d(TAG, "workout-sync tag 0x0c len=${tlv.value.size} unparsed")
                     unknownTags.add(EnrichmentTagRef(0x0c, tlv.value.size))
                 }
+                // Locked community scalars: strip from leftover only on width match.
+                0x0d -> parseScalarU32(tlv)?.let { load = it.toInt() }
+                    ?: keepLeftover(leftoverTlvs, tlv)
+                0x0e -> parseScalarU32(tlv)?.let { aerobicEffect = it.toInt() }
+                    ?: keepLeftover(leftoverTlvs, tlv)
+                0x11 -> parseScalarU16(tlv)?.let { recoveryTime = it }
+                    ?: keepLeftover(leftoverTlvs, tlv)
+                0x20 -> parseScalarU8(tlv)?.let { anaerobicEffect = it }
+                    ?: keepLeftover(leftoverTlvs, tlv)
+                0x63 -> parseScalarU16(tlv)?.let { trainingPoints = it }
+                    ?: keepLeftover(leftoverTlvs, tlv)
+                // Recovery-HR stays opaque leftover — never integer-decode.
+                0x66 -> keepLeftover(leftoverTlvs, tlv)
                 0x15 -> parseScalarU8(tlv)?.let { swimType = it }
                     ?: recordUnknown(unknownTags, tlv)
                 0x16 -> parseScalarU32OrU16(tlv)?.let { strokes = it }
@@ -585,6 +751,7 @@ class HuaweiWorkoutSync(
                     ?: recordUnknown(unknownTags, tlv)
                 0x1a -> parseScalarU16(tlv)?.let { avgSwolf = it }
                     ?: recordUnknown(unknownTags, tlv)
+                else -> keepLeftover(leftoverTlvs, tlv)
             }
         }
         if (number == 0 || startTime == 0L) return null
@@ -609,13 +776,25 @@ class HuaweiWorkoutSync(
             avgSwolf = avgSwolf,
             poolLength = poolLength,
             laps = laps,
+            load = load,
+            aerobicEffect = aerobicEffect,
+            anaerobicEffect = anaerobicEffect,
+            recoveryTime = recoveryTime,
+            trainingPoints = trainingPoints,
             enrichmentTags = unknownTags,
+            leftoverTlvs = leftoverTlvs,
         )
     }
 
     private fun recordUnknown(out: MutableList<EnrichmentTagRef>, tlv: HuaweiFraming.Tlv) {
         Log.d(TAG, "workout-sync tag 0x${tlv.tag.toString(16)} len=${tlv.value.size} unparsed")
         out.add(EnrichmentTagRef(tlv.tag, tlv.value.size))
+    }
+
+    /** Totals-only: keep unmatched / width-mismatched TLV bodies. Log id+len only. */
+    private fun keepLeftover(out: MutableList<HuaweiFraming.Tlv>, tlv: HuaweiFraming.Tlv) {
+        Log.d(TAG, "workout-sync leftover tag 0x${tlv.tag.toString(16)} len=${tlv.value.size}")
+        out.add(tlv)
     }
 
     /** Totals TLV 0x0c — oracle suggests 2-byte min/max peaks; accept u8 pair or u16. */
@@ -633,6 +812,9 @@ class HuaweiWorkoutSync(
 
     private fun parseScalarU16(tlv: HuaweiFraming.Tlv): Int? =
         if (tlv.value.size == 2) u16(tlv.value) else null
+
+    private fun parseScalarU32(tlv: HuaweiFraming.Tlv): Long? =
+        if (tlv.value.size == 4) u32(tlv.value) else null
 
     private fun parseScalarU16OrU8(tlv: HuaweiFraming.Tlv): Int? = when (tlv.value.size) {
         1 -> u8(tlv.value)
@@ -766,6 +948,7 @@ class HuaweiWorkoutSync(
         var dataLength: Int? = null
         var bitmap: Int? = null
         val unknownTags = ArrayList<EnrichmentTagRef>()
+        val leftoverTlvs = ArrayList<HuaweiFraming.Tlv>()
         for (tlv in tlvs) {
             when (tlv.tag) {
                 0x02 -> { /* workoutNumber — ignore for summary */ }
@@ -775,7 +958,11 @@ class HuaweiWorkoutSync(
                 0x06 -> sampleCount = parseScalarU32OrU16(tlv)
                 0x07 -> dataLength = parseScalarU32OrU16(tlv)
                 0x08 -> bitmap = parseScalarU32OrU16(tlv)
-                else -> recordUnknown(unknownTags, tlv)
+                else -> {
+                    // Opaque sample / unmatched bodies — equivalent points until bitmap promote.
+                    keepLeftover(leftoverTlvs, tlv)
+                    unknownTags.add(EnrichmentTagRef(tlv.tag, tlv.value.size))
+                }
             }
         }
         return WorkoutDataPageSummary(
@@ -786,7 +973,38 @@ class HuaweiWorkoutSync(
             dataLength = dataLength,
             bitmap = bitmap,
             tags = unknownTags,
+            leftoverTlvs = leftoverTlvs,
         )
+    }
+
+    /**
+     * Native sample file: per-page 0x81 containers with header metadata + leftover bodies.
+     * Logs/channel never carry the series; dump treats leftover bytes as equivalent points.
+     */
+    internal fun encodeWorkoutSampleFile(pages: List<WorkoutDataPageSummary>): ByteArray {
+        val pageTlvs = ArrayList<HuaweiFraming.Tlv>(pages.size)
+        for (page in pages) {
+            val inner = ArrayList<HuaweiFraming.Tlv>()
+            inner.add(HuaweiFraming.Tlv(0x03, HuaweiPacketCrypto.shortBe(page.index)))
+            page.timestamp?.let {
+                inner.add(HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(it.toInt())))
+            }
+            page.intervalSec?.let {
+                inner.add(HuaweiFraming.Tlv(0x05, HuaweiPacketCrypto.shortBe(it)))
+            }
+            page.sampleCount?.let {
+                inner.add(HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(it)))
+            }
+            page.dataLength?.let {
+                inner.add(HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.shortBe(it)))
+            }
+            page.bitmap?.let {
+                inner.add(HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(it)))
+            }
+            inner.addAll(page.leftoverTlvs)
+            pageTlvs.add(HuaweiFraming.Tlv(0x81, HuaweiFraming.encodeTlvs(inner)))
+        }
+        return HuaweiFraming.encodeTlvs(pageTlvs)
     }
 
     fun parsePaceBlock(frame: HuaweiFraming.Frame, paceIndex: Int): PaceBlockSummary? {

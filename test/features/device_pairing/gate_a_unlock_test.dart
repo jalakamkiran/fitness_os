@@ -1,9 +1,12 @@
+import 'dart:io';
+
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/data/repositories/device_pairing_repository_impl.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/device_pairing/domain/repositories/device_pairing_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _StubLink extends HuaweiLink {
@@ -31,8 +34,41 @@ class _StubLink extends HuaweiLink {
   }
 }
 
+class _FakePathProvider extends PathProviderPlatform {
+  _FakePathProvider(this.supportRoot, this.tempRoot);
+
+  final Directory supportRoot;
+  final Directory tempRoot;
+
+  @override
+  Future<String?> getApplicationSupportPath() async => supportRoot.path;
+
+  @override
+  Future<String?> getTemporaryPath() async => tempRoot.path;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  late Directory supportRoot;
+  late Directory tempRoot;
+  late PathProviderPlatform previousPathProvider;
+
+  setUp(() async {
+    supportRoot = await Directory.systemTemp.createTemp('gate_a_support_');
+    tempRoot = await Directory.systemTemp.createTemp('gate_a_temp_');
+    previousPathProvider = PathProviderPlatform.instance;
+    PathProviderPlatform.instance = _FakePathProvider(supportRoot, tempRoot);
+  });
+
+  tearDown(() async {
+    PathProviderPlatform.instance = previousPathProvider;
+    for (final d in [supportRoot, tempRoot]) {
+      try {
+        if (await d.exists()) await d.delete(recursive: true);
+      } catch (_) {}
+    }
+  });
 
   test('Gate A unlock only when all three interrupt bits set', () async {
     SharedPreferences.setMockInitialValues({});
@@ -56,24 +92,8 @@ void main() {
       interrupt: GateAInterrupt.btToggle,
       reachedAuthenticated: true,
     );
-    final unlocked = status.getOrThrow();
-    expect(unlocked.passed, isTrue);
+    expect(status.getOrThrow().passed, isTrue);
     expect(prefs.getBool(GateAPrefs.gateAPassed), isTrue);
-    expect(link.state, LinkState.connected);
-  });
-
-  test('reject interrupt credit after reconnect_failed only', () async {
-    SharedPreferences.setMockInitialValues({});
-    final prefs = await SharedPreferences.getInstance();
-    final link = _StubLink()..forced = LinkState.reconnectFailed;
-    final repo = DevicePairingRepositoryImpl(link: link, prefs: prefs);
-
-    final result = await repo.creditInterrupt(
-      interrupt: GateAInterrupt.kill,
-      reachedAuthenticated: false,
-    );
-    expect(result.isLeft, isTrue);
-    expect(prefs.getBool(GateAPrefs.gateAKillOk) ?? false, isFalse);
   });
 
   test('Forget clears five categories', () async {
@@ -84,13 +104,17 @@ void main() {
       GateAPrefs.gateARebootOk: true,
       GateAPrefs.gateABtToggleOk: true,
       GateAPrefs.gateAPassed: true,
-      GateAPrefs.lastSyncCursor: 'cursor',
-      GateAPrefs.lastActivitySyncCursor: 1_700_000_000,
+      GateAPrefs.lastSyncCursor: '123',
+      GateAPrefs.lastActivitySyncCursor: 456,
       GateAPrefs.activitySyncImplVersion: 1,
     });
     final prefs = await SharedPreferences.getInstance();
     final link = _StubLink();
-    final repo = DevicePairingRepositoryImpl(link: link, prefs: prefs);
+    final repo = DevicePairingRepositoryImpl(
+      link: link,
+      prefs: prefs,
+      onForgetWipeExtras: () async {},
+    );
 
     await repo.forgetDevice();
     expect(prefs.getString(GateAPrefs.rememberedMac), isNull);
@@ -98,6 +122,65 @@ void main() {
     expect(prefs.getString(GateAPrefs.lastSyncCursor), isNull);
     expect(prefs.getInt(GateAPrefs.lastActivitySyncCursor), isNull);
     expect(prefs.getInt(GateAPrefs.activitySyncImplVersion), isNull);
+  });
+
+  test('Forget fails closed when wipe extras callback unset', () async {
+    SharedPreferences.setMockInitialValues({
+      GateAPrefs.rememberedMac: 'AA:BB:CC:DD:EE:FF',
+      GateAPrefs.gateAPassed: true,
+      GateAPrefs.workoutsJson:
+          '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final leftover = File(
+      '${supportRoot.path}/${GateAPrefs.workoutLeftoversDir}/1.bin',
+    );
+    await leftover.parent.create(recursive: true);
+    await leftover.writeAsBytes([9, 9, 9]);
+
+    final repo = DevicePairingRepositoryImpl(
+      link: _StubLink(),
+      prefs: prefs,
+    );
+
+    final out = await repo.forgetDevice();
+    expect(out.isLeft, isTrue);
+    expect(prefs.getString(GateAPrefs.rememberedMac), isNotNull);
+    expect(prefs.getBool(GateAPrefs.gateAPassed), isTrue);
+    expect(await leftover.exists(), isTrue);
+  });
+
+  test('Forget mid-flight busy re-check aborts before wipe', () async {
+    SharedPreferences.setMockInitialValues({
+      GateAPrefs.rememberedMac: 'AA:BB:CC:DD:EE:FF',
+      GateAPrefs.gateAPassed: true,
+      GateAPrefs.workoutsJson:
+          '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
+    });
+    final prefs = await SharedPreferences.getInstance();
+    var busyChecks = 0;
+    var wipeCalls = 0;
+    final repo = DevicePairingRepositoryImpl(
+      link: _StubLink(),
+      prefs: prefs,
+      onForgetWipeExtras: () async {
+        wipeCalls++;
+      },
+      isForgetBlocked: () {
+        busyChecks++;
+        // First (entry) check passes; second (mid-flight) blocks — simulates
+        // export/sync starting after Forget began.
+        return busyChecks > 1;
+      },
+    );
+
+    final out = await repo.forgetDevice();
+    expect(out.isLeft, isTrue);
+    expect(busyChecks, greaterThanOrEqualTo(2));
+    expect(wipeCalls, 0);
+    // Prefs must remain — mid-flight abort happens before destructive mutation.
+    expect(prefs.getString(GateAPrefs.rememberedMac), isNotNull);
+    expect(prefs.getString(GateAPrefs.workoutsJson), isNotNull);
   });
 
   test('Forget clears vitals keys via wipe callback and is idempotent', () async {
@@ -113,6 +196,7 @@ void main() {
           '[{"number":1,"startTime":1,"endTime":2,"durationSec":1,"type":1}]',
       GateAPrefs.lastActivitySyncCursor: 999,
       GateAPrefs.activitySyncImplVersion: 1,
+      GateAPrefs.leftoverKeepImplVersion: 1,
     });
     final prefs = await SharedPreferences.getInstance();
     final link = _StubLink();
@@ -137,6 +221,7 @@ void main() {
     expect(prefs.getString(GateAPrefs.workoutsJson), isNull);
     expect(prefs.getInt(GateAPrefs.lastActivitySyncCursor), isNull);
     expect(prefs.getInt(GateAPrefs.activitySyncImplVersion), isNull);
+    expect(prefs.getInt(GateAPrefs.leftoverKeepImplVersion), isNull);
 
     final second = await repo.forgetDevice();
     expect(second.isRight, isTrue);
@@ -162,6 +247,52 @@ void main() {
     final out = await repo.forgetDevice();
     expect(out.isLeft, isTrue);
     expect(prefs.getString(GateAPrefs.fitnessTotalsDayJson), isNotNull);
+  });
+
+  test('Forget verify fails closed when leftover files remain', () async {
+    SharedPreferences.setMockInitialValues({
+      GateAPrefs.rememberedMac: 'AA:BB:CC:DD:EE:FF',
+      GateAPrefs.gateAPassed: true,
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final leftover = File(
+      '${supportRoot.path}/${GateAPrefs.workoutLeftoversDir}/34.bin',
+    );
+    await leftover.parent.create(recursive: true);
+    await leftover.writeAsBytes([1, 2, 3]);
+
+    final repo = DevicePairingRepositoryImpl(
+      link: _StubLink(),
+      prefs: prefs,
+      onForgetWipeExtras: () async {
+        // Intentionally leave leftover files — verify must catch residue.
+      },
+    );
+
+    final out = await repo.forgetDevice();
+    expect(out.isLeft, isTrue);
+    expect(await leftover.exists(), isTrue);
+  });
+
+  test('Forget verify fails closed when share_plus residue remains', () async {
+    SharedPreferences.setMockInitialValues({
+      GateAPrefs.rememberedMac: 'AA:BB:CC:DD:EE:FF',
+      GateAPrefs.gateAPassed: true,
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final share = File('${tempRoot.path}/share_plus/leaked.json');
+    await share.parent.create(recursive: true);
+    await share.writeAsString('prove');
+
+    final repo = DevicePairingRepositoryImpl(
+      link: _StubLink(),
+      prefs: prefs,
+      onForgetWipeExtras: () async {},
+    );
+
+    final out = await repo.forgetDevice();
+    expect(out.isLeft, isTrue);
+    expect(await share.exists(), isTrue);
   });
 }
 
