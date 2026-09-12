@@ -30,7 +30,7 @@
         <div class="sport-tabs" role="tablist" aria-label="Sport" id="sportTabs">
           <button class="sport-tab active" type="button" role="tab" aria-selected="true" data-sport="swim">Swim</button>
           <button class="sport-tab" type="button" role="tab" aria-selected="false" data-sport="run">
-            Run<span class="soon">Soon</span>
+            Run
           </button>
           <button class="sport-tab" type="button" role="tab" aria-selected="false" data-sport="strength">
             Strength
@@ -112,10 +112,63 @@
           </ul>
         </div>
 
-        <div class="empty-sport" id="emptyRun" role="status">
-          <h2>Run</h2>
-          <p>Scaffolding only. Run sessions will list here when the sport lane opens — no charts on the list.</p>
-          <span class="chip-static">Empty · OK</span>
+        <div id="runPanel" class="hide">
+          <div class="list-head">
+            <h1>Sessions</h1>
+            <span class="count">8 · outdoor</span>
+          </div>
+
+          <ul class="session-list" aria-label="Run sessions">
+            <li>
+              <a class="session-row" href="run-analytics.html">
+                <div class="session-top">
+                  <div>
+                    <p class="session-title">Walk · #60</p>
+                    <p class="session-when">Tue 9 Sep · 07:14</p>
+                  </div>
+                  <span class="session-chev" aria-hidden="true">›</span>
+                </div>
+                <div class="session-meta">
+                  <div><p>Distance</p><strong>2.79 km</strong></div>
+                  <div><p>Time</p><strong>21:40</strong></div>
+                  <div><p>Pace</p><strong>7'46"</strong></div>
+                </div>
+                <p class="session-flag"><i></i> Run → walk · TE 2.3</p>
+              </a>
+            </li>
+            <li>
+              <a class="session-row" href="run-analytics.html">
+                <div class="session-top">
+                  <div>
+                    <p class="session-title">Outdoor run · #57</p>
+                    <p class="session-when">Sat 6 Sep · 06:48</p>
+                  </div>
+                  <span class="session-chev" aria-hidden="true">›</span>
+                </div>
+                <div class="session-meta">
+                  <div><p>Distance</p><strong>5.12 km</strong></div>
+                  <div><p>Time</p><strong>28:04</strong></div>
+                  <div><p>Pace</p><strong>5'29"</strong></div>
+                </div>
+              </a>
+            </li>
+            <li>
+              <a class="session-row" href="run-analytics.html">
+                <div class="session-top">
+                  <div>
+                    <p class="session-title">Outdoor run · #52</p>
+                    <p class="session-when">Wed 3 Sep · 18:20</p>
+                  </div>
+                  <span class="session-chev" aria-hidden="true">›</span>
+                </div>
+                <div class="session-meta">
+                  <div><p>Distance</p><strong>3.40 km</strong></div>
+                  <div><p>Time</p><strong>19:12</strong></div>
+                  <div><p>Pace</p><strong>5'39"</strong></div>
+                </div>
+              </a>
+            </li>
+          </ul>
         </div>
 
         <div id="strengthPanel" class="hide">
@@ -206,19 +259,20 @@
       <h1>Session history</h1>
       <p class="lede">Workouts owns the sport list and path into session detail. Charts and denser analytics live on the session surface — not on this list.</p>
       <ol class="rail-list">
-        <li><strong>Owns</strong> — sport tabs, swim + strength rows, entry to detail.</li>
+        <li><strong>Owns</strong> — sport tabs, swim + run + strength rows, entry to detail.</li>
         <li><strong>Never</strong> — full chart dump, vitals trend charts, live sync theater.</li>
-        <li><strong>Path</strong> — Swim → <code>swim-analytics.html</code> · Strength → <code>strength-analytics.html</code>.</li>
+        <li><strong>Path</strong> — Swim → <code>swim-analytics.html</code> · Run → <code>run-analytics.html</code> · Strength → <code>strength-analytics.html</code>.</li>
       </ol>
       <p class="rail-note">List rows may show one short flag as a teaser. No Pace/SWOLF/load charts on the list.</p>
       <div class="own-matrix">
         <strong>IA lock</strong><br />
-        Swim + Strength populated · Run empty scaffolding<br />
-        Detail: <code>swim-analytics.html</code> · <code>strength-analytics.html</code>
+        Swim + Run + Strength populated<br />
+        Detail: <code>swim-analytics.html</code> · <code>run-analytics.html</code> · <code>strength-analytics.html</code>
       </div>
       <div class="rail-actions">
         <button type="button" id="themeToggleRail">Toggle theme</button>
-        <a class="btn primary" href="strength-analytics.html">Open strength detail →</a>
+        <a class="btn primary" href="run-analytics.html">Open run detail →</a>
+        <a class="btn ghost" href="strength-analytics.html">Strength detail →</a>
         <a class="btn ghost" href="swim-analytics.html">Swim detail →</a>
         <a class="btn ghost" href="vitals-tab.html">Vitals tab →</a>
       </div>

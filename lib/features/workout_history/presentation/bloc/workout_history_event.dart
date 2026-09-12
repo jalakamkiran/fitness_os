@@ -7,7 +7,12 @@ final class WorkoutHistoryStarted extends WorkoutHistoryEvent {
 }
 
 final class WorkoutHistorySyncRequested extends WorkoutHistoryEvent {
-  const WorkoutHistorySyncRequested();
+  const WorkoutHistorySyncRequested({this.forceFullHistory = false});
+
+  /// One-shot Count window from mid-2022 (POC FALLBACK) — re-ask the watch
+  /// for workouts already past the incremental cursor. Still hint-gated
+  /// Data/Pace (no force-empty enrichment).
+  final bool forceFullHistory;
 }
 
 /// Reloads local workouts after Forget / sync invalidation (IndexedStack keeps

@@ -32,7 +32,9 @@ class _FakeRepo implements WorkoutHistoryRepository {
   Future<List<WorkoutSummary>> loadLocal() async => workouts;
 
   @override
-  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch() async =>
+  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch({
+    bool forceFullHistory = false,
+  }) async =>
       Right(workouts);
 
   @override
@@ -134,6 +136,15 @@ void main() {
       distanceM: 5000,
       calories: 400,
     ),
+    // Mixed outdoor can wire as Walk (type=1) — still on Run/Walk tab.
+    _workout(
+      number: 60,
+      type: 1,
+      startTime: DateTime(2026, 9, 9, 8, 26).millisecondsSinceEpoch ~/ 1000,
+      durationSec: 1300,
+      distanceM: 2100,
+      calories: 160,
+    ),
     _workout(
       number: 34,
       type: 140,
@@ -200,7 +211,7 @@ void main() {
 
     expect(find.byType(SportTabs), findsOneWidget);
     expect(find.text('Swim'), findsOneWidget);
-    expect(find.text('Run'), findsOneWidget);
+    expect(find.text('Run/Walk'), findsOneWidget);
     expect(find.text('Strength'), findsOneWidget);
     expect(find.text('Sessions'), findsOneWidget);
     expect(find.textContaining('2 · pool'), findsOneWidget);
@@ -233,17 +244,19 @@ void main() {
     expect(find.textContaining('1250'), findsWidgets);
   });
 
-  testWidgets('Run tab lists indoor and outdoor runs', (tester) async {
+  testWidgets('Run/Walk tab lists walk, indoor, and outdoor runs',
+      (tester) async {
     await pumpScreen(tester);
 
-    await tester.tap(find.text('Run'));
+    await tester.tap(find.text('Run/Walk'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('2 · run'), findsOneWidget);
+    expect(find.textContaining('3 · run/walk'), findsOneWidget);
+    expect(find.text('Walk · #60'), findsOneWidget);
     expect(find.text('Indoor run · #35'), findsOneWidget);
     expect(find.text('Run · #99'), findsOneWidget);
-    expect(find.text('1,000 m'), findsOneWidget);
-    expect(find.text('80'), findsOneWidget); // calories
+    expect(find.text('1.00 km'), findsOneWidget);
+    expect(find.text('PACE'), findsWidgets);
     expect(find.text('Pool swim · #11'), findsNothing);
     expect(find.textContaining('Strength ·'), findsNothing);
   });

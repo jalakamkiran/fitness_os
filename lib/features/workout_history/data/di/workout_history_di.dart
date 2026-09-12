@@ -7,6 +7,7 @@ import 'package:fitness_os/features/device_pairing/domain/repositories/device_pa
 import 'package:fitness_os/features/workout_history/data/gemini_coach_client.dart';
 import 'package:fitness_os/features/workout_history/data/qwen3_swim_reasoner.dart';
 import 'package:fitness_os/features/workout_history/data/repositories/workout_history_repository_impl.dart';
+import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
 import 'package:fitness_os/features/workout_history/data/workout_leftover_store.dart';
@@ -17,6 +18,9 @@ import 'package:fitness_os/features/workout_history/presentation/bloc/workout_hi
 ///
 /// Does **not** assign Forget wipe/prune — diagnostics_di composes that in U6.
 Future<void> initWorkoutHistoryDependencies(GetIt sl) async {
+  if (!sl.isRegistered<RunSessionStore>()) {
+    sl.registerLazySingleton<RunSessionStore>(RunSessionStore.new);
+  }
   if (!sl.isRegistered<WorkoutLeftoverStore>()) {
     sl.registerLazySingleton<WorkoutLeftoverStore>(WorkoutLeftoverStore.new);
   }
@@ -27,6 +31,7 @@ Future<void> initWorkoutHistoryDependencies(GetIt sl) async {
       prefs: sl<SharedPreferences>(),
       leftoverStore: sl<WorkoutLeftoverStore>(),
       onSyncSettled: () => sl<StoreInvalidation>().notify(),
+      runSessionStore: sl<RunSessionStore>(),
     ),
   );
 

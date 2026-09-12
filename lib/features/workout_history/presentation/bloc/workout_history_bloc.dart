@@ -68,7 +68,9 @@ class WorkoutHistoryBloc
       return;
     }
     emit(state.copyWith(phase: WorkoutHistoryPhase.syncing, clearMessage: true));
-    final result = await _repository.syncFromWatch();
+    final result = await _repository.syncFromWatch(
+      forceFullHistory: event.forceFullHistory,
+    );
     switch (result) {
       case Left(:final value):
         final stuck = value.message.toLowerCase().contains('stuck');
@@ -79,13 +81,16 @@ class WorkoutHistoryBloc
           ),
         );
       case Right(:final value):
+        final prefix = event.forceFullHistory ? 'Full-history sync: ' : '';
         emit(
           state.copyWith(
             phase: WorkoutHistoryPhase.idle,
             workouts: value,
             message: value.isEmpty
-                ? 'No workouts in range — complete a workout on the watch first'
-                : 'Synced ${value.length} workout(s)',
+                ? '${prefix}No workouts in Count window — watch may still '
+                    'treat older sessions as already synced'
+                : '$prefix'
+                    'Synced ${value.length} workout(s)',
           ),
         );
     }

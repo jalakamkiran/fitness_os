@@ -16,6 +16,9 @@ abstract final class GateAPrefs {
   static const lastR11Path = 'last_r11_winning_path';
   /// Bumped when swim segment wire parse changes; stamped after successful Sync.
   static const swimSegmentParserVersion = 'swim_segment_parser_version';
+  /// Bumped when run/session leftover+stream merge remap rules change.
+  /// Escape hatch for enrichment-monotonic leftover/scalar replacement.
+  static const runSessionParserVersion = 'run_session_parser_version';
   /// JSON list of synced workout summaries (Gate B local store).
   static const workoutsJson = 'workouts_json';
   /// JSON list of sleep session intervals (begin/end).
@@ -38,6 +41,14 @@ abstract final class GateAPrefs {
   static const sleepFeelOnWakeJson = 'sleep_feel_on_wake_json';
   /// Side-file subdir for canonical swim sessions (one JSON per workout #).
   static const canonicalSwimDir = 'workouts/canonical_swim';
+  /// Sport-agnostic Totals leftover TLV bodies (keyed by workout #).
+  static const workoutTotalsLeftoversDir = 'workouts/totals_leftovers';
+  /// Sport-agnostic WorkoutData sample page bodies (keyed by workout #).
+  static const workoutDataPagesDir = 'workouts/data_pages';
+  /// Sport-agnostic Pace block bodies (keyed by workout #).
+  static const workoutPaceBlocksDir = 'workouts/pace_blocks';
+  /// Temp-dir cache for Outdoor Run session AI exports (Forget wipe + verify).
+  static const runSessionExportsDir = 'run_session_exports';
   /// Native-persisted workout HR sample point files (path+counts on channel; never series).
   static const workoutHrSamplesDir = 'workouts/hr_samples';
   /// Dart-persisted Totals leftover / recovery-HR opaque blobs (len+path in prefs; never bodies).

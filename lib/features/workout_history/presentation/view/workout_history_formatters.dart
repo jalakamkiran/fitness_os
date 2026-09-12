@@ -20,7 +20,12 @@ String workoutTypeLabel(int type) =>
 
 bool isSwimWorkout(int type) => type == 6 || type == 8;
 
-bool isRunWorkout(int type) => type == 2 || type == 5;
+/// Land cardio for the Run/Walk tab: Walk (1), Outdoor Run (2), Indoor run (5).
+/// Mixed outdoor sessions sometimes wire as Walk when a walk segment dominates.
+bool isRunWorkout(int type) => type == 1 || type == 2 || type == 5;
+
+/// Outdoor Run (Totals/list type 2). Walk (1) / Indoor run (5) are never the Outdoor prove.
+bool isOutdoorRunWorkout(int type) => type == 2;
 
 bool isStrengthWorkout(int type) => type == 140;
 
@@ -69,6 +74,42 @@ String formatDistanceM(int? meters) {
   }
   return '${buf.toString()} m';
 }
+
+/// Product distance (`2.79 km`) — omit when unknown.
+String? formatDistanceKm(int? meters) {
+  if (meters == null || meters <= 0) return null;
+  final km = meters / 1000.0;
+  if (km >= 10) return '${km.toStringAsFixed(1)} km';
+  return '${km.toStringAsFixed(2)} km';
+}
+
+/// Average pace from distance + duration (`7'46"`).
+String? formatAvgPaceSecPerKm(int? distanceM, int durationSec) {
+  if (distanceM == null || distanceM <= 0 || durationSec <= 0) return null;
+  final secPerKm = (durationSec / (distanceM / 1000.0)).round();
+  return formatPaceSecPerKm(secPerKm);
+}
+
+/// Pace as `6'22"` /km style; null/non-positive → null.
+String? formatPaceSecPerKm(int? paceSec) {
+  if (paceSec == null || paceSec <= 0) return null;
+  final m = paceSec ~/ 60;
+  final s = paceSec % 60;
+  return "$m'${s.toString().padLeft(2, '0')}\"";
+}
+
+/// Compact duration for run/strength heroes (`21:40`, `53m`).
+String? formatDurationHero(int sec) {
+  if (sec <= 0) return null;
+  if (sec < 3600) return formatDurationClock(sec);
+  final h = sec ~/ 3600;
+  final m = (sec % 3600) ~/ 60;
+  if (m > 0) return '${h}h ${m}m';
+  return '${h}h';
+}
+
+/// Outdoor land (Walk / Outdoor Run) — not Indoor run (5).
+bool isOutdoorLandWorkout(int type) => type == 1 || type == 2;
 
 String workoutSessionTitle(WorkoutSummary w) {
   final label = workoutTypeLabel(w.type);

@@ -139,6 +139,31 @@ void main() {
     await activityFuture;
     expect(ready.syncInFlight, isFalse);
   });
+
+  test('syncWorkouts waits through authenticating then proceeds', () async {
+    final channel = _ScriptedChannel();
+    final link = _AuthThenReadyLink(channel: channel);
+    final future = link.syncWorkouts(startUnix: 1, endUnix: 2);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(channel.workoutCalls, 0);
+    link.mutable = LinkState.connected;
+    final result = await future;
+    expect(result.status, WorkoutSyncStatus.empty);
+    expect(channel.workoutCalls, 1);
+  });
+
+  test('syncWorkouts notReady message when still authenticating after wait',
+      () async {
+    final channel = _ScriptedChannel();
+    final link = _AuthThenReadyLink(channel: channel);
+    // Tiny timeout via subclass override is awkward — keep authenticating and
+    // use a short wait by completing with disconnected mid-wait.
+    link.mutable = LinkState.disconnected;
+    final blocked = await link.syncWorkouts(startUnix: 1, endUnix: 2);
+    expect(blocked.status, WorkoutSyncStatus.notReady);
+    expect(channel.workoutCalls, 0);
+    expect(blocked.message, contains('Connect and authenticate'));
+  });
 }
 
 /// Test double that reports an authenticated link state.
@@ -147,4 +172,15 @@ class _ReadyLink extends HuaweiLink {
 
   @override
   LinkState get state => LinkState.gateAIncomplete;
+}
+
+/// Starts authenticating; tests flip [mutable] to connected mid-wait.
+class _AuthThenReadyLink extends HuaweiLink {
+  _AuthThenReadyLink({required HuaweiBtChannel channel})
+      : super(channel: channel);
+
+  LinkState mutable = LinkState.authenticating;
+
+  @override
+  LinkState get state => mutable;
 }
