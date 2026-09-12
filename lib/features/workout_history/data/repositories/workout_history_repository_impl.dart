@@ -13,8 +13,10 @@ import 'package:fitness_os/features/workout_history/data/run_session_store.dart'
 import 'package:fitness_os/features/workout_history/data/workout_leftover_store.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
+import 'package:fitness_os/features/workout_history/domain/strength_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_style_capability_log.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
+import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -71,7 +73,7 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   /// the watch still holds Outdoor Runs older than the incremental cursor
   /// (Sep 9 missed after cursor advanced to Sep 10+). Still hint-gated
   /// Data/Pace (no force-empty enrichment).
-  static const currentRunSessionParserVersion = 3;
+  static const currentRunSessionParserVersion = 4;
 
   /// Same floor GB / POC used for first full-history Count testing.
   static const fullHistoryStartUnix = 1_654_819_200; // 2022-06-10
@@ -88,6 +90,12 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
 
   @override
   Future<List<WorkoutSummary>> loadLocal() async {
+    final list = await _readRawLocal();
+    return _promoteStrengthScalarsFromSideFiles(list);
+  }
+
+  /// Prefs-only decode — no leftover promotion (used mid-merge).
+  Future<List<WorkoutSummary>> _readRawLocal() async {
     final raw = _prefs.getString(GateAPrefs.workoutsJson);
     if (raw == null || raw.isEmpty) return const [];
     try {
@@ -100,6 +108,72 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     } catch (_) {
       return const [];
     }
+  }
+
+  /// Promote Load / Recovery / TE from Totals leftovers when prefs scalars are
+  /// null (pre-strength Sync left tags `0x0d` / `0x11` unparsed).
+  Future<List<WorkoutSummary>> _promoteStrengthScalarsFromSideFiles(
+    List<WorkoutSummary> workouts, {
+    bool persist = true,
+  }) async {
+    var changed = false;
+    final out = <WorkoutSummary>[];
+    for (final w in workouts) {
+      if (!isStrengthWorkout(w.type) ||
+          (w.load != null &&
+              w.recoveryTime != null &&
+              w.aerobicEffect != null &&
+              w.anaerobicEffect != null)) {
+        out.add(w);
+        continue;
+      }
+
+      List<LeftoverTlvBody> bodies = const [];
+      try {
+        bodies = await _runSessionStore.loadTotalsLeftovers(w.number);
+      } catch (_) {
+        // path_provider may be unavailable in unit tests.
+      }
+
+      Uint8List? bytes;
+      final path = w.leftoverPath;
+      if (path != null && path.isNotEmpty) {
+        bytes = await _leftoverStore.loadAtRelativePath(path);
+      } else if ((w.leftoverLen ?? 0) > 0 || w.leftoverPresent == true) {
+        bytes = await _leftoverStore.load(
+          workoutNumber: w.number,
+          startTime: w.startTime,
+        );
+      }
+
+      final next = promoteStrengthScalarsFromLeftovers(
+        w,
+        leftoverBodies: bodies,
+        leftoverBytes: bytes,
+      );
+      if (next.load != w.load ||
+          next.recoveryTime != w.recoveryTime ||
+          next.aerobicEffect != w.aerobicEffect ||
+          next.anaerobicEffect != w.anaerobicEffect ||
+          next.trainingPoints != w.trainingPoints) {
+        changed = true;
+        FosHuaweiLog.i(
+          'strength scalar promote number=${w.number} '
+          'load=${next.load} recovery=${next.recoveryTime} '
+          'aerobic=${next.aerobicEffect} anaerobic=${next.anaerobicEffect}',
+          op: 'sync',
+        );
+      }
+      out.add(next);
+    }
+
+    if (persist && changed && _gateStillPassed()) {
+      await _prefs.setString(
+        GateAPrefs.workoutsJson,
+        jsonEncode(out.map((w) => w.toJson()).toList()),
+      );
+    }
+    return out;
   }
 
   @override
@@ -280,7 +354,8 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
       ServerFailure(
         result.message ??
             switch (result.status) {
-              WorkoutSyncStatus.notReady => 'Session not ready — reconnect',
+              WorkoutSyncStatus.notReady =>
+                'Watch still connecting — wait until linked, then Force Sync again',
               WorkoutSyncStatus.busy => 'Another Sync is already in progress',
               WorkoutSyncStatus.stuck => 'Sync stuck — disconnect and reconnect',
               WorkoutSyncStatus.partialBatch =>
@@ -571,7 +646,7 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
         return const [];
       }
 
-      final existing = await loadLocal();
+      final existing = await _readRawLocal();
       final byNumber = <int, WorkoutSummary>{
         for (final w in existing) w.number: w,
       };
@@ -611,6 +686,13 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
       final merged = byNumber.values.toList()
         ..sort((a, b) => b.startTime.compareTo(a.startTime));
 
+      // Repair strength Load/Recovery from leftovers before prefs commit when
+      // this Sync did not re-deliver those scalars (delta miss / old parse).
+      final promoted = await _promoteStrengthScalarsFromSideFiles(
+        merged,
+        persist: false,
+      );
+
       // TOCTOU vs Forget: re-check immediately before prefs commit.
       if (!_gateStillPassed()) {
         _lastLeftoverPersistLanded = false;
@@ -619,7 +701,7 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
 
       await _prefs.setString(
         GateAPrefs.workoutsJson,
-        jsonEncode(merged.map((w) => w.toJson()).toList()),
+        jsonEncode(promoted.map((w) => w.toJson()).toList()),
       );
 
       // If Forget cleared Gate A during setString, roll back the index write.
@@ -667,14 +749,14 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
           return const [];
         }
         var maxEnd = 0;
-        for (final w in merged) {
+        for (final w in promoted) {
           if (w.endTime > maxEnd) maxEnd = w.endTime;
         }
         if (maxEnd > 0) {
           await _prefs.setInt(GateAPrefs.lastSyncCursor, maxEnd + 1);
         }
       }
-      return merged;
+      return promoted;
     } finally {
       _mergeInFlight = false;
     }
