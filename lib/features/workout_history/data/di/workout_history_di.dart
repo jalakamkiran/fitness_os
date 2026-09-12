@@ -11,10 +11,11 @@ import 'package:fitness_os/features/workout_history/data/run_session_store.dart'
 import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
 import 'package:fitness_os/features/workout_history/data/workout_leftover_store.dart';
+import 'package:fitness_os/features/workout_history/data/workout_tcx_export_service.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_bloc.dart';
 
-/// Registers workout stores, repository, reasoner, and strength export service.
+/// Registers workout stores, repository, reasoner, strength export, and TCX export.
 ///
 /// Does **not** assign Forget wipe/prune — diagnostics_di composes that in U6.
 Future<void> initWorkoutHistoryDependencies(GetIt sl) async {
@@ -65,6 +66,19 @@ Future<void> initWorkoutHistoryDependencies(GetIt sl) async {
   if (!sl.isRegistered<SwimReasonerService>()) {
     sl.registerLazySingleton<SwimReasonerService>(
       () => SwimReasonerService(qwen3: sl()),
+    );
+  }
+
+  if (!sl.isRegistered<WorkoutTcxExportService>()) {
+    sl.registerLazySingleton<WorkoutTcxExportService>(
+      () {
+        final pairing = sl<DevicePairingRepository>();
+        return WorkoutTcxExportService(
+          isForgetInFlight: () => pairing is DevicePairingRepositoryImpl
+              ? pairing.forgetInFlight
+              : false,
+        );
+      },
     );
   }
 
