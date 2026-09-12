@@ -75,6 +75,8 @@ WorkoutSummary _workout({
   int? distanceM,
   int? avgSwolf,
   int? calories,
+  int? load,
+  int? recoveryTime,
   String? sessionFlag,
 }) {
   return WorkoutSummary(
@@ -86,6 +88,8 @@ WorkoutSummary _workout({
     distanceM: distanceM,
     avgSwolf: avgSwolf,
     calories: calories,
+    load: load,
+    recoveryTime: recoveryTime,
     sessionFlag: sessionFlag,
   );
 }
@@ -136,6 +140,8 @@ void main() {
       startTime: DateTime(2026, 8, 11, 18, 0).millisecondsSinceEpoch ~/ 1000,
       durationSec: 2850,
       calories: 220,
+      load: 12,
+      recoveryTime: 60,
     ),
   ];
 
@@ -250,6 +256,11 @@ void main() {
 
     expect(find.textContaining('1 · strength'), findsOneWidget);
     expect(find.text('Strength · #34'), findsOneWidget);
+    expect(find.text('LOAD'), findsOneWidget);
+    expect(find.text('RECOVERY'), findsOneWidget);
+    expect(find.text('CAL'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
+    expect(find.text('1h'), findsOneWidget);
     expect(find.text('220'), findsOneWidget);
     expect(find.text('Indoor run · #35'), findsNothing);
     expect(find.text('Pool swim · #11'), findsNothing);

@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
+import 'package:fitness_os/features/workout_history/domain/strength_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_bloc.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_event.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_state.dart';
@@ -15,6 +16,13 @@ import 'package:fitness_os/features/workout_history/presentation/view/workout_hi
 import 'package:fitness_os/features/workout_history/presentation/widgets/sport_tabs.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/workout_session_row.dart';
 
+List<({String label, String value})> strengthSessionMeta(WorkoutSummary w) {
+  return [
+    (label: 'Load', value: w.load?.toString() ?? '—'),
+    (label: 'Recovery', value: formatRecoveryMinutes(w.recoveryTime) ?? '—'),
+    (label: 'Cal', value: w.calories?.toString() ?? '—'),
+  ];
+}
 class WorkoutHistoryScreen extends StatelessWidget {
   const WorkoutHistoryScreen({
     super.key,
@@ -119,8 +127,8 @@ class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
         content: Text(
           'This creates a JSON file of $sessionCount strength session'
           '${sessionCount == 1 ? '' : 's'} stored on this device, including '
-          'leftover Totals bytes, HR sample points, and recovery-HR blobs '
-          'when present. It contains non-anonymized health data. '
+          'session totals and heart-rate samples when available. '
+          'It contains non-anonymized health data. '
           'After you share it, recipients may keep copies — deleting the '
           'export cache does not revoke shared copies.',
         ),
@@ -302,6 +310,7 @@ class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
                       thirdLabel: 'Calories',
                       thirdValue: (w) =>
                           w.calories == null ? '—' : '${w.calories}',
+                      metaColumns: strengthSessionMeta,
                       allSessionsExport: _StrengthAllSessionsExport(
                         workouts: state.workouts,
                         exportBusy: _exportBusy || _serviceBusy,
@@ -380,6 +389,7 @@ class _SportSessionPanel extends StatelessWidget {
     required this.emptyBody,
     required this.thirdLabel,
     required this.thirdValue,
+    this.metaColumns,
     this.allSessionsExport,
   });
 
@@ -389,6 +399,8 @@ class _SportSessionPanel extends StatelessWidget {
   final String emptyBody;
   final String thirdLabel;
   final String Function(WorkoutSummary workout) thirdValue;
+  final List<({String label, String value})> Function(WorkoutSummary workout)?
+      metaColumns;
   final Widget? allSessionsExport;
 
   @override
@@ -440,6 +452,7 @@ class _SportSessionPanel extends StatelessWidget {
               workout: filtered[i],
               thirdLabel: thirdLabel,
               thirdValue: thirdValue(filtered[i]),
+              metaColumns: metaColumns?.call(filtered[i]),
               onTap: () => WorkoutDetailRoute.go(context, filtered[i]),
             ),
           ],

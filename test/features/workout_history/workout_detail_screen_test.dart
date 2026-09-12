@@ -36,6 +36,10 @@ void main() {
       calories: 220,
       hrMin: 90,
       hrMax: 150,
+      load: 12,
+      recoveryTime: 60,
+      aerobicEffect: 9,
+      anaerobicEffect: 0,
     );
   }
 
@@ -67,6 +71,7 @@ void main() {
           exportOverride: exportOverride,
           exportBusyOverride: exportBusyOverride ?? () => false,
           shareExport: shareExport,
+          historyOverride: const [],
         ),
         routes: {
           '/coach_settings': (_) => const CoachSettingsScreen(
@@ -110,15 +115,19 @@ void main() {
 
     expect(find.byTooltip('Export this session'), findsOneWidget);
     expect(find.byTooltip('Reasoner settings'), findsNothing);
-    expect(find.textContaining('Recovery'), findsNothing);
+    expect(find.text('TRAINING LOAD'), findsOneWidget);
+    expect(find.text('RECOVERY TIME'), findsOneWidget);
+    expect(find.text('1h'), findsWidgets);
     expect(find.textContaining('recovery %'), findsNothing);
+    expect(find.textContaining('Recovery %'), findsNothing);
+    expect(find.text('Export session'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Export this session'));
     await tester.pump();
     expect(find.text('Export this session?'), findsOneWidget);
-    expect(find.textContaining('leftover Totals bytes'), findsOneWidget);
-    expect(find.textContaining('HR sample'), findsOneWidget);
-    expect(find.textContaining('recovery-HR'), findsOneWidget);
+    expect(find.textContaining('session totals'), findsOneWidget);
+    expect(find.textContaining('heart-rate samples'), findsOneWidget);
+    expect(find.textContaining('leftover'), findsNothing);
     expect(find.textContaining('recipients may keep copies'), findsOneWidget);
 
     await tester.tap(find.text('Cancel'));
