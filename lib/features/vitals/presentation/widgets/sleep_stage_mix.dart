@@ -115,7 +115,7 @@ class SleepStageMixBars extends StatelessWidget {
           ),
         ],
         Text(
-          'provisional stage mapping · message path SoT',
+          'provisional stage mapping · TruSleep stages',
           style: FathomTextStyles.mono(
             fontSize: 11,
             color: colors.inkFaint,

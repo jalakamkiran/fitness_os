@@ -93,7 +93,7 @@ recent calendar-night + merge near-adjacent fragments. Stages still live in mess
 
 ### Diagnostic `sleep_data` observe (POC — not product Sync)
 
-Post-Sync debug MethodChannel `probePhysioCapture` may download `sleep_data.bin` when overnight-summary dict targets remain unmet. Product Sync **still** downloads `sleep_state.bin` only.
+Post-Sync debug MethodChannel `probePhysioCapture` may download `sleep_data.bin` when overnight-summary dict targets remain unmet. Product Sync downloads `sleep_state.bin` **and** SEQUENCE_DATA (`sequence_data` / `0x16` / dictId `700013`).
 
 | Rule | Detail |
 |------|--------|
@@ -109,8 +109,9 @@ Live structure inventory (`capture:POC-2026-08-16-physio-probe`):
 | Transfer | `status=present` `len=68172` |
 | Overnight-summary keys | **empty** (ASCII runs were noise, not JSON keys) |
 | Tag histogram | `t=188:n=1:len=32287`, `t=104:n=1:len=25962`, `t=34:n=1:len=6516`, `t=2:n=17:len=1773`, `t=199:n=1:len=568`, `t=0:n=1:len=512` |
-| Dict invents | name+type `0x00` absent; name+type `0x0f` **aliases** `sleep_data.bin` |
-| Product Sync | still `sleep_state.bin` only |
+| Dict invents (Aug 2026) | name+type `0x00` absent; name+type `0x0f` **aliases** `sleep_data.bin` — **wrong invent** vs HarmonyOS 5+ path |
+| SEQUENCE_DATA invent | **present** `capture:POC-2026-09-12-seq-dict` — basename `sequence_data`, type `0x16`, dictId `700013`, len=12146; overnightKeys include score/HRV/HR/RR/SpO₂; stages = `(durSec LE, stage LE)` with 1=Light 2=REM 3=Deep 4=Awake |
+| Product Sync | `sleep_state.bin` (SoT windows) **+** `sequence_data` / type `0x16` / dictId `700013` (summary + stages). SEQUENCE body is parsed then wiped; Flutter prefers SEQUENCE `productStages` (remapped wireType 1=Light 2=Deep 3=REM 4=Awake) over thin message-path `0x0D`. Summary scalars live in enrich side-files (`trusleepSummary`), not prefs. FileDownload always uses ≥14d window even when message Sync is incremental — a ~1d SEQUENCE pull returns a stub (`len≈500`, `score=0`) that must not wipe prior detail. |
 | Class | file-present ≠ overnight-summary `present`; large tags = blob, not Huawhoop dict |
 
 ---

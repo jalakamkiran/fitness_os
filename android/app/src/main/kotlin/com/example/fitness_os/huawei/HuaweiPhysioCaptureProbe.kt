@@ -6,7 +6,11 @@ import android.util.Log
  * Post-Sync diagnostic orchestrator for overnight physio capture (dict → sleep_data →
  * optional path-2). Privacy-safe maps only — never feeds Flutter TruSleep SoT.
  *
- * Inventory candidates (U1): cand-fd-seq-path, cand-fd-sleep-details, cand-fu-sequence-listen.
+ * Primary invent (HarmonyOS 5+ TruSleep stages/summaries): SEQUENCE_DATA `0x16` +
+ * dict class `700013` on basename `sequence_data`.
+ *
+ * Legacy invents (Aug 2026 POC — wrong wire shape; kept for ABSENT regression):
+ * UTF-8 `sequence_data/SLEEP_DETAILS` / `SLEEP_DETAILS` with type `0x00`/`0x0f`.
  */
 class HuaweiPhysioCaptureProbe(
     private val fileDownload: () -> HuaweiFileDownload,
@@ -34,7 +38,8 @@ class HuaweiPhysioCaptureProbe(
             val transport: String,
         )
 
-        val DICT_FD_CANDIDATES = listOf(
+        /** Legacy filename invents — not the SEQUENCE_DATA+dictId path. */
+        val LEGACY_DICT_FD_CANDIDATES = listOf(
             DictCandidate(
                 id = "cand-fd-seq-path",
                 route = "sequence_data/SLEEP_DETAILS",
@@ -46,12 +51,17 @@ class HuaweiPhysioCaptureProbe(
                 transport = "FD-0x2c-pull",
             ),
         )
+
+        @Deprecated("Use LEGACY_DICT_FD_CANDIDATES; primary path is SEQUENCE_DATA+dictId")
+        val DICT_FD_CANDIDATES = LEGACY_DICT_FD_CANDIDATES
     }
 
     data class Options(
         val includeDict: Boolean = true,
         val includeSleepData: Boolean = true,
         val includePath2Intervals: Boolean = false,
+        /** Re-run Aug-2026 wrong invents after the SEQUENCE_DATA primary. */
+        val includeLegacyDictInvents: Boolean = true,
         val startUnix: Int = 0,
         val endUnix: Int = (System.currentTimeMillis() / 1000L).toInt(),
     )
@@ -63,38 +73,68 @@ class HuaweiPhysioCaptureProbe(
 
         if (options.includeDict) {
             val dl = fileDownload()
-            val fdTypePasses = listOf(
-                DICT_FILETYPE_PROBE to "",
-                HuaweiFileDownload.TYPE_SLEEP_DATA to "-type0f",
+
+            // Primary: SEQUENCE_DATA + SLEEP_DETAILS dict class (HarmonyOS 5+ path).
+            val primary = dl.downloadSleepDetailsSequenceObserve(
+                startUnix = options.startUnix,
+                endUnix = options.endUnix,
             )
-            for (cand in DICT_FD_CANDIDATES) {
-                for ((fileType, idSuffix) in fdTypePasses) {
-                    val candidateId = cand.id + idSuffix
-                    val observed = dl.downloadDiagnosticNamedFileObserve(
-                        fileName = cand.route,
-                        fileType = fileType,
-                        shortId = candidateId,
-                        startUnix = options.startUnix,
-                        endUnix = options.endUnix,
-                    )
-                    val row = buildMap<String, Any?> {
-                        put("candidateId", candidateId)
-                        put("route", cand.route)
-                        put("fileType", fileType.toInt() and 0xFF)
-                        put("transport", cand.transport)
-                        putAll(observed.toMap())
+            dictAttempts.add(
+                buildMap {
+                    put("candidateId", "cand-fd-seq-dict")
+                    put("route", HuaweiFileDownload.FILE_SEQUENCE_DATA)
+                    put("fileType", HuaweiFileDownload.TYPE_SEQUENCE_DATA.toInt() and 0xFF)
+                    put("dictId", HuaweiFileDownload.DICT_SLEEP_DETAILS_CLASS)
+                    put("transport", "FD-0x2c-sequence-dict")
+                    putAll(primary.toMap())
+                },
+            )
+            Log.i(
+                TAG,
+                "physio-probe dict candidate=cand-fd-seq-dict " +
+                    "fileType=${HuaweiFileDownload.TYPE_SEQUENCE_DATA.toInt() and 0xFF} " +
+                    "dictId=${HuaweiFileDownload.DICT_SLEEP_DETAILS_CLASS} " +
+                    "status=${primary.status} len=${primary.len} " +
+                    "overnightKeys=${primary.overnightSummaryKeys}",
+            )
+            overnightKeys.addAll(primary.overnightSummaryKeys)
+            unmetOvernight = overnightKeys.isEmpty()
+
+            // Legacy invents only if primary did not already close overnight summaries.
+            if (options.includeLegacyDictInvents && unmetOvernight) {
+                val fdTypePasses = listOf(
+                    DICT_FILETYPE_PROBE to "",
+                    HuaweiFileDownload.TYPE_SLEEP_DATA to "-type0f",
+                )
+                for (cand in LEGACY_DICT_FD_CANDIDATES) {
+                    for ((fileType, idSuffix) in fdTypePasses) {
+                        val candidateId = cand.id + idSuffix
+                        val observed = dl.downloadDiagnosticNamedFileObserve(
+                            fileName = cand.route,
+                            fileType = fileType,
+                            shortId = candidateId,
+                            startUnix = options.startUnix,
+                            endUnix = options.endUnix,
+                        )
+                        val row = buildMap<String, Any?> {
+                            put("candidateId", candidateId)
+                            put("route", cand.route)
+                            put("fileType", fileType.toInt() and 0xFF)
+                            put("transport", cand.transport)
+                            putAll(observed.toMap())
+                        }
+                        dictAttempts.add(row)
+                        Log.i(
+                            TAG,
+                            "physio-probe dict candidate=$candidateId " +
+                                "fileType=${fileType.toInt() and 0xFF} " +
+                                "status=${observed.status} len=${observed.len} " +
+                                "overnightKeys=${observed.overnightSummaryKeys}",
+                        )
+                        overnightKeys.addAll(observed.overnightSummaryKeys)
                     }
-                    dictAttempts.add(row)
-                    Log.i(
-                        TAG,
-                        "physio-probe dict candidate=$candidateId fileType=${fileType.toInt() and 0xFF} " +
-                            "status=${observed.status} len=${observed.len} " +
-                            "overnightKeys=${observed.overnightSummaryKeys}",
-                    )
-                    overnightKeys.addAll(observed.overnightSummaryKeys)
-                    // Typed overnight-summary present requires overnightSummaryKeys non-empty.
-                    // Huawhoop name equality alone (redactedKeys) is not enough.
                 }
+                unmetOvernight = overnightKeys.isEmpty()
             }
 
             val fu = listenFeatureUploadSequence(FU_LISTEN_TIMEOUT_MS)

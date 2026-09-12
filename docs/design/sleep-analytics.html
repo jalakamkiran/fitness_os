@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fathom — Sleep analytics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="home-prototype/styles.css" />
+  <link rel="stylesheet" href="swim-analytics.css" />
+  <link rel="stylesheet" href="sleep-analytics.css" />
+</head>
+<body class="analytics-page sleep-page">
+  <button class="theme fixed-theme" id="themeToggle" type="button">Dark</button>
+
+  <div class="stage analytics-stage sleep-stage" id="stage">
+    <!-- ========== SLEEP TAB ========== -->
+    <div class="phone-tab-wrap">
+      <p class="phone-label">01 · Sleep tab</p>
+      <div class="phone" id="phoneTab">
+        <header class="app-header">
+          <div class="brand">
+            <span class="brand-mark">F</span>
+            <div>
+              <p class="brand-title">Recovery</p>
+              <p class="brand-sub mono">Sleep · overnight truth</p>
+            </div>
+          </div>
+          <button class="theme-toggle" id="themeTogglePhone" type="button">Dark</button>
+        </header>
+
+        <div class="subtabs" role="tablist" aria-label="Recovery">
+          <button type="button">Vitals</button>
+          <button type="button" class="active" aria-current="page">Sleep</button>
+        </div>
+
+        <main class="scroll">
+          <span class="sl-sync"><span class="dot" aria-hidden="true"></span>Synced · TruSleep</span>
+
+          <section class="sl-card" aria-label="Tonight">
+            <p class="sl-kicker">Today · overnight</p>
+            <div class="sl-hero">
+              <div>
+                <p class="score">84</p>
+                <p class="score-meta"><strong>TruSleep score</strong><br />vs 7-day avg 76 · +8</p>
+              </div>
+              <div class="duration">
+                <span class="big">6h 37m</span>
+                <span class="sub">02:54 → 09:31</span>
+              </div>
+            </div>
+            <div class="sl-glance">
+              <div class="cell"><span class="v">98%</span><span class="l">Eff</span></div>
+              <div class="cell"><span class="v">8m</span><span class="l">Latency</span></div>
+              <div class="cell"><span class="v">88</span><span class="l">Deep cont.</span></div>
+              <div class="cell"><span class="v">06:12</span><span class="l">Mid-sleep</span></div>
+            </div>
+            <a class="sl-cta" href="#detail" id="openDetail">View night details <span class="chev">→</span></a>
+          </section>
+
+          <section class="sl-card" aria-label="Seven-night timing">
+            <p class="sl-kicker">Sleep timing · 7 nights</p>
+            <div class="sl-timing">
+              <div class="sl-timing-axis" aria-hidden="true">
+                <span>00:00</span>
+                <span>03:00</span>
+                <span>06:00</span>
+                <span>09:00</span>
+                <span>12:00</span>
+              </div>
+              <div class="sl-timing-bars" aria-hidden="true">
+                <!-- top% = bedtime on 00→12 axis; height = duration -->
+                <div class="day">
+                  <div class="rail">
+                    <div class="tib" style="top:22%;height:52%"></div>
+                    <div class="asleep" style="top:26%;height:44%"></div>
+                  </div>
+                  <span class="lbl">S</span>
+                </div>
+                <div class="day">
+                  <div class="rail">
+                    <div class="tib" style="top:18%;height:58%"></div>
+                    <div class="asleep" style="top:22%;height:48%"></div>
+                    <div class="wake-gap" style="top:48%;height:4%"></div>
+                  </div>
+                  <span class="lbl">M</span>
+                </div>
+                <div class="day">
+                  <div class="rail">
+                    <div class="tib" style="top:28%;height:48%"></div>
+                    <div class="asleep" style="top:32%;height:40%"></div>
+                  </div>
+                  <span class="lbl">T</span>
+                </div>
+                <div class="day">
+                  <div class="rail">
+                    <div class="tib" style="top:20%;height:55%"></div>
+                    <div class="asleep" style="top:24%;height:46%"></div>
+                  </div>
+                  <span class="lbl">W</span>
+                </div>
+                <div class="day">
+                  <div class="rail">
+                    <div class="tib" style="top:24%;height:50%"></div>
+                    <div class="asleep" style="top:28%;height:42%"></div>
+                  </div>
+                  <span class="lbl">T</span>
+                </div>
+                <div class="day">
+                  <div class="rail">
+                    <div class="tib" style="top:16%;height:60%"></div>
+                    <div class="asleep" style="top:20%;height:50%"></div>
+                  </div>
+                  <span class="lbl">F</span>
+                </div>
+                <div class="day today">
+                  <div class="rail">
+                    <div class="tib" style="top:24%;height:55%"></div>
+                    <div class="asleep" style="top:26%;height:50%"></div>
+                    <div class="wake-gap" style="top:52%;height:2%"></div>
+                  </div>
+                  <span class="lbl">S</span>
+                </div>
+              </div>
+            </div>
+            <div class="sl-legend">
+              <span><i style="background:color-mix(in srgb, var(--accent) 22%, transparent)"></i>Time in bed</span>
+              <span><i style="background:var(--accent)"></i>Asleep</span>
+              <span><i style="background:var(--bg-elev);outline:1px solid var(--line)"></i>Awake gap</span>
+            </div>
+          </section>
+
+          <section class="sl-card" aria-label="Recovery signals">
+            <p class="sl-kicker">Overnight signals · 7-day band</p>
+            <div class="sl-trends">
+              <div class="sl-spark">
+                <h4>Score</h4>
+                <span class="now">84</span><span class="delta">↑ baseline</span>
+                <svg viewBox="0 0 120 44" preserveAspectRatio="none" aria-hidden="true">
+                  <rect x="0" y="14" width="120" height="12" fill="var(--band)" rx="2" />
+                  <polyline fill="none" stroke="var(--accent)" stroke-width="2"
+                    points="0,28 20,24 40,30 60,18 80,22 100,16 120,10" />
+                </svg>
+                <p class="cap">Band = 7d mean ± ½ SD</p>
+              </div>
+              <div class="sl-spark">
+                <h4>Sleep HRV</h4>
+                <span class="now">22</span><span class="delta down">↓ −3</span>
+                <svg viewBox="0 0 120 44" preserveAspectRatio="none" aria-hidden="true">
+                  <rect x="0" y="16" width="120" height="12" fill="var(--band)" rx="2" />
+                  <polyline fill="none" stroke="var(--ink)" stroke-width="2"
+                    points="0,20 20,18 40,22 60,16 80,24 100,20 120,26" />
+                </svg>
+                <p class="cap">Night average · ms</p>
+              </div>
+            </div>
+          </section>
+
+              <section class="sl-card" aria-label="Advanced sleep metrics">
+            <p class="sl-kicker">Advanced sleep metrics · unlocked</p>
+            <div class="sl-glance dense">
+              <div class="cell"><span class="v">8m</span><span class="l">Latency</span></div>
+              <div class="cell"><span class="v">88</span><span class="l">Deep cont.</span></div>
+              <div class="cell"><span class="v">98%</span><span class="l">Eff</span></div>
+              <div class="cell"><span class="v">22</span><span class="l">HRV</span></div>
+              <div class="cell"><span class="v">77</span><span class="l">Sleep HR</span></div>
+              <div class="cell"><span class="v">17</span><span class="l">RR</span></div>
+              <div class="cell"><span class="v">96%</span><span class="l">SpO₂</span></div>
+              <div class="cell"><span class="v">141m</span><span class="l">Light</span></div>
+              <div class="cell"><span class="v">140m</span><span class="l">Deep</span></div>
+              <div class="cell"><span class="v">116m</span><span class="l">REM</span></div>
+              <div class="cell"><span class="v">7m</span><span class="l">Awake</span></div>
+              <div class="cell"><span class="v">02:46</span><span class="l">Bed</span></div>
+            </div>
+            <p class="sl-note" style="margin-top:12px">
+              From TruSleep SEQUENCE: landmarks, latency, deep continuity
+              (not deep minutes), efficiency, overnight ANS averages, stage mix.
+              Still deferred: intra-night waveforms, movement, breathing disturbance, unlabeled field IDs.
+            </p>
+            <a class="sl-cta" href="#detail">Open night details <span class="chev">→</span></a>
+          </section>
+
+          <section class="sl-card sl-survey" aria-label="Feel on wake">
+            <p class="sl-kicker">Feel on wake · Hooper</p>
+            <p>How do you feel waking up?</p>
+            <div class="opts">
+              <button type="button"><span class="emo" aria-hidden="true">😫</span><span>Awful</span></button>
+              <button type="button"><span class="emo" aria-hidden="true">😕</span><span>Meh</span></button>
+              <button type="button"><span class="emo" aria-hidden="true">😐</span><span>Okay</span></button>
+              <button type="button"><span class="emo" aria-hidden="true">🙂</span><span>Good</span></button>
+              <button type="button"><span class="emo" aria-hidden="true">😄</span><span>Great</span></button>
+            </div>
+            <p class="hint">Subjective still required — biomarkers alone don’t decide readiness.</p>
+          </section>
+
+          <section class="sl-card" aria-label="Recent nights">
+            <p class="sl-kicker">Recent nights</p>
+            <div class="sl-nights">
+              <a class="sl-night" href="#detail">
+                <div>
+                  <span class="when">Sat 12 Sep</span>
+                  <span class="meta">02:54–09:31 · overnight</span>
+                </div>
+                <span class="dur">6h 37m</span>
+                <span class="sc">84</span>
+              </a>
+              <a class="sl-night" href="#detail">
+                <div>
+                  <span class="when">Fri 11 Sep</span>
+                  <span class="meta">01:48–08:52 · overnight</span>
+                </div>
+                <span class="dur">6h 42m</span>
+                <span class="sc">79</span>
+              </a>
+              <a class="sl-night nap" href="#detail">
+                <div>
+                  <span class="when">Thu 10 Sep</span>
+                  <span class="meta">14:12–14:48 · nap</span>
+                </div>
+                <span class="dur">36m</span>
+                <span class="sc">nap</span>
+              </a>
+              <a class="sl-night" href="#detail">
+                <div>
+                  <span class="when">Thu 10 Sep</span>
+                  <span class="meta">00:55–07:40 · overnight</span>
+                </div>
+                <span class="dur">6h 12m</span>
+                <span class="sc">72</span>
+              </a>
+            </div>
+          </section>
+
+          <a class="sl-card sl-link-row" href="#history">
+            Sleep history
+            <span>Browse by month →</span>
+          </a>
+        </main>
+
+        <nav class="tabbar" aria-label="Primary">
+          <a class="tab" href="home-prototype/"><span>⌂</span>Home</a>
+          <a class="tab active" href="sleep-analytics.html" aria-current="page"><span>◉</span>Recovery</a>
+          <a class="tab" href="workouts-tab.html"><span>≡</span>Workouts</a>
+        </nav>
+      </div>
+    </div>
+
+    <!-- ========== SLEEP DETAIL ========== -->
+    <div class="phone-detail-wrap" id="detail">
+      <p class="phone-label">02 · Sleep detail</p>
+      <div class="phone" id="phoneDetail">
+        <header class="app-header">
+          <a class="icon-round" href="#tab" id="backTab" aria-label="Back">←</a>
+          <div class="brand">
+            <span class="brand-mark">F</span>
+            <div>
+              <p class="brand-title">Sleep</p>
+              <p class="brand-sub mono">Session · TruSleep</p>
+            </div>
+          </div>
+          <button class="theme-toggle" id="themeTogglePhone2" type="button">Dark</button>
+        </header>
+
+        <main class="scroll">
+          <section class="sl-detail-head">
+            <h2 class="date">Sat 12 Sep</h2>
+            <p class="window">02:54 → 09:31 · overnight · 6h 37m asleep</p>
+          </section>
+
+          <section class="sl-card" aria-label="Score">
+            <div class="sl-score-row">
+              <div>
+                <div class="big">84</div>
+                <div class="label">TruSleep score</div>
+              </div>
+              <div class="sl-vs">
+                <div class="t">Above your week</div>
+                <div class="s">7-day avg 76 · sleep HR 77 · HRV 22 ms overnight average</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="sl-card" aria-label="Clock landmarks">
+            <p class="sl-kicker">Night landmarks</p>
+            <div class="sl-clocks">
+              <div class="pt"><div class="dot"></div><span class="t">02:46</span><span class="l">Bed</span></div>
+              <div class="pt"><div class="dot"></div><span class="t">02:54</span><span class="l">Asleep</span></div>
+              <div class="pt"><div class="dot"></div><span class="t">09:31</span><span class="l">Wake</span></div>
+              <div class="pt"><div class="dot"></div><span class="t">09:38</span><span class="l">Rise</span></div>
+            </div>
+            <span class="sl-latency-chip">Latency 8m · efficiency 98%</span>
+          </section>
+
+          <section class="sl-card" aria-label="Contributors">
+            <p class="sl-kicker">What drove the night · contributors</p>
+            <div class="sl-contrib">
+              <div class="item">
+                <div class="top"><span class="name">Duration</span><span class="val">6h 37m</span></div>
+                <div class="bar"><i style="width:78%"></i></div>
+                <p class="q">Enough total sleep?</p>
+              </div>
+              <div class="item">
+                <div class="top"><span class="name">Efficiency</span><span class="val">98%</span></div>
+                <div class="bar"><i style="width:98%"></i></div>
+                <p class="q">Time in bed spent asleep?</p>
+              </div>
+              <div class="item">
+                <div class="top"><span class="name">Latency</span><span class="val">8m</span></div>
+                <div class="bar"><i style="width:86%"></i></div>
+                <p class="q">Fell asleep quickly?</p>
+              </div>
+              <div class="item">
+                <div class="top"><span class="name">Deep cont.</span><span class="val">88</span></div>
+                <div class="bar"><i style="width:88%"></i></div>
+                <p class="q">Deep continuity · not minutes</p>
+              </div>
+              <div class="item">
+                <div class="top"><span class="name">Deep share</span><span class="val">35%</span></div>
+                <div class="bar"><i style="width:90%"></i></div>
+                <p class="q">140m deep · structure</p>
+              </div>
+              <div class="item warn">
+                <div class="top"><span class="name">Timing</span><span class="val">Late</span></div>
+                <div class="bar"><i style="width:42%"></i></div>
+                <p class="q">Mid-sleep 06:12 · past dark core</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="sl-card" aria-label="Hypnogram">
+            <p class="sl-kicker">Stage structure · depth hypnogram</p>
+            <div class="sl-hypno">
+              <div class="sl-hypno-ylabels" aria-hidden="true">
+                <span>Awake</span>
+                <span>REM</span>
+                <span>Light</span>
+                <span>Deep</span>
+              </div>
+              <div class="sl-hypno-plot" aria-hidden="true">
+                <!-- Approximate cycle from sample night: Light/Deep early, REM late -->
+                <div class="seg light" style="left:0%;width:6%"></div>
+                <div class="seg deep" style="left:6%;width:10%"></div>
+                <div class="seg light" style="left:16%;width:5%"></div>
+                <div class="seg deep" style="left:21%;width:12%"></div>
+                <div class="seg rem" style="left:33%;width:7%"></div>
+                <div class="seg light" style="left:40%;width:6%"></div>
+                <div class="seg deep" style="left:46%;width:9%"></div>
+                <div class="seg rem" style="left:55%;width:10%"></div>
+                <div class="seg light" style="left:65%;width:5%"></div>
+                <div class="seg awake" style="left:70%;width:2%"></div>
+                <div class="seg rem" style="left:72%;width:12%"></div>
+                <div class="seg light" style="left:84%;width:6%"></div>
+                <div class="seg rem" style="left:90%;width:8%"></div>
+                <div class="seg awake" style="left:98%;width:2%"></div>
+              </div>
+            </div>
+            <div class="sl-hypno-x">
+              <span>02:54</span>
+              <span>06:12</span>
+              <span>09:31</span>
+            </div>
+            <div class="sl-stage-legend">
+              <span><i style="background:var(--stage-deep)"></i>Deep</span>
+              <span><i style="background:var(--stage-light)"></i>Light</span>
+              <span><i style="background:var(--stage-rem)"></i>REM</span>
+              <span><i style="background:var(--stage-awake)"></i>Awake</span>
+            </div>
+          </section>
+
+          <section class="sl-card sl-mix" aria-label="Stage mix">
+            <p class="sl-kicker">Stage mix</p>
+            <div class="row">
+              <span class="name">Light</span>
+              <div class="track"><i style="width:35%;background:var(--stage-light)"></i></div>
+              <span class="mins">141m</span>
+            </div>
+            <div class="row">
+              <span class="name">Deep</span>
+              <div class="track"><i style="width:35%;background:var(--stage-deep)"></i></div>
+              <span class="mins">140m</span>
+            </div>
+            <div class="row">
+              <span class="name">REM</span>
+              <div class="track"><i style="width:29%;background:var(--stage-rem)"></i></div>
+              <span class="mins">116m</span>
+            </div>
+            <div class="row">
+              <span class="name">Awake</span>
+              <div class="track"><i style="width:2%;background:var(--stage-awake)"></i></div>
+              <span class="mins">7m</span>
+            </div>
+            <p class="norm">Soft guide only: adults often ~20–25% REM. Wearable stages ≠ PSG.</p>
+          </section>
+
+          <section class="sl-card" aria-label="Overnight physiology">
+            <p class="sl-kicker">Overnight physiology · averages</p>
+            <div class="sl-physio">
+              <div class="cell"><span class="v">22</span><span class="l">HRV</span><span class="u">ms</span></div>
+              <div class="cell"><span class="v">77</span><span class="l">Sleep HR</span><span class="u">bpm</span></div>
+              <div class="cell"><span class="v">17</span><span class="l">RR</span><span class="u">/min</span></div>
+              <div class="cell"><span class="v">96</span><span class="l">SpO₂</span><span class="u">%</span></div>
+            </div>
+            <p class="sl-note" style="margin-top:10px">Night means only — no intra-sleep HR/HRV series on this companion path yet.</p>
+          </section>
+
+          <section class="sl-card" aria-label="Architecture">
+            <p class="sl-kicker">Architecture check</p>
+            <p class="sl-note"><strong>Deep early · REM late</strong> — matches expected overnight rhythm. Continuity score 88 vs 140m deep: quantity and continuity both solid.</p>
+          </section>
+
+          <p class="sl-honesty">
+            Honesty · TruSleep score is watch-derived (not a Fathom “Quality” invent).
+            Naps (score 0 / stage 5) stay out of overnight baselines.
+            No movement or breathing-disturbance graphs — not on SEQUENCE.
+          </p>
+
+          <a class="sl-card sl-link-row" href="#history">
+            Browse sleep history
+            <span>Other nights →</span>
+          </a>
+        </main>
+      </div>
+    </div>
+
+    <!-- ========== SLEEP HISTORY ========== -->
+    <div class="phone-history-wrap" id="history">
+      <p class="phone-label">03 · Sleep history</p>
+      <div class="phone" id="phoneHistory">
+        <header class="app-header">
+          <a class="icon-round" href="#tab" aria-label="Back">←</a>
+          <div class="brand">
+            <span class="brand-mark">F</span>
+            <div>
+              <p class="brand-title">Sleep history</p>
+              <p class="brand-sub mono">Browse by month</p>
+            </div>
+          </div>
+          <button class="theme-toggle" id="themeTogglePhone3" type="button">Dark</button>
+        </header>
+
+        <main class="scroll">
+          <section class="sl-card" style="padding:10px 12px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+              <span style="font-size:18px;color:var(--ink-faint)">‹</span>
+              <strong style="font-size:14px;letter-spacing:-0.02em">Sep 2026</strong>
+              <span style="font-size:18px;color:var(--ink-faint)">›</span>
+            </div>
+            <p class="sl-note" style="margin-top:8px;text-align:center;font-family:var(--font-mono);font-size:10px;color:var(--ink-faint)">
+              12 overnight · 3 naps · tap a row for detail
+            </p>
+          </section>
+
+          <section class="sl-card" aria-label="Month nights">
+            <div class="sl-nights">
+              <a class="sl-night" href="#detail">
+                <div>
+                  <span class="when">Sat 12 Sep</span>
+                  <span class="meta">02:54–09:31 · overnight</span>
+                </div>
+                <span class="dur">6h 37m</span>
+                <span class="sc">84</span>
+              </a>
+              <a class="sl-night" href="#detail">
+                <div>
+                  <span class="when">Fri 11 Sep</span>
+                  <span class="meta">01:48–08:52 · overnight</span>
+                </div>
+                <span class="dur">6h 42m</span>
+                <span class="sc">79</span>
+              </a>
+              <a class="sl-night nap" href="#detail">
+                <div>
+                  <span class="when">Thu 10 Sep</span>
+                  <span class="meta">14:12–14:48 · nap</span>
+                </div>
+                <span class="dur">36m</span>
+                <span class="sc">nap</span>
+              </a>
+              <a class="sl-night" href="#detail">
+                <div>
+                  <span class="when">Thu 10 Sep</span>
+                  <span class="meta">00:55–07:40 · overnight</span>
+                </div>
+                <span class="dur">6h 12m</span>
+                <span class="sc">72</span>
+              </a>
+              <a class="sl-night" href="#detail">
+                <div>
+                  <span class="when">Wed 9 Sep</span>
+                  <span class="meta">02:10–08:44 · overnight</span>
+                </div>
+                <span class="dur">6h 05m</span>
+                <span class="sc">68</span>
+              </a>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <aside class="rail">
+      <p class="eyebrow">Owner review · sleep analytics</p>
+      <h1>Athlete-grade overnight</h1>
+      <p class="lede">Revamp Sleep tab + detail to Oura / WHOOP / Polar depth — using Fathom tokens and only fields TruSleep SEQUENCE already gives.</p>
+
+      <div class="screen-toggle" role="group" aria-label="Phone focus (narrow)">
+        <button type="button" class="active" data-focus="tab">Tab</button>
+        <button type="button" data-focus="detail">Detail</button>
+        <button type="button" data-focus="history">History</button>
+      </div>
+
+      <ul class="rail-map">
+        <li><strong>Oura → timing + contributors</strong> 7-night vertical timing; contributor chips explain score without a second opaque number.</li>
+        <li><strong>WHOOP → sufficiency vs self</strong> Score / HRV vs 7-day band; nap rows labeled, not scored.</li>
+        <li><strong>Polar → overnight ANS</strong> Sleep HR + HRV averages as recovery signals (no fake Nightly Recharge series).</li>
+        <li><strong>Fathom → instrument</strong> Mint pool-night, Manrope + mono, Hooper still required.</li>
+      </ul>
+
+      <div class="rail-locks">
+        <strong>Unlocked · SEQUENCE truth</strong>
+        Latency · deep continuity · efficiency · bed/asleep/wake/rise · overnight HRV/HR/RR/SpO₂ · stages.
+        Still do not invent: intra-night waveforms · movement · breathing disturbance · opaque second Recovery score.
+      </div>
+
+      <ol class="rail-list">
+        <li>Tab: score hero + glance + timing + trends + Hooper + history CTA</li>
+        <li>Detail: landmarks → contributors → hypnogram → mix → ANS → history</li>
+        <li>History: month browser with scores + naps · open any day</li>
+      </ol>
+
+      <a class="btn primary" href="recovery-sleep.html">State rail (legacy) →</a>
+      <a class="btn ghost" href="vitals-tab.html">Vitals tab →</a>
+      <a class="btn ghost" href="index.html">← Design hub</a>
+    </aside>
+  </div>
+
+  <script>
+    (function () {
+      const root = document.documentElement;
+      const stage = document.getElementById("stage");
+      const buttons = [
+        document.getElementById("themeToggle"),
+        document.getElementById("themeTogglePhone"),
+        document.getElementById("themeTogglePhone2"),
+        document.getElementById("themeTogglePhone3"),
+      ].filter(Boolean);
+
+      function syncThemeLabels() {
+        const dark = root.getAttribute("data-theme") === "dark";
+        buttons.forEach((b) => { b.textContent = dark ? "Light" : "Dark"; });
+      }
+
+      function toggleTheme() {
+        const next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        root.setAttribute("data-theme", next);
+        syncThemeLabels();
+      }
+
+      buttons.forEach((b) => b.addEventListener("click", toggleTheme));
+      syncThemeLabels();
+
+      function setFocus(focus) {
+        document.querySelectorAll(".screen-toggle button").forEach((b) => {
+          b.classList.toggle("active", b.dataset.focus === focus);
+        });
+        stage.classList.toggle("show-detail", focus === "detail");
+        stage.classList.toggle("show-history", focus === "history");
+      }
+
+      document.querySelectorAll(".screen-toggle button").forEach((btn) => {
+        btn.addEventListener("click", () => setFocus(btn.dataset.focus));
+      });
+
+      document.querySelectorAll('a[href="#history"]').forEach((a) => {
+        a.addEventListener("click", (e) => {
+          if (window.matchMedia("(max-width: 1560px)").matches) {
+            e.preventDefault();
+            setFocus("history");
+          }
+        });
+      });
+
+      const openDetail = document.getElementById("openDetail");
+      const backTab = document.getElementById("backTab");
+      if (openDetail) {
+        openDetail.addEventListener("click", (e) => {
+          if (window.matchMedia("(max-width: 1180px)").matches) {
+            e.preventDefault();
+            setFocus("detail");
+          }
+        });
+      }
+      if (backTab) {
+        backTab.addEventListener("click", (e) => {
+          if (window.matchMedia("(max-width: 1180px)").matches) {
+            e.preventDefault();
+            setFocus("tab");
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

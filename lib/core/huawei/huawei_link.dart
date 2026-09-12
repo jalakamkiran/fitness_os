@@ -527,6 +527,119 @@ class HuaweiLink {
     }
   }
 
+  /// Debug-only: download + persist `sleep_data.bin` for offline decode.
+  /// Never merges into TruSleep SoT.
+  Future<Map<String, dynamic>> persistSleepDataCapture({
+    int? startUnix,
+    int? endUnix,
+  }) async {
+    assert(kDebugMode, 'persistSleepDataCapture is debug-only');
+    if (_syncInFlight) {
+      return {
+        'status': 'busy',
+        'message': 'Another Sync is already in progress',
+        'feedsProductSleepSot': false,
+        'persisted': false,
+      };
+    }
+    if (!sessionReady) {
+      return {
+        'status': 'not_ready',
+        'message': 'Connect and authenticate first',
+        'feedsProductSleepSot': false,
+        'persisted': false,
+      };
+    }
+    _syncInFlight = true;
+    FosHuaweiLog.i(
+      'persistSleepDataCapture start window=[$startUnix,$endUnix]',
+      op: 'sleep-data-persist',
+    );
+    try {
+      return await _channel.persistSleepDataCapture(
+        startUnix: startUnix,
+        endUnix: endUnix,
+      );
+    } on PlatformException catch (e) {
+      FosHuaweiLog.e(
+        'persistSleepDataCapture failed',
+        error: e,
+        op: 'sleep-data-persist',
+      );
+      return {
+        'status': 'error',
+        'message': e.message ?? 'persist failed',
+        'feedsProductSleepSot': false,
+        'persisted': false,
+      };
+    } finally {
+      _syncInFlight = false;
+    }
+  }
+
+  /// Debug-only: download + persist SEQUENCE_DATA SLEEP_DETAILS for offline decode.
+  /// Never merges into TruSleep SoT.
+  Future<Map<String, dynamic>> persistSleepDetailsSequenceCapture({
+    int? startUnix,
+    int? endUnix,
+  }) async {
+    assert(kDebugMode, 'persistSleepDetailsSequenceCapture is debug-only');
+    if (_syncInFlight) {
+      return {
+        'status': 'busy',
+        'message': 'Another Sync is already in progress',
+        'feedsProductSleepSot': false,
+        'persisted': false,
+      };
+    }
+    if (!sessionReady) {
+      return {
+        'status': 'not_ready',
+        'message': 'Connect and authenticate first',
+        'feedsProductSleepSot': false,
+        'persisted': false,
+      };
+    }
+    _syncInFlight = true;
+    FosHuaweiLog.i(
+      'persistSleepDetailsSequenceCapture start window=[$startUnix,$endUnix]',
+      op: 'sleep-dict-persist',
+    );
+    try {
+      return await _channel.persistSleepDetailsSequenceCapture(
+        startUnix: startUnix,
+        endUnix: endUnix,
+      );
+    } on MissingPluginException catch (e) {
+      FosHuaweiLog.e(
+        'persistSleepDetailsSequenceCapture missing plugin — full rebuild required',
+        error: e,
+        op: 'sleep-dict-persist',
+      );
+      return {
+        'status': 'error',
+        'message':
+            'Native method missing — stop app and full rebuild (hot restart is not enough)',
+        'feedsProductSleepSot': false,
+        'persisted': false,
+      };
+    } on PlatformException catch (e) {
+      FosHuaweiLog.e(
+        'persistSleepDetailsSequenceCapture failed',
+        error: e,
+        op: 'sleep-dict-persist',
+      );
+      return {
+        'status': 'error',
+        'message': e.message ?? 'persist failed',
+        'feedsProductSleepSot': false,
+        'persisted': false,
+      };
+    } finally {
+      _syncInFlight = false;
+    }
+  }
+
   /// Wait while the link is mid-handshake. Fail fast on terminal / idle states.
   Future<bool> _awaitSessionReady({
     Duration timeout = const Duration(seconds: 45),
@@ -1145,6 +1258,7 @@ class SleepEnrichOutcome {
     this.wireType,
     this.refs = const [],
     this.stateIntervals = const [],
+    this.sequenceSessions = const [],
   });
 
   final int beginUnix;
@@ -1153,6 +1267,9 @@ class SleepEnrichOutcome {
   final bool present;
   final List<SleepFileRef> refs;
   final List<SleepStateInterval> stateIntervals;
+
+  /// Parsed SEQUENCE_DATA SLEEP_DETAILS sessions (structured; no bodies).
+  final List<TruSleepSequenceSession> sequenceSessions;
 
   SleepSessionSummary get asSession => SleepSessionSummary(
         beginUnix: beginUnix,
@@ -1185,6 +1302,19 @@ class SleepEnrichOutcome {
         }
       }
     }
+    final sequence = <TruSleepSequenceSession>[];
+    final rawSeq = map['sequenceSessions'];
+    if (rawSeq is List) {
+      for (final item in rawSeq) {
+        if (item is Map) {
+          final s =
+              TruSleepSequenceSession.fromMap(Map<String, dynamic>.from(item));
+          if (s.beginUnix > 0 && s.endUnix > s.beginUnix) {
+            sequence.add(s);
+          }
+        }
+      }
+    }
     return SleepEnrichOutcome(
       beginUnix: asInt(map['beginUnix']) ?? 0,
       endUnix: asInt(map['endUnix']) ?? 0,
@@ -1192,8 +1322,128 @@ class SleepEnrichOutcome {
       present: map['present'] == true,
       refs: refs,
       stateIntervals: intervals,
+      sequenceSessions: sequence,
     );
   }
+}
+
+/// One TruSleep SEQUENCE_DATA session (summary scalars + product stages).
+class TruSleepSequenceSession {
+  const TruSleepSequenceSession({
+    required this.beginUnix,
+    required this.endUnix,
+    this.sleepScore,
+    this.avgHrv,
+    this.avgHeartRate,
+    this.avgBreathRate,
+    this.avgOxygenSaturation,
+    this.sleepEfficiency,
+    this.sleepLatencySec,
+    this.deepPart,
+    this.bedTimeUnix,
+    this.fallAsleepUnix,
+    this.wakeupUnix,
+    this.risingUnix,
+    this.minHeartRate,
+    this.maxHeartRate,
+    this.productStages = const [],
+  });
+
+  final int beginUnix;
+  final int endUnix;
+  final int? sleepScore;
+  final int? avgHrv;
+  final int? avgHeartRate;
+  final int? avgBreathRate;
+  final int? avgOxygenSaturation;
+  final int? sleepEfficiency;
+  final int? sleepLatencySec;
+  final int? deepPart;
+  final int? bedTimeUnix;
+  final int? fallAsleepUnix;
+  final int? wakeupUnix;
+  final int? risingUnix;
+  final int? minHeartRate;
+  final int? maxHeartRate;
+  final List<SleepStageSummary> productStages;
+
+  /// TruSleep scientific overnight (naps / stubs use score 0 + sentinels).
+  bool get isScientific => (sleepScore ?? 0) > 0;
+
+  /// Efficiency is 0–100; nap stubs often emit 255.
+  int? get usableEfficiency {
+    final v = sleepEfficiency;
+    if (v == null || v < 0 || v > 100) return null;
+    return v;
+  }
+
+  /// Deep-sleep continuity score (Health Kit deep_sleep_part), not deep minutes.
+  int? get usableDeepPart {
+    final v = deepPart;
+    if (v == null || v < 0 || v > 100) return null;
+    return v;
+  }
+
+  /// Latency bed→sleep; reject absurd nap sentinels.
+  int? get usableLatencySec {
+    final v = sleepLatencySec;
+    if (v == null || v < 0 || v > 3 * 3600) return null;
+    return v;
+  }
+
+  factory TruSleepSequenceSession.fromMap(Map<String, dynamic> map) {
+    int? asInt(Object? v) => v == null ? null : (v as num).toInt();
+    final stages = <SleepStageSummary>[];
+    // Prefer remapped productStages (message-path wireType); ignore raw SEQUENCE codes.
+    final raw = map['productStages'];
+    if (raw is List) {
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final st = SleepStageSummary.fromMap(Map<String, dynamic>.from(item));
+        if (st.timestampUnix > 0 && st.durationMin > 0) stages.add(st);
+      }
+    }
+    return TruSleepSequenceSession(
+      beginUnix: asInt(map['beginUnix']) ?? 0,
+      endUnix: asInt(map['endUnix']) ?? 0,
+      sleepScore: asInt(map['sleepScore']),
+      avgHrv: asInt(map['avgHrv']),
+      avgHeartRate: asInt(map['avgHeartRate']),
+      avgBreathRate: asInt(map['avgBreathRate']),
+      avgOxygenSaturation: asInt(map['avgOxygenSaturation']),
+      sleepEfficiency: asInt(map['sleepEfficiency']),
+      sleepLatencySec: asInt(map['sleepLatencySec']),
+      deepPart: asInt(map['deepPart']),
+      bedTimeUnix: asInt(map['bedTimeUnix']),
+      fallAsleepUnix: asInt(map['fallAsleepUnix']),
+      wakeupUnix: asInt(map['wakeupUnix']),
+      risingUnix: asInt(map['risingUnix']),
+      minHeartRate: asInt(map['minHeartRate']),
+      maxHeartRate: asInt(map['maxHeartRate']),
+      productStages: stages,
+    );
+  }
+
+  Map<String, dynamic> toSummaryJson() => {
+        'beginUnix': beginUnix,
+        'endUnix': endUnix,
+        if (sleepScore != null) 'sleepScore': sleepScore,
+        if (avgHrv != null) 'avgHrv': avgHrv,
+        if (avgHeartRate != null) 'avgHeartRate': avgHeartRate,
+        if (avgBreathRate != null) 'avgBreathRate': avgBreathRate,
+        if (avgOxygenSaturation != null)
+          'avgOxygenSaturation': avgOxygenSaturation,
+        if (sleepEfficiency != null) 'sleepEfficiency': sleepEfficiency,
+        if (sleepLatencySec != null) 'sleepLatencySec': sleepLatencySec,
+        if (deepPart != null) 'deepPart': deepPart,
+        if (bedTimeUnix != null) 'bedTimeUnix': bedTimeUnix,
+        if (fallAsleepUnix != null) 'fallAsleepUnix': fallAsleepUnix,
+        if (wakeupUnix != null) 'wakeupUnix': wakeupUnix,
+        if (risingUnix != null) 'risingUnix': risingUnix,
+        if (minHeartRate != null) 'minHeartRate': minHeartRate,
+        if (maxHeartRate != null) 'maxHeartRate': maxHeartRate,
+        'source': 'sequence_data',
+      };
 }
 
 class ActivitySyncResult {

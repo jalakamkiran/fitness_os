@@ -8,7 +8,7 @@ import 'package:fitness_os/features/vitals/presentation/view/sleep_detail_route.
 import 'package:fitness_os/features/vitals/presentation/widgets/sleep_formatters.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/sleep_session_card.dart';
 
-/// Month history list (S2) — charts deferred; list first.
+/// Month browser — pick a night (or nap) and open detail.
 class SleepHistoryScreen extends StatefulWidget {
   const SleepHistoryScreen({
     super.key,
@@ -30,6 +30,7 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
   late int _month;
   bool _loading = true;
   List<SleepSessionSummary> _sessions = const [];
+  Map<String, int> _scores = const {};
 
   VitalsRepository get _repo => widget.repository ?? sl<VitalsRepository>();
 
@@ -48,9 +49,18 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
       year: _year,
       month: _month,
     );
+    final scores = <String, int>{};
+    await Future.wait(sessions.map((s) async {
+      final summary = await _repo.loadTruSleepSummary(s);
+      final score = summary?.sleepScore;
+      if (score != null && score > 0) {
+        scores[s.mergeKey] = score;
+      }
+    }));
     if (!mounted) return;
     setState(() {
       _sessions = sessions;
+      _scores = scores;
       _loading = false;
     });
   }
@@ -77,6 +87,9 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
   Widget build(BuildContext context) {
     final colors = FathomColors.of(context);
     final theme = Theme.of(context);
+    final overnightCount =
+        _sessions.where(sleepCrossesLocalMidnight).length;
+    final napCount = _sessions.length - overnightCount;
 
     return Scaffold(
       backgroundColor: colors.bg,
@@ -96,7 +109,7 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
               ),
             ),
             Text(
-              'Sleep · history',
+              'Browse by month · open any night',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: colors.inkFaint,
               ),
@@ -134,17 +147,22 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: Text(
-              'charts later · list first',
-              textAlign: TextAlign.center,
-              style: FathomTextStyles.mono(
-                fontSize: 11,
-                color: colors.inkFaint,
+          if (!_loading && _sessions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Text(
+                '$overnightCount overnight'
+                '${napCount > 0 ? ' · $napCount nap${napCount == 1 ? '' : 's'}' : ''}'
+                ' · tap a row for TruSleep detail',
+                textAlign: TextAlign.center,
+                style: FathomTextStyles.mono(
+                  fontSize: 11,
+                  color: colors.inkFaint,
+                ),
               ),
-            ),
-          ),
+            )
+          else
+            const SizedBox(height: 8),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -155,12 +173,25 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
                           Card(
                             child: Padding(
                               padding: const EdgeInsets.all(16),
-                              child: Text(
-                                'No sleep sessions stored yet. Wear overnight '
-                                '(prefer night 2 after pairing), then Sync.',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: colors.inkDim,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text(
+                                    'No nights this month',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: colors.ink,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Wear overnight, Sync from Recovery · Sleep, '
+                                    'then pick the day here.',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: colors.inkDim,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -178,6 +209,7 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
                             child: SleepSessionCard(
                               session: s,
                               compact: true,
+                              sleepScore: _scores[s.mergeKey],
                             ),
                           );
                         },

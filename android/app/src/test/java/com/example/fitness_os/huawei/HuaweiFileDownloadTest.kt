@@ -1,6 +1,8 @@
 package com.example.fitness_os.huawei
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.ByteBuffer
@@ -155,10 +157,11 @@ class HuaweiFileDownloadTest {
 
     @Test
     fun download_productSpecs_neverIncludeSleepData() {
-        // Regression: product Sync path must stay sleep_state-only.
+        // Regression: product Sync path must not pull sleep_data; SEQUENCE_DATA is allowed.
         val responses = ArrayDeque(
             listOf(
                 initResponse("sleep_state.bin", 0x0e, 1, 0),
+                initResponse("sequence_data", 0x16, 2, 0),
             ),
         )
         val names = ArrayList<String>()
@@ -173,7 +176,7 @@ class HuaweiFileDownloadTest {
             liveDownloadEnabled = true,
         )
         dl.downloadSleepFiles(preferNewSync = true, startUnix = 0, endUnix = 1)
-        assertEquals(listOf("sleep_state.bin"), names)
+        assertEquals(listOf("sleep_state.bin", "sequence_data"), names)
         assertTrue(names.none { it.contains("sleep_data") })
     }
 
@@ -243,6 +246,43 @@ class HuaweiFileDownloadTest {
         )
         assertEquals("skipped", out.status)
         assertEquals("pending_capture", out.reason)
+    }
+
+    @Test
+    fun sleepDataObserve_persist_writesBeforeWipe() {
+        val payload = byteArrayOf(0xA1.toByte(), 0x04, 0x00, 0x11, 0x22, 0x33, 0x44)
+        val encQueue = ArrayDeque<HuaweiFraming.Frame?>()
+        encQueue.add(initResponse("sleep_data.bin", 0x0f, 9, payload.size))
+        encQueue.add(infoResponse(9, maxBlock = 64, noEncrypt = false))
+        val blockQueue = ArrayDeque<ByteArray>()
+        blockQueue.add(blockChunk(fileId = 9, offset = 0, data = payload))
+        var wiped = false
+        var persistedId: String? = null
+        var persistedLen = -1
+        val dl = HuaweiFileDownload(
+            exchangeEncrypted = { _, _, _, _ -> encQueue.removeFirstOrNull() },
+            sendEncrypted = {},
+            awaitRawBlock = { _, _ -> blockQueue.removeFirstOrNull() },
+            liveDownloadEnabled = true,
+            persistFile = { id, bytes ->
+                persistedId = id
+                persistedLen = bytes.size
+                // Must see live payload before wipe.
+                assertEquals(payload.toList(), bytes.toList())
+                "vitals/sleep_files/$id.bin"
+            },
+        )
+        val out = dl.downloadSleepDataStructureObserve(
+            wipeBody = { wiped = true },
+            persist = true,
+        )
+        assertEquals("present", out.status)
+        assertEquals(payload.size, out.len)
+        assertEquals("sleep_data", persistedId)
+        assertEquals(payload.size, persistedLen)
+        assertEquals("vitals/sleep_files/sleep_data.bin", out.path)
+        assertTrue(wiped)
+        assertNull(out.reason)
     }
 
     @Test
@@ -324,6 +364,110 @@ class HuaweiFileDownloadTest {
             }
             else -> throw AssertionError("expected Ok, got $result")
         }
+    }
+
+    @Test
+    fun sequenceDictObserve_initIncludesDictIdTlv() {
+        val body = ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN)
+            .putInt(HuaweiFileDownload.DICT_SLEEP_DETAILS_CLASS)
+            .putInt(700_013_878) // avgHrv field id — presence only
+            .array()
+        val encQueue = ArrayDeque<HuaweiFraming.Frame?>()
+        encQueue.add(
+            initResponse(
+                HuaweiFileDownload.FILE_SEQUENCE_DATA,
+                HuaweiFileDownload.TYPE_SEQUENCE_DATA.toInt() and 0xFF,
+                0x16,
+                body.size,
+            ),
+        )
+        encQueue.add(infoResponse(0x16, maxBlock = 64, noEncrypt = false))
+        val blockQueue = ArrayDeque<ByteArray>()
+        blockQueue.add(blockChunk(fileId = 0x16, offset = 0, data = body))
+        var sawInitDict = false
+        var sawBlockDict = false
+        val dl = HuaweiFileDownload(
+            exchangeEncrypted = { req, _, cmd, _ ->
+                if (cmd == HuaweiFileDownload.CMD_INIT) {
+                    val dictTlv = req.tlvs.firstOrNull { it.tag == 0x0c }
+                    assertNotNull(dictTlv)
+                    assertEquals(
+                        HuaweiFileDownload.DICT_SLEEP_DETAILS_CLASS,
+                        ByteBuffer.wrap(dictTlv!!.value).order(ByteOrder.BIG_ENDIAN).int,
+                    )
+                    val type = req.tlvs.first { it.tag == 0x02 }.value[0]
+                    assertEquals(HuaweiFileDownload.TYPE_SEQUENCE_DATA, type)
+                    sawInitDict = true
+                }
+                encQueue.removeFirstOrNull()
+            },
+            sendEncrypted = { frame ->
+                if (frame.commandId == HuaweiFileDownload.CMD_REQUEST_BLOCK) {
+                    val dictTlv = frame.tlvs.firstOrNull { it.tag == 0x04 }
+                    assertNotNull(dictTlv)
+                    assertEquals(
+                        HuaweiFileDownload.DICT_SLEEP_DETAILS_CLASS,
+                        ByteBuffer.wrap(dictTlv!!.value).order(ByteOrder.BIG_ENDIAN).int,
+                    )
+                    sawBlockDict = true
+                }
+            },
+            awaitRawBlock = { _, _ -> blockQueue.removeFirstOrNull() },
+            liveDownloadEnabled = true,
+        )
+        val out = dl.downloadSleepDetailsSequenceObserve()
+        assertEquals("present", out.status)
+        assertEquals(body.size, out.len)
+        assertEquals("sequence_data", out.id)
+        assertTrue(out.overnightSummaryKeys.contains("avgHrv"))
+        assertTrue(sawInitDict)
+        assertTrue(sawBlockDict)
+    }
+
+    @Test
+    fun sequenceDictObserve_persist_writesBeforeWipe() {
+        val body = byteArrayOf(0x01, 0x02, 0x03, 0x04)
+        val encQueue = ArrayDeque<HuaweiFraming.Frame?>()
+        encQueue.add(
+            initResponse(
+                HuaweiFileDownload.FILE_SEQUENCE_DATA,
+                HuaweiFileDownload.TYPE_SEQUENCE_DATA.toInt() and 0xFF,
+                0x16,
+                body.size,
+            ),
+        )
+        encQueue.add(infoResponse(0x16, maxBlock = 64, noEncrypt = false))
+        val blockQueue = ArrayDeque<ByteArray>()
+        blockQueue.add(blockChunk(fileId = 0x16, offset = 0, data = body))
+        var persistedId: String? = null
+        var persistedLen = -1
+        val dl = HuaweiFileDownload(
+            exchangeEncrypted = { _, _, _, _ -> encQueue.removeFirstOrNull() },
+            sendEncrypted = {},
+            awaitRawBlock = { _, _ -> blockQueue.removeFirstOrNull() },
+            liveDownloadEnabled = true,
+            persistFile = { id, bytes ->
+                persistedId = id
+                persistedLen = bytes.size
+                assertEquals(body.toList(), bytes.toList())
+                "vitals/sleep_files/$id.bin"
+            },
+        )
+        val out = dl.downloadSleepDetailsSequenceObserve(persist = true)
+        assertEquals("present", out.status)
+        assertEquals("sequence_data", persistedId)
+        assertEquals(body.size, persistedLen)
+        assertEquals("vitals/sleep_files/sequence_data.bin", out.path)
+    }
+
+    @Test
+    fun scanSleepDetailsFieldIds_reportsNamesOnly() {
+        val buf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
+        buf.putInt(700_013_580) // avgHeartRate
+        buf.putInt(0xDEADBEEF.toInt())
+        val names = HuaweiFileDownload.scanSleepDetailsFieldIds(buf.array())
+        assertTrue(names.contains("avgHeartRate"))
+        assertEquals(1, names.size)
     }
 
     private fun initResponse(

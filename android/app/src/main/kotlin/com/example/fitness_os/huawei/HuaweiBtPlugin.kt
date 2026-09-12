@@ -332,6 +332,126 @@ class HuaweiBtPlugin(
                         activity.runOnUiThread { result.success(payload) }
                     }
                 }
+                "persistSleepDataCapture" -> {
+                    if (!isDebuggable()) {
+                        result.error(
+                            "debug_only",
+                            "persistSleepDataCapture is debug-only",
+                            null,
+                        )
+                        return
+                    }
+                    val startUnix = (call.argument<Number>("startUnix")?.toLong())
+                        ?: (System.currentTimeMillis() / 1000L - 14L * 86400L)
+                    val endUnix = (call.argument<Number>("endUnix")?.toLong())
+                        ?: (System.currentTimeMillis() / 1000L)
+                    if (!syncLock.tryAcquire()) {
+                        result.success(
+                            mapOf(
+                                "status" to "busy",
+                                "message" to "Another Sync is already in progress",
+                                "feedsProductSleepSot" to false,
+                                "persisted" to false,
+                            ),
+                        )
+                        return
+                    }
+                    sessionIo.execute {
+                        val payload = try {
+                            if (transport?.isConnected() != true) {
+                                mapOf(
+                                    "status" to "not_ready",
+                                    "message" to "Not connected",
+                                    "feedsProductSleepSot" to false,
+                                    "persisted" to false,
+                                )
+                            } else {
+                                session?.persistSleepDataCapture(
+                                    startUnix = startUnix,
+                                    endUnix = endUnix,
+                                ) ?: mapOf(
+                                    "status" to "error",
+                                    "message" to "No session",
+                                    "feedsProductSleepSot" to false,
+                                    "persisted" to false,
+                                )
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("FOS_HUAWEI", "persistSleepDataCapture error", e)
+                            mapOf(
+                                "status" to "error",
+                                "message" to (e.message ?: "persist failed"),
+                                "feedsProductSleepSot" to false,
+                                "persisted" to false,
+                            )
+                        } finally {
+                            syncLock.release()
+                        }
+                        activity.runOnUiThread { result.success(payload) }
+                    }
+                }
+                "persistSleepDetailsSequenceCapture" -> {
+                    if (!isDebuggable()) {
+                        result.error(
+                            "debug_only",
+                            "persistSleepDetailsSequenceCapture is debug-only",
+                            null,
+                        )
+                        return
+                    }
+                    val startUnix = (call.argument<Number>("startUnix")?.toLong())
+                        ?: (System.currentTimeMillis() / 1000L - 14L * 86400L)
+                    val endUnix = (call.argument<Number>("endUnix")?.toLong())
+                        ?: (System.currentTimeMillis() / 1000L)
+                    if (!syncLock.tryAcquire()) {
+                        result.success(
+                            mapOf(
+                                "status" to "busy",
+                                "message" to "Another Sync is already in progress",
+                                "feedsProductSleepSot" to false,
+                                "persisted" to false,
+                            ),
+                        )
+                        return
+                    }
+                    sessionIo.execute {
+                        val payload = try {
+                            if (transport?.isConnected() != true) {
+                                mapOf(
+                                    "status" to "not_ready",
+                                    "message" to "Not connected",
+                                    "feedsProductSleepSot" to false,
+                                    "persisted" to false,
+                                )
+                            } else {
+                                session?.persistSleepDetailsSequenceCapture(
+                                    startUnix = startUnix,
+                                    endUnix = endUnix,
+                                ) ?: mapOf(
+                                    "status" to "error",
+                                    "message" to "No session",
+                                    "feedsProductSleepSot" to false,
+                                    "persisted" to false,
+                                )
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e(
+                                "FOS_HUAWEI",
+                                "persistSleepDetailsSequenceCapture error",
+                                e,
+                            )
+                            mapOf(
+                                "status" to "error",
+                                "message" to (e.message ?: "persist failed"),
+                                "feedsProductSleepSot" to false,
+                                "persisted" to false,
+                            )
+                        } finally {
+                            syncLock.release()
+                        }
+                        activity.runOnUiThread { result.success(payload) }
+                    }
+                }
                 "setAuthKey" -> {
                     val key = call.argument<String>("userId")?.trim().orEmpty()
                     when {

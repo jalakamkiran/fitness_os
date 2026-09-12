@@ -8,7 +8,7 @@ import java.util.TimeZone
 
 /**
  * Clean-room FitnessData (`0x07`) activity Sync — sleep messages +
- * FitnessTotals day rollup + TruSleep FileDownload (`sleep_state` only).
+ * FitnessTotals day rollup + TruSleep FileDownload (`sleep_state` + SEQUENCE_DATA).
  *
  * Continuous / daily HR is **not** pulled or soft-armed on Sync (Enable may
  * still arm auto-HR separately). Pre-promotion parsers: synthetic fixtures +
@@ -56,6 +56,24 @@ class HuaweiFitnessDataSync(
         private const val MIN_SESSION_SEC = 15 * 60L
         /** Match Flutter [TruSleepSleepSot.mergeGapSec] — near-adjacent file fragments. */
         private const val FILE_INTERVAL_MERGE_GAP_SEC = 180
+        /** SEQUENCE_DATA is watch-window-filtered; keep ≥ activity wide window. */
+        private const val FILE_DOWNLOAD_WINDOW_DAYS = 14
+
+        /**
+         * FileDownload start for sleep_state + SEQUENCE: at least
+         * [FILE_DOWNLOAD_WINDOW_DAYS] back from [windowEndUnix], even when
+         * message Sync is incremental.
+         */
+        fun resolveSleepFileDownloadStartUnix(
+            windowStartUnix: Long,
+            windowEndUnix: Long,
+        ): Int {
+            val endUnix = windowEndUnix.toInt().coerceAtLeast(0)
+            val minFileStart =
+                (endUnix - FILE_DOWNLOAD_WINDOW_DAYS * 24 * 3600).coerceAtLeast(0)
+            return minOf(windowStartUnix.toInt().coerceAtLeast(0), minFileStart)
+                .coerceAtMost(endUnix)
+        }
 
         private data class FeatureEnable(val id: String, val cmd: Int)
 
@@ -530,8 +548,8 @@ class HuaweiFitnessDataSync(
 
     /**
      * Non-blocking TruSleep FileDownload. Never clears [sleep] on failure.
-     * Downloads `sleep_state.bin` only (this cut); emits enrich even when
-     * message-path sleep is empty if intervals are present.
+     * Downloads `sleep_state.bin` (timing SoT) + SEQUENCE_DATA SLEEP_DETAILS
+     * (summary/stages when present).
      */
     private fun attemptSleepFileDownload(
         sleep: List<Map<String, Any?>>,
@@ -539,9 +557,17 @@ class HuaweiFitnessDataSync(
         windowEndUnix: Long,
     ): List<Map<String, Any?>> {
         return try {
-            // Prefer activity Sync window — message min(begin) must not starve files.
-            val startUnix = windowStartUnix.toInt().coerceAtLeast(0)
-            val endUnix = windowEndUnix.toInt().coerceAtLeast(startUnix)
+            // Message Sync may be incremental (~1d), but SEQUENCE_DATA is
+            // window-filtered on the watch: a narrow start returns a stub
+            // (hundreds of bytes, score=0) and wipes richer prior nights.
+            // Always pull sleep files over at least [FILE_DOWNLOAD_WINDOW_DAYS].
+            val endUnix = windowEndUnix.toInt().coerceAtLeast(0)
+            val startUnix = resolveSleepFileDownloadStartUnix(windowStartUnix, windowEndUnix)
+            Log.i(
+                TAG,
+                "activity-sync file-download window=[$startUnix,$endUnix] " +
+                    "(activityStart=${windowStartUnix.toInt()})",
+            )
             val outcome = sleepFileDownloadProbe?.invoke()
                 ?: (sleepFileDownload?.invoke() ?: HuaweiFileDownload(
                     exchangeEncrypted = exchangeEncrypted,
@@ -557,6 +583,7 @@ class HuaweiFitnessDataSync(
                 "activity-sync file-download status=${outcome.status} " +
                     "svc=0x${outcome.serviceId.toString(16)} " +
                     "files=${outcome.files.size} intervals=${outcome.stateIntervals.size} " +
+                    "sequenceSessions=${outcome.sequenceSessions.size} " +
                     "reason=${outcome.reason}",
             )
             if (outcome.status != "present") {
@@ -564,16 +591,32 @@ class HuaweiFitnessDataSync(
             }
             val refs = outcome.files.map { it.toMap() }
             val intervals = outcome.stateIntervals
+            val sequenceSessions = outcome.sequenceSessions
             if (intervals.isEmpty()) {
                 // Present files but no SoT intervals — attach refs onto messages only.
-                if (sleep.isEmpty()) return emptyList()
-                return sleep.map { session ->
+                if (sleep.isEmpty()) {
+                    if (sequenceSessions.isEmpty()) return emptyList()
+                    // SEQUENCE alone: emit enrich rows from sequence begin/end.
+                    return sequenceSessions.mapIndexed { index, session ->
+                        buildMap {
+                            put("beginUnix", session["beginUnix"])
+                            put("endUnix", session["endUnix"])
+                            put("present", true)
+                            put("refs", refs)
+                            if (index == 0) put("sequenceSessions", sequenceSessions)
+                        }
+                    }
+                }
+                return sleep.mapIndexed { index, session ->
                     buildMap {
                         put("beginUnix", session["beginUnix"])
                         put("endUnix", session["endUnix"])
                         put("wireType", session["wireType"])
                         put("present", true)
                         put("refs", refs)
+                        if (index == 0 && sequenceSessions.isNotEmpty()) {
+                            put("sequenceSessions", sequenceSessions)
+                        }
                     }
                 }
             }
@@ -587,7 +630,12 @@ class HuaweiFitnessDataSync(
                     put("present", true)
                     put("refs", refs)
                     // Attach full interval list once (first row) for Flutter SoT build.
-                    if (index == 0) put("stateIntervals", intervalMaps)
+                    if (index == 0) {
+                        put("stateIntervals", intervalMaps)
+                        if (sequenceSessions.isNotEmpty()) {
+                            put("sequenceSessions", sequenceSessions)
+                        }
+                    }
                 }
             }
         } catch (t: Throwable) {

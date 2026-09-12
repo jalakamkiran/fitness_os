@@ -11,9 +11,11 @@ import 'package:fitness_os/features/vitals/presentation/view/sleep_detail_screen
 class _FakeRepo implements VitalsRepository {
   _FakeRepo({
     this.stages = const [],
+    this.summary,
   });
 
   final List<SleepStageSummary> stages;
+  final TruSleepSequenceSession? summary;
 
   @override
   Future<bool> isGateAPassed() async => true;
@@ -50,6 +52,13 @@ class _FakeRepo implements VitalsRepository {
   @override
   Future<bool> isSleepEnrichPresent(SleepSessionSummary session) async =>
       false;
+
+  @override
+  Future<TruSleepSequenceSession?> loadTruSleepSummary(
+    SleepSessionSummary session,
+  ) async =>
+      summary;
+
 
   @override
   Future<String?> loadFeelOnWake(SleepSessionSummary session) async => null;
@@ -193,5 +202,49 @@ void main() {
     expect(find.textContaining('Overnight HR'), findsNothing);
     expect(find.text('wear → Enable auto-HR → Sync'), findsNothing);
     expect(find.text('Continuous HR'), findsNothing);
+  });
+
+  testWidgets('TruSleep summary shows score and KPIs', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: BpTheme.light(),
+        home: SleepDetailScreen(
+          session: session,
+          repository: _FakeRepo(
+            stages: stages,
+            summary: TruSleepSequenceSession(
+              beginUnix: session.beginUnix,
+              endUnix: session.endUnix,
+              sleepScore: 84,
+              avgHrv: 42,
+              avgHeartRate: 58,
+              sleepEfficiency: 98,
+              sleepLatencySec: 8 * 60,
+              deepPart: 88,
+              bedTimeUnix: session.beginUnix - 8 * 60,
+              fallAsleepUnix: session.beginUnix,
+              wakeupUnix: session.endUnix,
+              risingUnix: session.endUnix + 7 * 60,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('sleep_score')), findsOneWidget);
+    expect(find.text('84'), findsOneWidget);
+    expect(find.text('TruSleep'), findsOneWidget);
+    expect(find.text('42'), findsOneWidget);
+    expect(find.text('HRV'), findsOneWidget);
+    expect(find.text('Night landmarks'), findsOneWidget);
+    expect(find.text('What drove the night · contributors'), findsOneWidget);
+    final advanced = find.text('Advanced sleep metrics', skipOffstage: false);
+    await tester.ensureVisible(advanced);
+    await tester.pumpAndSettle();
+    expect(find.text('Advanced sleep metrics'), findsOneWidget);
+    expect(find.text('Deep continuity'), findsOneWidget);
+    expect(find.text('Sleep latency'), findsOneWidget);
   });
 }

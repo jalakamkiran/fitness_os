@@ -147,6 +147,37 @@ class HuaweiBtChannel {
     return Map<String, dynamic>.from(raw as Map? ?? const {});
   }
 
+  /// Debug-only: download `sleep_data.bin` and persist under app files.
+  /// Never merges into product TruSleep SoT.
+  Future<Map<String, dynamic>> persistSleepDataCapture({
+    int? startUnix,
+    int? endUnix,
+  }) async {
+    assert(kDebugMode, 'persistSleepDataCapture is debug-only');
+    final raw = await _method.invokeMethod<dynamic>('persistSleepDataCapture', {
+      if (startUnix != null) 'startUnix': startUnix,
+      if (endUnix != null) 'endUnix': endUnix,
+    });
+    return Map<String, dynamic>.from(raw as Map? ?? const {});
+  }
+
+  /// Debug-only: download SEQUENCE_DATA SLEEP_DETAILS and persist under app files.
+  /// Never merges into product TruSleep SoT.
+  Future<Map<String, dynamic>> persistSleepDetailsSequenceCapture({
+    int? startUnix,
+    int? endUnix,
+  }) async {
+    assert(kDebugMode, 'persistSleepDetailsSequenceCapture is debug-only');
+    final raw = await _method.invokeMethod<dynamic>(
+      'persistSleepDetailsSequenceCapture',
+      {
+        if (startUnix != null) 'startUnix': startUnix,
+        if (endUnix != null) 'endUnix': endUnix,
+      },
+    );
+    return Map<String, dynamic>.from(raw as Map? ?? const {});
+  }
+
   static bool matchesGt5Name(String name) {
     final n = name.toLowerCase().trim();
     return n.contains('huawei') && n.contains('gt 5');
