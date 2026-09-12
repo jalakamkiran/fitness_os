@@ -110,6 +110,8 @@ void main() {
     test('cold-start sync uses last N days when no cursor', () async {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final link = _StubLink(
@@ -209,16 +211,16 @@ void main() {
       );
     });
 
-    test('stale runSessionParserVersion force-wide Count window (one-shot)',
+    test('stale runSessionParserVersion force-full-history Count (one-shot)',
         () async {
       const cursor = 1_700_000_000;
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
         GateAPrefs.lastSyncCursor: cursor,
-        GateAPrefs.runSessionParserVersion: 1, // stale vs current=2
+        GateAPrefs.runSessionParserVersion: 2, // stale vs current=3
       });
       final prefs = await SharedPreferences.getInstance();
-      final tmp = await Directory.systemTemp.createTemp('fos_run_force_wide_');
+      final tmp = await Directory.systemTemp.createTemp('fos_run_force_full_');
       addTearDown(() => tmp.delete(recursive: true));
       final link = _StubLink(
         result: const WorkoutSyncResult(
@@ -244,10 +246,10 @@ void main() {
 
       final out = await repo.syncFromWatch();
       expect(out, isA<Right>());
-      final end = link.lastEndUnix!;
-      final expectedWide =
-          end - WorkoutHistoryRepositoryImpl.coldStartWindowDays * 86400;
-      expect(link.lastStartUnix, expectedWide);
+      expect(
+        link.lastStartUnix,
+        WorkoutHistoryRepositoryImpl.fullHistoryStartUnix,
+      );
       expect(
         prefs.getInt(GateAPrefs.runSessionParserVersion),
         WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
@@ -275,6 +277,30 @@ void main() {
       );
     });
 
+    test('explicit forceFullHistory uses FALLBACK even when parser current',
+        () async {
+      const cursor = 1_700_000_000;
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.lastSyncCursor: cursor,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.empty,
+          workouts: [],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(link: link, prefs: prefs);
+      await repo.syncFromWatch(forceFullHistory: true);
+      expect(
+        link.lastStartUnix,
+        WorkoutHistoryRepositoryImpl.fullHistoryStartUnix,
+      );
+    });
+
     test('force-wide empty Sync still consumes one-shot stamp', () async {
       const cursor = 1_700_000_000;
       SharedPreferences.setMockInitialValues({
@@ -295,6 +321,10 @@ void main() {
       expect(
         prefs.getInt(GateAPrefs.runSessionParserVersion),
         WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
+      );
+      expect(
+        link.lastStartUnix,
+        WorkoutHistoryRepositoryImpl.fullHistoryStartUnix,
       );
     });
 
