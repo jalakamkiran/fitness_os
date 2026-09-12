@@ -11,7 +11,7 @@ abstract final class GateAPrefs {
   static const lastActivitySyncCursor = 'last_activity_sync_cursor';
   /// Bumped when activity Sync merge rules change; forces one wide-window re-pull.
   static const activitySyncImplVersion = 'activity_sync_impl_version';
-  /// Bumped when leftover-keep lands; forces one Count window from the 2022 floor.
+  /// Legacy leftover-keep one-shot stamp — cleared on Forget; Sync no longer reads it.
   static const leftoverKeepImplVersion = 'leftover_keep_impl_version';
   static const lastR11Path = 'last_r11_winning_path';
   /// Bumped when swim segment wire parse changes; stamped after successful Sync.
