@@ -630,6 +630,56 @@ class HuaweiWorkoutSyncTest {
     }
 
     @Test
+    fun parseWorkoutDataPage_longTag05_capturesSampleStream() {
+        val sample = byteArrayOf(
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x23, 0x9C.toByte(), 0x54, 0x00, 0x0D, 0x08,
+            0x00, 0x00, 0x23, 0x9C.toByte(), 0x5A, 0x00, 0x17, 0x0C,
+        )
+        val inner = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(60)),
+                HuaweiFraming.Tlv(0x03, HuaweiPacketCrypto.shortBe(0)),
+                HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(0)),
+                HuaweiFraming.Tlv(0x09, ByteArray(4)),
+                HuaweiFraming.Tlv(0x05, sample),
+            ),
+        )
+        val page = sync.parseWorkoutDataPageTlvs(
+            HuaweiFraming.decodeTlvs(inner),
+            dataIndex = 0,
+        )
+        val sampleBody = page.leftoverTlvs.firstOrNull { it.tag == 0x05 }
+        assertNotNull(sampleBody)
+        assertArrayEquals(sample, sampleBody!!.value)
+        assertEquals(2, page.sampleCount)
+        assertEquals(sample.size, page.dataLength)
+        assertNull(page.intervalSec)
+        assertEquals(0x05, page.tags.firstOrNull { it.id == 0x05 }?.id)
+    }
+
+    @Test
+    fun parseWorkoutDataPage_shortTag05_stillInterval() {
+        val inner = HuaweiFraming.encodeTlvs(
+            listOf(
+                HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(10)),
+                HuaweiFraming.Tlv(0x03, HuaweiPacketCrypto.shortBe(1)),
+                HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(1_700_000_100)),
+                HuaweiFraming.Tlv(0x05, HuaweiPacketCrypto.shortBe(60)),
+                HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(12)),
+                HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.shortBe(240)),
+                HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(0x0040)),
+            ),
+        )
+        val page = sync.parseWorkoutDataPageTlvs(
+            HuaweiFraming.decodeTlvs(inner),
+            dataIndex = 0,
+        )
+        assertEquals(60, page.intervalSec)
+        assertEquals(0, page.leftoverTlvs.size)
+    }
+
+    @Test
     fun sync_dataCountZero_skipsDataAndSampleFetchNone() {
         var dataCalls = 0
         val enrichingSync = HuaweiWorkoutSync(

@@ -29,7 +29,7 @@ void main() {
     test('explicit decoded fields unlock named tiles', () {
       const m = RunSessionMetrics(
         vo2Max: 48.5,
-        verticalOscillationMm: 8.2,
+        verticalOscillationCm: 10.2,
         balancePct: 49,
         hrZoneMinutes: [5, 10, 12],
         recoverySec: 3600,

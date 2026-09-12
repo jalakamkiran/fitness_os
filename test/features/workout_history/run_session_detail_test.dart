@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -61,12 +62,33 @@ void main() {
     }
   });
 
-  group('RunSessionMetrics invent-guard (AE3 / AE4)', () {
-    test('fromSummary only maps steps — never invents VO/balance/zones', () {
+  
+  group('annotateRunSplits / TE cues', () {
+    test('tags walk cool-down and fastest run km', () {
+      final rows = annotateRunSplits(const [
+        RunPaceSplit(index: 0, distanceM: 1000, paceSec: 382),
+        RunPaceSplit(index: 1, distanceM: 1000, paceSec: 369),
+        RunPaceSplit(index: 2, distanceM: 790, paceSec: 694),
+      ]);
+      expect(rows.length, 3);
+      expect(rows[0].isWalk, isFalse);
+      expect(rows[1].isFastest, isTrue);
+      expect(rows[2].isWalk, isTrue);
+      expect(detectRunWalkTransition(rows.map((r) => r.split).toList()), isTrue);
+    });
+
+    test('teBandHint maps maintain band', () {
+      expect(teBandHint(2.3), 'Maintain band');
+    });
+  });
+
+group('RunSessionMetrics invent-guard (AE3 / AE4)', () {
+    test('fromSummary maps steps + stride — never invents VO/balance/zones', () {
       final m = RunSessionMetrics.fromSummary(
         _run(number: 1, steps: 4200, distanceM: 5000),
       );
       expect(m.steps, 4200);
+      expect(m.strideCm, 119); // 5000/4200*100
       expect(m.hasFormTiles, isTrue);
       expect(RunInventGuard.showsVo2(m), isFalse);
       expect(RunInventGuard.showsVerticalOscillation(m), isFalse);
@@ -75,6 +97,79 @@ void main() {
       expect(RunInventGuard.showsThisRunTraining(m), isFalse);
       expect(m.hasNativeZones, isFalse);
       expect(m.hasThisRunTraining, isFalse);
+    });
+
+    test('fromLeftovers locks #60 watch scalars', () {
+      final bodies = <LeftoverTlvBody>[
+        LeftoverTlvBody(id: 0x0b, len: 4, bodyBase64: base64Encode([0, 0, 0, 27])),
+        LeftoverTlvBody(id: 0x0d, len: 4, bodyBase64: base64Encode([0, 0, 0, 66])),
+        LeftoverTlvBody(id: 0x0e, len: 4, bodyBase64: base64Encode([0, 0, 0, 23])),
+        LeftoverTlvBody(id: 0x11, len: 2, bodyBase64: base64Encode([0x04, 0xec])),
+        LeftoverTlvBody(id: 0x1b, len: 4, bodyBase64: base64Encode([0, 0, 0, 54])),
+        LeftoverTlvBody(
+          id: 0x1c,
+          len: 4,
+          bodyBase64: base64Encode([0, 0, 0x23, 0x9c]),
+        ),
+        LeftoverTlvBody(
+          id: 0x1d,
+          len: 4,
+          bodyBase64: base64Encode([0, 0, 0x23, 0x82]),
+        ),
+        LeftoverTlvBody(id: 0x20, len: 1, bodyBase64: base64Encode([17])),
+        LeftoverTlvBody(
+          id: 0xe7,
+          len: 11,
+          bodyBase64: base64Encode(
+            [0x68, 0x04, 0x11, 0xe1, 0xca, 0x43, 0x69, 0x03, 0x32, 0x39, 0x30],
+          ),
+        ),
+        LeftoverTlvBody(
+          id: 0xe7,
+          len: 17,
+          bodyBase64: base64Encode([
+            0x68, 0x04, 0x11, 0xe1, 0xca, 0x4a, 0x69, 0x09,
+            ...utf8.encode('50.070011'),
+          ]),
+        ),
+        LeftoverTlvBody(
+          id: 0xe7,
+          len: 17,
+          bodyBase64: base64Encode([
+            0x68, 0x04, 0x11, 0xe1, 0xca, 0x4b, 0x69, 0x09,
+            ...utf8.encode('10.200000'),
+          ]),
+        ),
+        LeftoverTlvBody(
+          id: 0xe7,
+          len: 14,
+          bodyBase64: base64Encode([
+            0x68, 0x04, 0x11, 0xe1, 0xca, 0xaf, 0x69, 0x06,
+            ...utf8.encode('158000'),
+          ]),
+        ),
+      ];
+      final m = RunSessionMetrics.fromLeftovers(
+        bodies,
+        steps: 2905,
+        distanceM: 2790,
+      );
+      expect(m.sessionLoad, 66);
+      expect(m.aerobicEffect, closeTo(2.3, 0.01));
+      expect(m.anaerobicEffect, closeTo(1.7, 0.01));
+      expect(m.recoverySec, 1260 * 60); // 21 h
+      expect(m.elevGainM, closeTo(2.7, 0.01));
+      expect(m.elevLossM, closeTo(5.4, 0.01));
+      expect(m.maxAltitudeM, closeTo(911.6, 0.01));
+      expect(m.minAltitudeM, closeTo(909.0, 0.01));
+      expect(m.gctMs, 290);
+      expect(m.verticalOscillationCm, closeTo(10.2, 0.01));
+      expect(m.balancePct, closeTo(50.07, 0.01));
+      expect(m.activeCalories, 158);
+      expect(m.strideCm, 96);
+      expect(RunInventGuard.showsThisRunTraining(m), isTrue);
+      expect(RunInventGuard.showsVerticalOscillation(m), isTrue);
+      expect(RunInventGuard.showsBalance(m), isTrue);
     });
 
     test('decodeRunSamplePoints never invents series from opaque pages', () {
@@ -88,6 +183,74 @@ void main() {
       ];
       expect(decodeRunSamplePoints(pages), isEmpty);
       expect(decodeRunSamplePoints(const []), isEmpty);
+    });
+
+    test('decodeRunSamplePoints reads GT5 0x05 HR records', () {
+      // 00 00 23 cad hr 00 .. ..
+      final rec1 = [0x00, 0x00, 0x23, 100, 140, 0x00, 0x0D, 0x08];
+      final rec2 = [0x00, 0x00, 0x23, 110, 150, 0x00, 0x17, 0x0C];
+      final body = base64Encode([...rec1, ...rec2]);
+      final points = decodeRunSamplePoints([
+        PeeledPageBodies(
+          index: 0,
+          bodies: [LeftoverTlvBody(id: 0x05, len: 16, bodyBase64: body)],
+        ),
+      ]);
+      expect(points, hasLength(2));
+      expect(points[0].offsetSec, 0);
+      expect(points[0].hrBpm, 140);
+      expect(points[0].cadenceSpm, 100);
+      expect(points[0].paceSecPerKm, isNull); // pace from splits, not samples
+      expect(points[1].offsetSec, 5);
+      expect(points[1].hrBpm, 150);
+    });
+
+    test('0x83 flag0 decodes watch km splits; flag1 skipped', () {
+      // #60 lock: 382s / 369s / 790m @ 694 s/km; flag1 rows ignored.
+      final km1 = [
+        0x04, 0x02, 0x00, 0x01,
+        0x05, 0x01, 0x00,
+        0x06, 0x04, 0x00, 0x00, 0x01, 0x7e, // 382
+      ];
+      final other = [
+        0x04, 0x02, 0x00, 0x01,
+        0x05, 0x01, 0x01, // flag 1
+        0x06, 0x04, 0x00, 0x00, 0x02, 0x60, // 608
+      ];
+      final km2 = [
+        0x04, 0x02, 0x00, 0x02,
+        0x05, 0x01, 0x00,
+        0x06, 0x04, 0x00, 0x00, 0x01, 0x71, // 369
+      ];
+      final partial = [
+        0x04, 0x02, 0x00, 0x02,
+        0x05, 0x01, 0x00,
+        0x06, 0x04, 0x00, 0x00, 0x02, 0xb6, // 694
+        0x07, 0x02, 0x01, 0xff,
+        0x09, 0x02, 0x1e, 0xdc, // 7900 → 790 m
+      ];
+      final splits = runPaceSplitsFromPages([
+        PeeledPageBodies(
+          index: 0,
+          bodies: [
+            LeftoverTlvBody(id: 0x83, len: km1.length, bodyBase64: base64Encode(km1)),
+            LeftoverTlvBody(id: 0x83, len: other.length, bodyBase64: base64Encode(other)),
+            LeftoverTlvBody(id: 0x83, len: km2.length, bodyBase64: base64Encode(km2)),
+            LeftoverTlvBody(
+              id: 0x83,
+              len: partial.length,
+              bodyBase64: base64Encode(partial),
+            ),
+          ],
+        ),
+      ]);
+      expect(splits, hasLength(3));
+      expect(splits[0].distanceM, 1000);
+      expect(splits[0].paceSec, 382);
+      expect(splits[1].distanceM, 1000);
+      expect(splits[1].paceSec, 369);
+      expect(splits[2].distanceM, 790);
+      expect(splits[2].paceSec, 694);
     });
 
     test('pace splits require distance or pace scalars', () {
@@ -110,10 +273,30 @@ void main() {
       expect(splits.first.index, 0);
       expect(splits.first.paceSec, 310);
     });
+
+    test('merge applies split pace steps onto HR samples', () {
+      final splits = [
+        const RunPaceSplit(index: 0, distanceM: 1000, paceSec: 382),
+        const RunPaceSplit(index: 1, distanceM: 790, paceSec: 694),
+      ];
+      final paceSteps = runPaceSeriesFromSplits(splits);
+      final merged = mergeRunStreamPaceAndHr(
+        hrSamples: const [
+          RunStreamPoint(offsetSec: 0, hrBpm: 140),
+          RunStreamPoint(offsetSec: 200, hrBpm: 170),
+          RunStreamPoint(offsetSec: 900, hrBpm: 130),
+        ],
+        paceSteps: paceSteps,
+      );
+      expect(merged[0].paceSecPerKm, 382);
+      expect(merged[1].paceSecPerKm, 382);
+      expect(merged[2].paceSecPerKm, 694);
+      expect(merged[2].hrBpm, 130);
+    });
   });
 
   group('WorkoutDetailScreen Run IA (AE1 / AE8)', () {
-    testWidgets('Outdoor Run: header + form steps; invent-guard omits VO/zones',
+    testWidgets('product UI: basics + HR stimulus, invent-guard on missing form',
         (tester) async {
       final workout = _run(
         number: 10,
@@ -123,46 +306,45 @@ void main() {
         hrMin: 120,
         hrMax: 168,
         calories: 420,
+        durationSec: 1800,
       );
 
       await tester.pumpWidget(
         MaterialApp(
           home: WorkoutDetailScreen(
             workout: workout,
-            // Skip side-file IO in widget tests (fake-async zone).
             preloadedPaceSplits: const [],
             preloadedStreamPoints: const [],
+            preloadedLeftovers: const [],
           ),
         ),
       );
       await _pumpReady(tester);
 
-      expect(find.text('Session'), findsOneWidget);
-      expect(find.text('Form'), findsOneWidget);
-      expect(find.text('Steps'), findsOneWidget);
+      expect(find.text('OUTDOOR'), findsOneWidget);
+      expect(find.text('5.00 km'), findsOneWidget);
+      expect(find.text('THIS SESSION'), findsOneWidget);
+      expect(find.text('120–168'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('TERRAIN'), 300);
       expect(find.text('5123'), findsOneWidget);
-      expect(find.text('Heart rate'), findsOneWidget);
-      expect(find.textContaining('5000 m'), findsOneWidget);
 
-      // Invent-guard: named undecoded tiles absent (AE3 / AE4).
       expect(find.text('VO₂ max'), findsNothing);
       expect(find.text('Vertical oscillation'), findsNothing);
-      expect(find.text('Balance'), findsNothing);
+      expect(find.textContaining('BALANCE'), findsNothing);
       expect(find.text('Heart rate zones'), findsNothing);
       expect(find.text('This run'), findsNothing);
       expect(find.text('Zone 1'), findsNothing);
+      expect(find.text('Totals leftovers (fetch probe)'), findsNothing);
 
-      // No charts without decoded streams (AE2).
+      expect(find.text('Session story'), findsNothing);
       expect(find.text('Session charts'), findsNothing);
-      expect(find.text('Splits'), findsNothing);
+      expect(find.text('SPLITS'), findsNothing);
 
-      // Silent omit — no “tiles absent” / enrichment empty copy on Run path.
       expect(find.textContaining('No enrichment counts'), findsNothing);
-      // No U5 export affordance yet.
-      expect(find.textContaining('Export'), findsNothing);
+      expect(find.text('Export for AI'), findsNothing);
     });
 
-    testWidgets('Indoor Run (AE8): thinner show-fetched — steps only form',
+    testWidgets('Indoor Run (AE8): thinner show-fetched — steps in terrain',
         (tester) async {
       final workout = _run(number: 11, type: 5, steps: 800);
 
@@ -172,20 +354,22 @@ void main() {
             workout: workout,
             preloadedPaceSplits: const [],
             preloadedStreamPoints: const [],
+            preloadedLeftovers: const [],
           ),
         ),
       );
       await _pumpReady(tester);
 
       expect(find.textContaining('Indoor run'), findsWidgets);
-      expect(find.text('Form'), findsOneWidget);
+      expect(find.text('INDOOR'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('800'), 300);
       expect(find.text('800'), findsOneWidget);
       expect(find.text('VO₂ max'), findsNothing);
-      expect(find.text('Session charts'), findsNothing);
-      expect(find.text('Splits'), findsNothing);
+      expect(find.text('Session story'), findsNothing);
+      expect(find.text('SPLITS'), findsNothing);
     });
 
-    testWidgets('legacy header only when no steps / HR / streams (empty-of-new)',
+    testWidgets('empty-of-new: mode chip only — no invented tiles',
         (tester) async {
       final workout = _run(number: 12, type: 2);
 
@@ -195,22 +379,29 @@ void main() {
             workout: workout,
             preloadedPaceSplits: const [],
             preloadedStreamPoints: const [],
+            preloadedLeftovers: const [],
           ),
         ),
       );
       await _pumpReady(tester);
 
-      expect(find.text('Session'), findsOneWidget);
+      expect(find.text('OUTDOOR'), findsOneWidget);
+      expect(find.textContaining('AFTER THIS SESSION'), findsOneWidget);
       expect(find.text('Form'), findsNothing);
       expect(find.text('This run'), findsNothing);
       expect(find.text('Heart rate zones'), findsNothing);
-      expect(find.text('Splits'), findsNothing);
-      expect(find.text('Session charts'), findsNothing);
+      expect(find.text('SPLITS'), findsNothing);
+      expect(find.text('Session story'), findsNothing);
     });
 
-    testWidgets('IA order smoke: Form before Splits before Charts',
+    testWidgets('IA order smoke: basics before Splits before Charts',
         (tester) async {
-      final workout = _run(number: 20, steps: 1000, distanceM: 1000);
+      final workout = _run(
+        number: 20,
+        steps: 1000,
+        distanceM: 1000,
+        durationSec: 300,
+      );
 
       await tester.pumpWidget(
         MaterialApp(
@@ -219,17 +410,67 @@ void main() {
             preloadedPaceSplits: const [
               RunPaceSplit(index: 0, distanceM: 1000, paceSec: 300),
             ],
-            // Opaque/undecoded → still no chart points (AE2).
             preloadedStreamPoints: const [],
+            preloadedLeftovers: const [],
           ),
         ),
       );
       await _pumpReady(tester);
 
-      final formY = tester.getTopLeft(find.text('Form')).dy;
-      final splitsY = tester.getTopLeft(find.text('Splits')).dy;
-      expect(formY, lessThan(splitsY));
-      expect(find.text('Session charts'), findsNothing);
+      expect(find.text('1.00 km'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('SPLITS'), 300);
+      expect(find.text('SPLITS'), findsOneWidget);
+      expect(find.text('Session story'), findsNothing);
+      expect(find.text('FASTEST'), findsOneWidget);
+    });
+
+    testWidgets('product UI: leftovers fill TE + form gauges', (tester) async {
+      final bodies = <LeftoverTlvBody>[
+        LeftoverTlvBody(id: 0x0d, len: 4, bodyBase64: base64Encode([0, 0, 0, 66])),
+        LeftoverTlvBody(id: 0x0e, len: 4, bodyBase64: base64Encode([0, 0, 0, 23])),
+        LeftoverTlvBody(id: 0x11, len: 2, bodyBase64: base64Encode([0x04, 0xec])),
+        LeftoverTlvBody(id: 0x20, len: 1, bodyBase64: base64Encode([17])),
+        LeftoverTlvBody(
+          id: 0xe7,
+          len: 11,
+          bodyBase64: base64Encode(
+            [0x68, 0x04, 0x11, 0xe1, 0xca, 0x43, 0x69, 0x03, 0x32, 0x39, 0x30],
+          ),
+        ),
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: WorkoutDetailScreen(
+            workout: _run(
+              number: 60,
+              type: 1,
+              steps: 2905,
+              distanceM: 2790,
+              durationSec: 1300,
+              calories: 248,
+              hrMin: 84,
+              hrMax: 181,
+            ),
+            preloadedPaceSplits: const [
+              RunPaceSplit(index: 0, distanceM: 1000, paceSec: 382),
+              RunPaceSplit(index: 1, distanceM: 1000, paceSec: 369),
+              RunPaceSplit(index: 2, distanceM: 790, paceSec: 694),
+            ],
+            preloadedStreamPoints: const [],
+            preloadedLeftovers: bodies,
+          ),
+        ),
+      );
+      await _pumpReady(tester);
+
+      expect(find.text('RUN → WALK'), findsOneWidget);
+      expect(find.text('2.3'), findsOneWidget);
+      expect(find.text('66'), findsOneWidget);
+      expect(find.text('21h'), findsOneWidget);
+      expect(find.text('SPLITS'), findsOneWidget);
+      expect(find.text('FASTEST'), findsOneWidget);
+      expect(find.text('GCT'), findsOneWidget);
+      expect(find.text('Totals leftovers (fetch probe)'), findsNothing);
     });
   });
 
@@ -249,7 +490,7 @@ void main() {
       );
       expect(find.text('Splits'), findsOneWidget);
       expect(find.text('1,000 m'), findsNWidgets(2));
-      expect(find.text('5:10 /km'), findsOneWidget);
+      expect(find.text("5'10\""), findsOneWidget);
     });
 
     testWidgets('splits table hides when no distance/pace', (tester) async {
@@ -262,7 +503,7 @@ void main() {
           ),
         ),
       );
-      expect(find.text('Splits'), findsNothing);
+      expect(find.text('SPLITS'), findsNothing);
     });
 
     testWidgets('charts hide on empty points (AE2)', (tester) async {
@@ -312,7 +553,7 @@ void main() {
         ),
       );
       await _pumpReady(tester);
-      expect(find.text('Splits'), findsNothing);
+      expect(find.text('SPLITS'), findsNothing);
       expect(find.text('Session charts'), findsNothing);
     });
 

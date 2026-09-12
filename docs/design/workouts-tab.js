@@ -4,8 +4,8 @@
   const railToggle = document.getElementById("themeToggleRail");
   const sportTabs = document.getElementById("sportTabs");
   const swimPanel = document.getElementById("swimPanel");
+  const runPanel = document.getElementById("runPanel");
   const strengthPanel = document.getElementById("strengthPanel");
-  const emptyRun = document.getElementById("emptyRun");
 
   function setTheme(next) {
     root.setAttribute("data-theme", next);
@@ -24,12 +24,9 @@
       btn.classList.toggle("active", on);
       btn.setAttribute("aria-selected", on ? "true" : "false");
     });
-    const isSwim = sport === "swim";
-    const isRun = sport === "run";
-    const isStrength = sport === "strength";
-    swimPanel?.classList.toggle("hide", !isSwim);
-    strengthPanel?.classList.toggle("hide", !isStrength);
-    emptyRun?.classList.toggle("show", isRun);
+    swimPanel?.classList.toggle("hide", sport !== "swim");
+    runPanel?.classList.toggle("hide", sport !== "run");
+    strengthPanel?.classList.toggle("hide", sport !== "strength");
   }
 
   phoneToggle?.addEventListener("click", toggleTheme);
