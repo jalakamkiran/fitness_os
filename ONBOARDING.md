@@ -20,7 +20,7 @@ Open the app on Android → splash → bottom shell with **Home | Recovery | Wor
 
 1. **Pair** a GT5 (or reconnect a remembered MAC) via device pairing / Gate A.
 2. **Sync** runs automatically on resume when the link is connected, or via Home’s Sync CTA — workouts first, then vitals.
-3. **Home** shows today KPIs and one swim takeaway using local stores (precedence: not paired → syncing → never synced → failed → data).
+3. **Home** shows the Today stack (sleep, totals, body HR ± one spark, today’s session cards) from local stores (precedence: not paired → syncing → never synced → failed → trusted day).
 4. **Recovery** opens sleep/HR detail and history.
 5. **Workouts** lists sessions; detail opens charts and Swim Bible coach settings.
 
@@ -71,7 +71,7 @@ Gate A pair / reconnect
   v
 Auto-sync: workouts -> vitals
   |
-  +--> Home KPIs + takeaway
+  +--> Home Today stack (sleep / totals / HR / sessions)
   +--> Recovery sleep / HR
   +--> Workout detail + Swim Bible
 ```

@@ -8,9 +8,11 @@ import 'package:fitness_os/features/home/domain/home_precedence.dart';
 import 'package:fitness_os/features/home/presentation/bloc/home_bloc.dart';
 import 'package:fitness_os/features/home/presentation/bloc/home_event.dart';
 import 'package:fitness_os/features/home/presentation/bloc/home_state.dart';
-import 'package:fitness_os/features/workout_history/presentation/view/workout_history_route.dart';
+import 'package:fitness_os/features/vitals/presentation/widgets/hr_sparkline.dart';
+import 'package:fitness_os/features/workout_history/presentation/view/workout_detail_route.dart';
 
-/// Calm Home now-state (R4–R6). Never charts, history lists, or reasoner settings.
+/// Calm Home Today instrument. At most one tiny HR spark; no hypnogram,
+/// workout charts, food, composites, or reasoner settings.
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, this.bloc});
 
@@ -87,6 +89,8 @@ class _HomeBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = FathomColors.of(context);
     final p = snapshot.precedence;
+    final muted = p == HomePrecedence.syncInProgress ||
+        p == HomePrecedence.syncFailed;
 
     return CustomScrollView(
       key: Key('home_state_${p.name}'),
@@ -111,90 +115,111 @@ class _HomeBody extends StatelessWidget {
         ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate([
-              _SyncCard(snapshot: snapshot),
-              if (message != null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  message!,
-                  style: TextStyle(color: colors.hot, fontSize: 13),
+          sliver: SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SyncCard(snapshot: snapshot),
+                if (message != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    message!,
+                    style: TextStyle(color: colors.hot, fontSize: 13),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                ..._sectionsFor(
+                  snapshot,
+                  muted: muted,
+                  staleColor: colors.amber,
                 ),
               ],
-              const SizedBox(height: 12),
-              ..._sectionsFor(snapshot),
-            ]),
+            ),
           ),
         ),
       ],
     );
   }
 
-  List<Widget> _sectionsFor(HomeSnapshot s) {
+  List<Widget> _sectionsFor(
+    HomeSnapshot s, {
+    required bool muted,
+    required Color staleColor,
+  }) {
     switch (s.precedence) {
       case HomePrecedence.notPaired:
         return [
           const _NoteCard(
             text:
-                'Vitals snapshot, swim takeaway, and today’s totals unlock after pairing.',
+                'Sleep, totals, body HR, and today’s sessions unlock after pairing — no invented metrics.',
           ),
         ];
       case HomePrecedence.pairedNeverSynced:
         return [
           const _NoteCard(
-            text: 'Totals and vitals appear after the first successful sync.',
+            text: 'Day picture appears after the first successful sync.',
           ),
         ];
       case HomePrecedence.syncInProgress:
-        return [
-          _TotalsSection(snapshot: s, muted: true),
-          const SizedBox(height: 12),
-          const _NoteCard(
-            text:
-                'Previous snapshot stays if present; otherwise placeholders — no charts while syncing.',
-          ),
-        ];
       case HomePrecedence.syncFailed:
-        return [
-          _NoteCard(
-            text: s.lastSyncedLabel != null
-                ? 'Last known ${s.lastSyncedLabel} — retry when ready.'
-                : 'Last good data kept when available — retry when ready.',
-          ),
-          if (s.caloriesLabel != null ||
-              s.stepsLabel != null ||
-              s.vitalsSnapshotLabel != null) ...[
-            const SizedBox(height: 12),
-            _TotalsSection(snapshot: s),
-            const SizedBox(height: 12),
-            _VitalsSnapshot(label: s.vitalsSnapshotLabel),
-          ],
-        ];
       case HomePrecedence.dataAvailable:
-        return [
-          _TotalsSection(snapshot: s),
-          const SizedBox(height: 12),
-          _VitalsSnapshot(label: s.vitalsSnapshotLabel),
-          const SizedBox(height: 12),
-          _SwimTakeawayCard(
-            title: s.swimTakeawayTitle ?? 'Swim',
-            body: s.swimTakeawayBody ?? '',
-            sessionNumber: s.swimSessionNumber,
-          ),
-        ];
-      case HomePrecedence.noSwimDataYet:
-        return [
-          _TotalsSection(snapshot: s),
-          const SizedBox(height: 12),
-          _VitalsSnapshot(label: s.vitalsSnapshotLabel),
-          const SizedBox(height: 12),
-          _SwimEmptyCard(
-            title: s.swimTakeawayTitle ?? 'No swim yet today',
-            body: s.swimTakeawayBody ??
-                'When you finish a pool session, the takeaway lands here — one line, not a chart.',
-          ),
-        ];
+        return _todayStack(s, muted: muted, staleColor: staleColor);
     }
+  }
+
+  List<Widget> _todayStack(
+    HomeSnapshot s, {
+    required bool muted,
+    required Color staleColor,
+  }) {
+    final out = <Widget>[];
+
+    if (s.precedence == HomePrecedence.syncFailed &&
+        s.lastSyncedLabel != null) {
+      out.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            key: const Key('home-stale-cue'),
+            s.lastSyncedLabel!,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: staleColor,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (s.sleepDurationLabel != null) {
+      out.add(_SleepStrip(snapshot: s, muted: muted));
+      out.add(const SizedBox(height: 12));
+    }
+
+    if (s.caloriesLabel != null ||
+        s.stepsLabel != null ||
+        s.workoutTimeLabel != null) {
+      out.add(_TotalsSection(snapshot: s, muted: muted));
+      out.add(const SizedBox(height: 12));
+    } else if (s.precedence == HomePrecedence.syncInProgress &&
+        !s.hasDayStackContent) {
+      out.add(
+        const _NoteCard(
+          text:
+              'Previous snapshot stays if present; otherwise placeholders — no charts while syncing.',
+        ),
+      );
+      return out;
+    }
+
+    if (s.bodyHrLabel != null) {
+      out.add(_BodyHrCard(snapshot: s, muted: muted));
+      out.add(const SizedBox(height: 12));
+    }
+
+    out.add(_TodaySessionsSection(snapshot: s, muted: muted));
+    return out;
   }
 }
 
@@ -427,6 +452,93 @@ void _requestSync(BuildContext context) {
   }
 }
 
+class _SleepStrip extends StatelessWidget {
+  const _SleepStrip({required this.snapshot, this.muted = false});
+
+  final HomeSnapshot snapshot;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = FathomColors.of(context);
+    final ink = muted ? colors.inkFaint : colors.ink;
+    return Opacity(
+      opacity: muted ? 0.62 : 1,
+      child: _SurfaceCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Last night',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: colors.inkFaint,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              snapshot.sleepDurationLabel!,
+              key: const Key('home-sleep-duration'),
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                color: ink,
+                letterSpacing: -0.6,
+              ),
+            ),
+            if (snapshot.sleepWindowLabel != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                snapshot.sleepWindowLabel!,
+                key: const Key('home-sleep-window'),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colors.inkDim,
+                  fontFamily: 'IBMPlexMono',
+                ),
+              ),
+            ],
+            if (snapshot.sleepFeelCue != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                key: const Key('home-sleep-feel'),
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: colors.pool.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: colors.line),
+                ),
+                child: Text.rich(
+                  TextSpan(
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colors.inkDim,
+                      height: 1.4,
+                    ),
+                    children: [
+                      TextSpan(
+                        text: 'Feel on wake: ',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: colors.ink,
+                        ),
+                      ),
+                      TextSpan(text: snapshot.sleepFeelCue),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _TotalsSection extends StatelessWidget {
   const _TotalsSection({required this.snapshot, this.muted = false});
 
@@ -438,38 +550,41 @@ class _TotalsSection extends StatelessWidget {
     final colors = FathomColors.of(context);
     final valueColor = muted ? colors.inkFaint : colors.ink;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _Kpi(
-                label: 'Calories',
-                value: snapshot.caloriesLabel ?? '—',
-                valueColor: valueColor,
+    return Opacity(
+      opacity: muted ? 0.62 : 1,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _Kpi(
+                  label: 'Calories',
+                  value: snapshot.caloriesLabel ?? '—',
+                  valueColor: valueColor,
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _Kpi(
-                label: 'Steps',
-                value: snapshot.stepsLabel ?? '—',
-                valueColor: valueColor,
+              const SizedBox(width: 10),
+              Expanded(
+                child: _Kpi(
+                  label: 'Steps',
+                  value: snapshot.stepsLabel ?? '—',
+                  valueColor: valueColor,
+                ),
               ),
+            ],
+          ),
+          if (snapshot.workoutTimeLabel != null) ...[
+            const SizedBox(height: 10),
+            _Kpi(
+              label: 'Workout time',
+              value: snapshot.workoutTimeLabel!,
+              valueColor: valueColor,
+              wide: true,
             ),
           ],
-        ),
-        if (snapshot.workoutTimeLabel != null) ...[
-          const SizedBox(height: 10),
-          _Kpi(
-            label: 'Workout time',
-            value: snapshot.workoutTimeLabel!,
-            valueColor: valueColor,
-            wide: true,
-          ),
         ],
-      ],
+      ),
     );
   }
 }
@@ -519,134 +634,261 @@ class _Kpi extends StatelessWidget {
   }
 }
 
-class _VitalsSnapshot extends StatelessWidget {
-  const _VitalsSnapshot({required this.label});
+class _BodyHrCard extends StatelessWidget {
+  const _BodyHrCard({required this.snapshot, this.muted = false});
 
-  final String? label;
+  final HomeSnapshot snapshot;
+  final bool muted;
 
   @override
   Widget build(BuildContext context) {
     final colors = FathomColors.of(context);
-    return _SurfaceCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Vitals · now',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: colors.inkFaint,
+    final ink = muted ? colors.inkFaint : colors.ink;
+    final spark = snapshot.bodyHrSparkSamples.length >= 2;
+
+    return Opacity(
+      opacity: muted ? 0.62 : 1,
+      child: _SurfaceCard(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Body · today',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: colors.inkFaint,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${snapshot.bodyHrLabel} bpm',
+                    key: const Key('home-body-hr'),
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: ink,
+                      letterSpacing: -0.4,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'min · avg · max',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colors.inkFaint,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            label ?? '— · — · —',
-            key: const Key('home-vitals-snapshot'),
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: colors.ink,
-            ),
-          ),
-        ],
+            if (spark)
+              SizedBox(
+                key: const Key('home-hr-spark'),
+                width: 88,
+                child: HrSparkline(
+                  samples: snapshot.bodyHrSparkSamples,
+                  height: 28,
+                  compact: true,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _SwimTakeawayCard extends StatelessWidget {
-  const _SwimTakeawayCard({
-    required this.title,
-    required this.body,
-    this.sessionNumber,
-  });
+class _TodaySessionsSection extends StatelessWidget {
+  const _TodaySessionsSection({required this.snapshot, this.muted = false});
 
-  final String title;
-  final String body;
-  final int? sessionNumber;
+  final HomeSnapshot snapshot;
+  final bool muted;
 
   @override
   Widget build(BuildContext context) {
     final colors = FathomColors.of(context);
-    return _SurfaceCard(
+    final sessions = snapshot.todaySessions;
+
+    if (sessions.isEmpty) {
+      return Opacity(
+        opacity: muted ? 0.62 : 1,
+        child: _SurfaceCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Sessions',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: colors.inkFaint,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'No sessions yet today',
+                key: const Key('home-sessions-empty'),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: muted ? colors.inkFaint : colors.ink,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Sleep and body stay useful on a rest day — no fake workout.',
+                style: TextStyle(color: colors.inkDim, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Opacity(
+      opacity: muted ? 0.62 : 1,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            sessionNumber == null ? 'Swim' : 'Swim · #$sessionNumber',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: colors.inkFaint,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            title,
-            key: const Key('home-swim-takeaway'),
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: colors.ink,
+          Row(
+            children: [
+              Text(
+                'TODAY’S SESSIONS',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6,
+                  color: colors.inkFaint,
                 ),
+              ),
+              const Spacer(),
+              Text(
+                '${sessions.length}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colors.inkFaint,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
-          Text(
-            body,
-            style: TextStyle(color: colors.inkDim, height: 1.4),
-          ),
-          const SizedBox(height: 14),
-          FilledButton(
-            key: const Key('home-cta-open-session'),
-            onPressed: () => WorkoutHistoryRoute.go(context),
-            style: FilledButton.styleFrom(
-              backgroundColor: colors.accent,
-              foregroundColor: colors.accentInk,
-            ),
-            child: const Text('Open session'),
-          ),
+          for (var i = 0; i < sessions.length; i++) ...[
+            if (i > 0) const SizedBox(height: 10),
+            _SessionCard(card: sessions[i], index: i),
+          ],
         ],
       ),
     );
   }
 }
 
-class _SwimEmptyCard extends StatelessWidget {
-  const _SwimEmptyCard({required this.title, required this.body});
+class _SessionCard extends StatelessWidget {
+  const _SessionCard({required this.card, required this.index});
 
-  final String title;
-  final String body;
+  final HomeTodaySessionCard card;
+  final int index;
 
   @override
   Widget build(BuildContext context) {
     final colors = FathomColors.of(context);
-    return _SurfaceCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Swim',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: colors.inkFaint,
-            ),
+    return Material(
+      color: colors.bgElev,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        key: Key('home-session-$index'),
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => WorkoutDetailRoute.go(context, card.workout),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: colors.line),
           ),
-          const SizedBox(height: 6),
-          Text(
-            title,
-            key: const Key('home-swim-empty'),
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: colors.ink,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          card.title,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: colors.ink,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        if (card.whenLabel.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            card.whenLabel,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colors.inkFaint,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Text(
+                    '›',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: colors.inkFaint,
+                    ),
+                  ),
+                ],
+              ),
+              if (card.meta.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Divider(height: 1, color: colors.line),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    for (var i = 0; i < card.meta.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              card.meta[i].label,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: colors.inkFaint,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              card.meta[i].value,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: colors.ink,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
+              ],
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            body,
-            style: TextStyle(color: colors.inkDim, height: 1.4),
-          ),
-        ],
+        ),
       ),
     );
   }

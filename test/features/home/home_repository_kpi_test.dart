@@ -3,6 +3,7 @@ import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/home/data/repositories/home_repository_impl.dart';
+import 'package:fitness_os/features/home/domain/home_precedence.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
@@ -32,7 +33,9 @@ class _Workouts implements WorkoutHistoryRepository {
   Future<List<WorkoutSummary>> loadLocal() async => local;
 
   @override
-  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch() async =>
+  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch({
+    bool forceFullHistory = false,
+  }) async =>
       Right(local);
 
   @override
@@ -235,7 +238,7 @@ void main() {
     final snap = await repo.loadSnapshot();
     expect(snap.caloriesLabel, '525');
     expect(snap.stepsLabel, '7,825');
-    expect(snap.workoutTimeLabel, '55m');
+    expect(snap.workoutTimeLabel, '55m · 1 session');
   });
 
   test('no FT falls back to workout-sum triple', () async {
@@ -248,7 +251,7 @@ void main() {
     final snap = await repo.loadSnapshot();
     expect(snap.caloriesLabel, '781');
     expect(snap.stepsLabel, '300');
-    expect(snap.workoutTimeLabel, '120m');
+    expect(snap.workoutTimeLabel, '2h · 2 sessions');
   });
 
   test('FT all-zero with no workouts shows zeros for cal/steps', () async {
@@ -265,7 +268,7 @@ void main() {
     final snap = await repo.loadSnapshot();
     expect(snap.caloriesLabel, '0');
     expect(snap.stepsLabel, '0');
-    expect(snap.workoutTimeLabel, '0m');
+    expect(snap.workoutTimeLabel, '0m · no sessions');
   });
 
   test('FT cal=0 with workout calories fails sanity → workout-sum triple',
@@ -286,7 +289,7 @@ void main() {
     final snap = await repo.loadSnapshot();
     expect(snap.caloriesLabel, '349');
     expect(snap.stepsLabel, '12');
-    expect(snap.workoutTimeLabel, '55m');
+    expect(snap.workoutTimeLabel, '55m · 1 session');
   });
 
   test('FT for yesterday only → today workout-sum', () async {
@@ -306,7 +309,7 @@ void main() {
     final snap = await repo.loadSnapshot();
     expect(snap.caloriesLabel, '200');
     expect(snap.stepsLabel, '50');
-    expect(snap.workoutTimeLabel, '10m');
+    expect(snap.workoutTimeLabel, '10m · 1 session');
   });
 
   test('fail-closed FT load → workout-sum', () async {
@@ -326,10 +329,11 @@ void main() {
     final snap = await repo.loadSnapshot();
     expect(snap.caloriesLabel, '100');
     expect(snap.stepsLabel, '20');
-    expect(snap.workoutTimeLabel, '2m');
+    expect(snap.workoutTimeLabel, '2m · 1 session');
   });
 
-  test('indoor run type 5 today is not a Home swim takeaway', () async {
+  test('indoor run type 5 today appears as a session card, not swim-gated',
+      () async {
     final start = DateTime(fixedNow.year, fixedNow.month, fixedNow.day, 10);
     final startUnix = start.millisecondsSinceEpoch ~/ 1000;
     final repo = await buildRepo(
@@ -343,17 +347,26 @@ void main() {
           distanceM: 1000,
           calories: 80,
           steps: 1200,
+          load: 40,
+          aerobicEffect: 23,
+          recoveryTime: 600,
         ),
       ],
     );
     final snap = await repo.loadSnapshot();
-    expect(snap.swimSessionNumber, isNull);
-    expect(snap.swimTakeawayTitle, isNot(contains('Pool swim')));
-    expect(snap.swimTakeawayTitle, isNot(contains('Indoor run')));
-    expect(snap.workoutTimeLabel, '7m');
+    expect(snap.precedence, isNot(HomePrecedence.notPaired));
+    expect(snap.todaySessions, hasLength(1));
+    expect(snap.todaySessions.first.title, 'Indoor run · #35');
+    expect(
+      snap.todaySessions.first.meta
+          .where((m) => m.label == 'TE')
+          .map((m) => m.value),
+      ['2.3'],
+    );
+    expect(snap.workoutTimeLabel, '7m · 1 session');
   });
 
-  test('pool swim type 6 today is a Home swim takeaway', () async {
+  test('pool swim type 6 today is a session card with identity', () async {
     final start = DateTime(fixedNow.year, fixedNow.month, fixedNow.day, 7);
     final startUnix = start.millisecondsSinceEpoch ~/ 1000;
     final repo = await buildRepo(
@@ -366,11 +379,69 @@ void main() {
           durationSec: 3600,
           distanceM: 1000,
           calories: 349,
+          load: 100,
+          aerobicEffect: 24,
+          recoveryTime: 720,
         ),
       ],
     );
     final snap = await repo.loadSnapshot();
-    expect(snap.swimSessionNumber, 33);
-    expect(snap.swimTakeawayTitle, 'Pool swim · 1.0 km');
+    expect(snap.todaySessions, hasLength(1));
+    expect(snap.todaySessions.first.title, 'Pool swim · #33');
+    expect(snap.todaySessions.first.workout.number, 33);
+    expect(
+      snap.todaySessions.first.meta.map((m) => m.label),
+      containsAll(['Load', 'TE', 'Recovery']),
+    );
   });
+
+  test('non-today HR days do not surface as body HR', () async {
+    final today = dayKey(fixedNow);
+    final yesterday = dayKey(fixedNow.subtract(const Duration(days: 1)));
+    SharedPreferences.setMockInitialValues({
+      GateAPrefs.rememberedMac: 'AA:BB:CC:DD:EE:FF',
+      GateAPrefs.rememberedName: 'GT5',
+      GateAPrefs.gateAPassed: true,
+      GateAPrefs.homeLastSyncStatus: 'ok',
+      GateAPrefs.homeLastSyncAtMs: fixedNow.millisecondsSinceEpoch,
+      GateAPrefs.lastSyncCursor: 1,
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final repo = HomeRepositoryImpl(
+      prefs: prefs,
+      link: _StubLink(),
+      workouts: _Workouts(const []),
+      vitals: _VitalsHr(
+        days: [
+          DailyHrDaySummary(
+            dayKey: yesterday,
+            minBpm: 40,
+            avgBpm: 50,
+            maxBpm: 60,
+            sampleCount: 10,
+          ),
+        ],
+        ftToday: FitnessTotalsDay(
+          dayKey: today,
+          dayStartUnix: 0,
+          calories: 1,
+          steps: 1,
+          exerciseDurationSec: 0,
+        ),
+      ),
+      now: () => fixedNow,
+    );
+    final snap = await repo.loadSnapshot();
+    expect(snap.bodyHrLabel, isNull);
+    expect(snap.bodyHrSparkSamples, isEmpty);
+  });
+}
+
+class _VitalsHr extends _Vitals {
+  _VitalsHr({required this.days, super.ftToday});
+
+  final List<DailyHrDaySummary> days;
+
+  @override
+  Future<List<DailyHrDaySummary>> loadDailyHr() async => days;
 }

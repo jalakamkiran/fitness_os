@@ -9,14 +9,19 @@ class HrSparkline extends StatelessWidget {
     super.key,
     required this.samples,
     this.height = 120,
+    this.compact = false,
   });
 
   final List<DailyHrSample> samples;
   final double height;
 
+  /// Home budget: line only, silent when &lt;2 samples (no empty-chart copy).
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     if (samples.length < 2) {
+      if (compact) return SizedBox(height: height);
       return SizedBox(
         height: height,
         child: Center(
@@ -36,22 +41,27 @@ class HrSparkline extends StatelessWidget {
     final maxBpm = samples.map((s) => s.bpm).reduce(math.max);
     final pad = math.max(4, ((maxBpm - minBpm) * 0.08).round());
 
+    final chart = SizedBox(
+      height: height,
+      width: compact ? 88 : null,
+      child: CustomPaint(
+        painter: _HrSparklinePainter(
+          samples: samples,
+          lineColor: scheme.primary,
+          fillColor: scheme.primary.withValues(alpha: compact ? 0 : 0.12),
+          minBpm: minBpm - pad,
+          maxBpm: maxBpm + pad,
+        ),
+        child: const SizedBox.expand(),
+      ),
+    );
+
+    if (compact) return chart;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          height: height,
-          child: CustomPaint(
-            painter: _HrSparklinePainter(
-              samples: samples,
-              lineColor: scheme.primary,
-              fillColor: scheme.primary.withValues(alpha: 0.12),
-              minBpm: minBpm - pad,
-              maxBpm: maxBpm + pad,
-            ),
-            child: const SizedBox.expand(),
-          ),
-        ),
+        chart,
         const SizedBox(height: 6),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,

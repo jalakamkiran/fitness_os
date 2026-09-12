@@ -54,6 +54,8 @@ Working name “Fitness OS” no longer matches positioning. Charts and Home pro
   - one swim takeaway
   - today’s totals (calories, steps, workout time)
 - **Home never:** graphs, vitals history, full diagnosis lists, reasoner settings
+
+> **Supersession (2026-09-12):** Conflicting Home bullets above (swim-only takeaway; absolute never-graphs; KPI strip without multi-sport entry) yield to [`docs/brainstorms/2026-09-12-home-today-instrument-requirements.md`](../brainstorms/2026-09-12-home-today-instrument-requirements.md). Home is now a **Today instrument stack**: sleep → totals → body HR (≤1 tiny spark) → multi-sport session cards. Hypnogram, workout charts, calendars, diagnoses, reasoner, food, and composite scores remain off Home.
 - **Swim detail:** identity + P0 + session charts + table + diagnoses + allow-listed recs; Reasoner via primary **Run reasoner** on click (not always open); invent-guard on laps by default
 
 ### Sync posture
@@ -62,7 +64,7 @@ Working name “Fitness OS” no longer matches positioning. Charts and Home pro
 
 ### Charts / swim session analytics — LOCKED 2026-07-25 (owner + Product Head)
 - **Canonical review surface:** `docs/design/swim-analytics.html` (+ hub `docs/design/index.html`)
-- Charts live on **swim session detail** only — never Home
+- Charts live on **swim session detail** only — never as Home analytics graphs (Home may show one tiny today-HR spark per 2026-09-12)
 - Stack (order locked): Pace bars → SWOLF area → Strokes bars → Pace+SWOLF normalized overlay; HR only if samples exist
 - Session surface (top→bottom): Identity → P0 signals → charts → interval table → diagnoses → allow-listed recommendations → **Run reasoner** (on demand, never auto)
 - Invent-guard: garbage laps **hidden by default** from P0 / charts / table; visible **Include filtered laps** toggle; all three stay synchronized

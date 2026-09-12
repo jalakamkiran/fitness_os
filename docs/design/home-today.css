@@ -1,0 +1,272 @@
+/* Home Today instrument — stack blocks on top of home-prototype/styles.css */
+
+.stack-muted {
+  opacity: 0.62;
+  filter: saturate(0.85);
+}
+
+.stale-cue {
+  margin: 0 0 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--amber);
+  font-weight: 600;
+}
+
+/* Sleep strip — display only, no CTA */
+.sleep-strip .sleep-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.sleep-strip .sleep-duration {
+  margin: 4px 0 0;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.sleep-strip .sleep-duration .unit {
+  font-size: 0.55em;
+  color: var(--ink-dim);
+  font-weight: 600;
+  margin-left: 2px;
+}
+.sleep-strip .sleep-window {
+  margin: 8px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+.sleep-strip .feel-cue {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-dim);
+  line-height: 1.4;
+}
+.sleep-strip .feel-cue strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* Body HR — numbers + optional one tiny spark */
+.body-hr .hr-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.body-hr .hr-nums {
+  margin: 6px 0 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.body-hr .hr-nums .unit {
+  font-size: 0.65em;
+  color: var(--ink-dim);
+  font-weight: 600;
+}
+.body-hr .hr-legend {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+}
+.spark-tiny {
+  width: 88px;
+  height: 28px;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.spark-tiny path {
+  fill: none;
+  stroke: var(--spark);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Today session cards — thinner than Workouts list */
+.sessions-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0 2px;
+  margin-bottom: -4px;
+}
+.sessions-head h2 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 700;
+}
+.sessions-head .count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.today-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.today-session {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+.today-session:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  transform: translateY(-1px);
+}
+.today-session:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.today-session .session-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.today-session .session-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.today-session .session-when {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+}
+.today-session .session-chev {
+  color: var(--ink-faint);
+  font-size: 18px;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.today-session .session-meta {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.today-session .session-meta div p {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+.today-session .session-meta div strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.today-session .session-meta.cols-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+.today-session .session-meta.cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.sessions-empty {
+  margin: 0;
+}
+.sessions-empty .empty-title {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* Compact sync chrome — supporting, not hero */
+.sync-card.compact .sync-title {
+  font-size: 18px;
+}
+.sync-card.compact .hero-caption {
+  font-size: 12px;
+}
+
+/* Totals without coach deltas / on-track claims */
+.kpi-grid.honest .kpi-delta {
+  display: none;
+}
+.kpi-grid.honest .spark {
+  display: none;
+}
+
+.review-banner {
+  max-width: 720px;
+  margin: 0 0 28px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-elev));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-dim);
+}
+.review-banner strong {
+  color: var(--ink);
+}
+.review-banner code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--ink);
+}
+
+.section-divider {
+  max-width: 1280px;
+  margin: 48px auto 20px;
+  padding: 0 20px;
+}
+.section-divider h2 {
+  margin: 0 0 6px;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+}
+.section-divider p {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  max-width: 62ch;
+}
+
+.gallery .sleep-strip .sleep-duration { font-size: 24px; }
+.gallery .body-hr .hr-nums { font-size: 17px; }
+.gallery .today-session .session-title { font-size: 14px; }
+.gallery .today-session .session-meta div strong { font-size: 12px; }
+.gallery .spark-tiny { width: 72px; height: 24px; }
+.gallery .sync-card.compact .sync-title { font-size: 16px; }
