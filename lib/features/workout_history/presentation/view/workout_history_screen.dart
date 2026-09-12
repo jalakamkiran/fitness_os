@@ -76,12 +76,47 @@ class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
             builder: (context, state) {
               final syncing = state.phase == WorkoutHistoryPhase.syncing;
               return IconButton(
-                tooltip: 'Sync all history',
+                tooltip: 'Sync (long-press: full history from 2022)',
                 onPressed: !state.gateAPassed || syncing
                     ? null
                     : () => context
                         .read<WorkoutHistoryBloc>()
                         .add(const WorkoutHistorySyncRequested()),
+                onLongPress: !state.gateAPassed || syncing
+                    ? null
+                    : () async {
+                        final ok = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Full-history Sync?'),
+                            content: const Text(
+                              'Asks the watch for workouts since mid-2022 '
+                              '(not just since the last Sync cursor). Use this '
+                              'when a session is on-wrist but missing here.\n\n'
+                              'Still hint-gated: does not force-empty Data/Pace. '
+                              'The watch may still omit sessions it already '
+                              'marked synced.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('Cancel'),
+                              ),
+                              FilledButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('Sync'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (ok == true && context.mounted) {
+                          context.read<WorkoutHistoryBloc>().add(
+                                const WorkoutHistorySyncRequested(
+                                  forceFullHistory: true,
+                                ),
+                              );
+                        }
+                      },
                 icon: syncing
                     ? SizedBox(
                         width: 18,

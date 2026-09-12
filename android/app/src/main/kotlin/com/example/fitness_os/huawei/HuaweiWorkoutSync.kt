@@ -261,6 +261,14 @@ class HuaweiWorkoutSync(
 
         val numbers = parseCount(countFrame).sortedBy { it.workoutNumber }
         Log.i(TAG, "workout-sync count=${numbers.size}")
+        for (ref in numbers) {
+            Log.i(
+                TAG,
+                "workout-sync count-entry #${ref.workoutNumber} " +
+                    "data=${ref.dataCount} pace=${ref.paceCount} " +
+                    "seg=${ref.segmentsCount}",
+            )
+        }
         if (numbers.isEmpty()) {
             return mapOf(
                 "status" to "empty",

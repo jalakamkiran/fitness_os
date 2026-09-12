@@ -52,10 +52,15 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
 
   /// Run/session leftover + stream remap generation (monotonic escape hatch).
   ///
-  /// v2: one-shot **wide Count window** (ignore workout cursor for one Sync)
-  /// so Outdoor Run leftovers/streams can re-pull after U1–U5 — still
-  /// hint-gated Data/Pace (no force-empty enrichment).
-  static const currentRunSessionParserVersion = 2;
+  /// v2: one-shot 14-day wide Count (ignore cursor).
+  /// v3: one-shot **full-history** Count from mid-2022 FALLBACK — needed when
+  /// the watch still holds Outdoor Runs older than the incremental cursor
+  /// (Sep 9 missed after cursor advanced to Sep 10+). Still hint-gated
+  /// Data/Pace (no force-empty enrichment).
+  static const currentRunSessionParserVersion = 3;
+
+  /// Same floor GB / POC used for first full-history Count testing.
+  static const fullHistoryStartUnix = 1_654_819_200; // 2022-06-10
 
   @override
   Future<bool> isGateAPassed() async =>
@@ -113,7 +118,9 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   }
 
   @override
-  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch() async {
+  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch({
+    bool forceFullHistory = false,
+  }) async {
     if (!await isGateAPassed()) {
       return const Left(
         ServerFailure('Gate A unlock required before Sync'),
@@ -123,19 +130,29 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     final endUnix = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final storedRunParser =
         _prefs.getInt(GateAPrefs.runSessionParserVersion) ?? 0;
-    final forceWide = storedRunParser < currentRunSessionParserVersion;
+    final parserForceFull =
+        storedRunParser < currentRunSessionParserVersion;
+    final useFullHistory = forceFullHistory || parserForceFull;
+    // v2 cold-start only when explicitly between versions that used 14d —
+    // v3+ always prefers full-history for parser bumps.
+    final forceWide14d = false;
     final startUnix = await _resolveSyncStartUnix(
       endUnix,
-      forceWide: forceWide,
+      forceFullHistory: useFullHistory,
+      forceWide14d: forceWide14d,
     );
-    if (forceWide) {
-      FosHuaweiLog.i(
-        'workout Sync force-wide window '
-        '(runSessionParser $storedRunParser→$currentRunSessionParserVersion) '
-        'start=$startUnix end=$endUnix',
-        op: 'sync',
-      );
-    }
+    final windowLabel = useFullHistory
+        ? 'full-history'
+        : forceWide14d
+            ? 'force-wide-14d'
+            : 'delta';
+    FosHuaweiLog.i(
+      'workout Sync $windowLabel window=[$startUnix,$endUnix] '
+      '(${_fmtUnix(startUnix)} → ${_fmtUnix(endUnix)}) '
+      'runSessionParser=$storedRunParser→$currentRunSessionParserVersion '
+      'forceFullHistory=$forceFullHistory',
+      op: 'sync',
+    );
 
     try {
       final result = await _link.syncWorkouts(
@@ -161,12 +178,17 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
         case WorkoutSyncStatus.empty:
           // Keep prior rows; empty window is success. Consume one-shot force
           // so we do not wide-pull forever when the watch has nothing new.
-          if (forceWide) {
+          if (useFullHistory || forceWide14d) {
             await _prefs.setInt(
               GateAPrefs.runSessionParserVersion,
               currentRunSessionParserVersion,
             );
           }
+          FosHuaweiLog.i(
+            'workout Sync empty Count ($windowLabel) — '
+            'watch may omit already-synced sessions',
+            op: 'sync',
+          );
           final local = await loadLocal();
           return Right(local);
         case WorkoutSyncStatus.ok:
@@ -458,20 +480,22 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
 
   /// Delta-only Count window: cursor − overlap when present; otherwise last
   /// [coldStartWindowDays]. Partials extend the window back to the earliest
-  /// partial start (still not a 2022 full-history dump).
+  /// partial start (still not a 2022 full-history dump by default).
   ///
-  /// [forceWide]: one-shot ignore cursor (cold-start span) when run-session
-  /// parser generation bumps — re-pull Outdoor leftovers/streams without
-  /// force-empty Data/Pace.
+  /// [forceFullHistory]: Count from [fullHistoryStartUnix] (POC FALLBACK).
+  /// [forceWide14d]: ignore cursor for [coldStartWindowDays] only.
   Future<int> _resolveSyncStartUnix(
     int endUnix, {
-    bool forceWide = false,
+    bool forceFullHistory = false,
+    bool forceWide14d = false,
   }) async {
     final coldStart = endUnix - coldStartWindowDays * 86400;
     final cursor = _prefs.getInt(GateAPrefs.lastSyncCursor);
-    var start = forceWide || cursor == null || cursor <= 0
-        ? coldStart
-        : cursor - cursorOverlapSec;
+    var start = forceFullHistory
+        ? fullHistoryStartUnix
+        : (forceWide14d || cursor == null || cursor <= 0)
+            ? coldStart
+            : cursor - cursorOverlapSec;
 
     final local = await loadLocal();
     for (final w in local) {
@@ -482,6 +506,13 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
 
     if (start > endUnix) return endUnix;
     return start;
+  }
+
+  static String _fmtUnix(int unix) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(unix * 1000).toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
+        '${two(dt.hour)}:${two(dt.minute)}';
   }
 
   Future<List<WorkoutSummary>> _mergeAndPersist(
