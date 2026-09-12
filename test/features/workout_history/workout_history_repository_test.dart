@@ -15,6 +15,7 @@ class _StubLink extends HuaweiLink {
   WorkoutSyncResult? result;
   int syncCalls = 0;
   int? lastStartUnix;
+  int? lastEndUnix;
 
   @override
   Future<WorkoutSyncResult> syncWorkouts({
@@ -23,6 +24,7 @@ class _StubLink extends HuaweiLink {
   }) async {
     syncCalls++;
     lastStartUnix = startUnix;
+    lastEndUnix = endUnix;
     return result ??
         const WorkoutSyncResult(
           status: WorkoutSyncStatus.empty,
@@ -64,6 +66,8 @@ void main() {
         GateAPrefs.lastSyncCursor: cursor,
         GateAPrefs.swimSegmentParserVersion:
             WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final link = _StubLink(
@@ -136,6 +140,8 @@ void main() {
         GateAPrefs.lastSyncCursor: cursor,
         GateAPrefs.swimSegmentParserVersion:
             WorkoutHistoryRepositoryImpl.currentSwimSegmentParserVersion,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
         GateAPrefs.workoutsJson:
             '[{"number":1,"startTime":$partialStart,"endTime":${partialStart + 100},'
                 '"durationSec":100,"type":6,"enrichmentStatus":"partial"}]',
@@ -163,6 +169,9 @@ void main() {
         GateAPrefs.gateAPassed: true,
         GateAPrefs.lastSyncCursor: cursor,
         GateAPrefs.swimSegmentParserVersion: 1,
+        // Current run parser already stamped — no force-wide from this path.
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_swim_reparse_');
@@ -200,6 +209,95 @@ void main() {
       );
     });
 
+    test('stale runSessionParserVersion force-wide Count window (one-shot)',
+        () async {
+      const cursor = 1_700_000_000;
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.lastSyncCursor: cursor,
+        GateAPrefs.runSessionParserVersion: 1, // stale vs current=2
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final tmp = await Directory.systemTemp.createTemp('fos_run_force_wide_');
+      addTearDown(() => tmp.delete(recursive: true));
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.ok,
+          workouts: [
+            WorkoutSummary(
+              number: 90,
+              startTime: 1_700_000_100,
+              endTime: 1_700_003_600,
+              durationSec: 3500,
+              type: 2,
+              distanceM: 5000,
+            ),
+          ],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(
+        link: link,
+        prefs: prefs,
+        runSessionStore: RunSessionStore(rootOverride: () => tmp),
+        swimRootOverride: () => tmp,
+      );
+
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      final end = link.lastEndUnix!;
+      final expectedWide =
+          end - WorkoutHistoryRepositoryImpl.coldStartWindowDays * 86400;
+      expect(link.lastStartUnix, expectedWide);
+      expect(
+        prefs.getInt(GateAPrefs.runSessionParserVersion),
+        WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
+      );
+
+      // Second Sync is delta again (stamp consumed).
+      final cursorBeforeSecond = prefs.getInt(GateAPrefs.lastSyncCursor)!;
+      link.result = const WorkoutSyncResult(
+        status: WorkoutSyncStatus.ok,
+        workouts: [
+          WorkoutSummary(
+            number: 91,
+            startTime: 1_700_010_000,
+            endTime: 1_700_011_000,
+            durationSec: 1000,
+            type: 2,
+            distanceM: 1000,
+          ),
+        ],
+      );
+      await repo.syncFromWatch();
+      expect(
+        link.lastStartUnix,
+        cursorBeforeSecond - WorkoutHistoryRepositoryImpl.cursorOverlapSec,
+      );
+    });
+
+    test('force-wide empty Sync still consumes one-shot stamp', () async {
+      const cursor = 1_700_000_000;
+      SharedPreferences.setMockInitialValues({
+        GateAPrefs.gateAPassed: true,
+        GateAPrefs.lastSyncCursor: cursor,
+        GateAPrefs.runSessionParserVersion: 0,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final link = _StubLink(
+        result: const WorkoutSyncResult(
+          status: WorkoutSyncStatus.empty,
+          workouts: [],
+        ),
+      );
+      final repo = WorkoutHistoryRepositoryImpl(link: link, prefs: prefs);
+      final out = await repo.syncFromWatch();
+      expect(out, isA<Right>());
+      expect(
+        prefs.getInt(GateAPrefs.runSessionParserVersion),
+        WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
+      );
+    });
+
     test('after parser bump stamps, next sync uses incremental window',
         () async {
       const cursor = 1_700_000_000;
@@ -208,6 +306,8 @@ void main() {
         GateAPrefs.lastSyncCursor: cursor,
         // Stale vs current — still delta; no full-history force.
         GateAPrefs.swimSegmentParserVersion: 1,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_swim_bump_');
@@ -742,6 +842,8 @@ void main() {
       SharedPreferences.setMockInitialValues({
         GateAPrefs.gateAPassed: true,
         GateAPrefs.lastSyncCursor: 1_690_000_000,
+        GateAPrefs.runSessionParserVersion:
+            WorkoutHistoryRepositoryImpl.currentRunSessionParserVersion,
       });
       final prefs = await SharedPreferences.getInstance();
       final tmp = await Directory.systemTemp.createTemp('fos_u3_cursor_');
