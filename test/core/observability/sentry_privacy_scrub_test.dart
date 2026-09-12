@@ -68,6 +68,53 @@ void main() {
       expect(out?['status'], 'ok');
     });
 
+    test('drops leftover / HR points / recovery-HR aliases', () {
+      final out = SentryPrivacyScrub.scrubMap({
+        'status': 'ok',
+        'leftover': 'deadbeef',
+        'leftoverBytes': 'aabb',
+        'hrPoints': [70, 72],
+        'recoveryHr': 'blob',
+        'recoveryHeartRates': 'blob2',
+        'pointsBytesBase64': 'YQ==',
+        'nested': {
+          'leftoverBytesHex': 'ff00',
+          'safe': true,
+        },
+      });
+      expect(out?.containsKey('leftover'), isFalse);
+      expect(out?.containsKey('leftoverBytes'), isFalse);
+      expect(out?.containsKey('hrPoints'), isFalse);
+      expect(out?.containsKey('recoveryHr'), isFalse);
+      expect(out?.containsKey('recoveryHeartRates'), isFalse);
+      expect(out?.containsKey('pointsBytesBase64'), isFalse);
+      expect(out?['nested']?.containsKey('leftoverBytesHex'), isFalse);
+      expect(out?['nested']?['safe'], isTrue);
+      expect(out?['status'], 'ok');
+    });
+
+    test('drops strength prove envelope sessions / bytesBase64', () {
+      final out = SentryPrivacyScrub.scrubMap({
+        'status': 'ok',
+        'kind': 'strength_session',
+        'sessionCount': 1,
+        'sessions': [
+          {
+            'number': 42,
+            'leftover': {'bytesBase64': 'YQ=='},
+            'samples': {'pointsBytesBase64': 'Yg=='},
+          },
+        ],
+        'flat': {'bytesBase64': 'Yw=='},
+      });
+      expect(out?.containsKey('sessions'), isFalse);
+      expect(out?.containsKey('sessionCount'), isFalse);
+      // Nested map with only forbidden keys is dropped entirely.
+      expect(out?.containsKey('flat'), isFalse);
+      expect(out?['status'], 'ok');
+      expect(out?['kind'], 'strength_session');
+    });
+
     test('drops PlatformException-shaped details', () {
       final out = SentryPrivacyScrub.scrubMap({
         'code': 'sync_failed',
