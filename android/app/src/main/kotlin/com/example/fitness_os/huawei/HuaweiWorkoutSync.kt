@@ -274,9 +274,9 @@ class HuaweiWorkoutSync(
     }
 
     /**
-     * @param enrichStartUnix floor for hint-gated Data/Pace/Swim. During leftover-keep
-     * one-shot, Count uses [startUnix] (2022 floor) while enrich stays incremental.
-     * Strength (`type=140` with `dataCount>0`) is always enrich-eligible.
+     * @param enrichStartUnix floor for hint-gated Data/Pace/Swim (defaults to
+     * [startUnix]). Strength (`type=140` with `dataCount>0`) is always
+     * enrich-eligible.
      * @return status: ok | empty | stuck | error | partial_batch; workouts: totals maps
      */
     fun sync(

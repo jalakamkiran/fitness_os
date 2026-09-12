@@ -58,14 +58,6 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
   /// (v3 one-shot force for stroke-style capability proof is complete — left at v2.)
   static const currentSwimSegmentParserVersion = 2;
 
-  /// Leftover-keep impl version. Mismatch forces one Count window from the
-  /// native 2022 floor; stamped only after leftover persist lands on ok /
-  /// partial_batch (not Totals-prefix stuck).
-  static const currentLeftoverKeepImplVersion = 1;
-
-  /// Matches native [HuaweiWorkoutSync.FALLBACK_START_UNIX] (2022-06-10).
-  static const leftoverKeepFullHistoryStartUnix = 1654819200;
-
   @override
   bool get isSyncOrMergeInFlight => _link.syncInFlight || _mergeInFlight;
 
@@ -142,21 +134,12 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
     }
 
     final endUnix = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    // Clock 3 / cursor delta — also the enrich floor during leftover-keep one-shot.
-    final enrichStartUnix = await _resolveSyncStartUnix(endUnix);
-    final storedLeftoverKeep =
-        _prefs.getInt(GateAPrefs.leftoverKeepImplVersion) ?? 0;
-    final forceFullHistory =
-        storedLeftoverKeep < currentLeftoverKeepImplVersion;
-    // Clock 1: stale leftover-keep → Count from 2022 floor; enrich stays delta.
-    final startUnix =
-        forceFullHistory ? leftoverKeepFullHistoryStartUnix : enrichStartUnix;
+    final startUnix = await _resolveSyncStartUnix(endUnix);
 
     try {
       final result = await _link.syncWorkouts(
         startUnix: startUnix,
         endUnix: endUnix,
-        enrichStartUnix: enrichStartUnix,
       );
 
       switch (result.status) {
@@ -183,7 +166,6 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
         case WorkoutSyncStatus.stuck:
           // Totals-prefix stuck: persist maps that arrived (AE6/R5). Empty
           // stuck stays blocked (AE7) — do not merge or advance cursor.
-          // Do not stamp leftover-keep (next Count stays 2022 floor).
           FosHuaweiLog.i(
             syncNotOkSwimStyleOutcomeLine(result.status),
             op: 'sync',
@@ -228,10 +210,9 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
             result.workouts,
             log: (message) => FosHuaweiLog.i(message, op: 'sync'),
           );
-          await _maybeStampLeftoverKeepVersion();
           return Right(partialMerged);
         case WorkoutSyncStatus.empty:
-          // Keep prior rows; empty window is success. Do not stamp-on-empty.
+          // Keep prior rows; empty window is success.
           final local = await loadLocal();
           return Right(local);
         case WorkoutSyncStatus.ok:
@@ -247,22 +228,11 @@ class WorkoutHistoryRepositoryImpl implements WorkoutHistoryRepository {
             GateAPrefs.swimSegmentParserVersion,
             currentSwimSegmentParserVersion,
           );
-          await _maybeStampLeftoverKeepVersion();
           return Right(merged);
       }
     } finally {
       _onSyncSettled?.call();
     }
-  }
-
-  /// Stamp leftover-keep only after leftover persist was attempted for every
-  /// workout in the native list and [lastLeftoverPersistLanded] is true.
-  Future<void> _maybeStampLeftoverKeepVersion() async {
-    if (!_lastLeftoverPersistLanded || !_gateStillPassed()) return;
-    await _prefs.setInt(
-      GateAPrefs.leftoverKeepImplVersion,
-      currentLeftoverKeepImplVersion,
-    );
   }
 
   /// Late merge after Forget / Gate A clear is a no-op (identity wiped).

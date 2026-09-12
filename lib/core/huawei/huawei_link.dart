@@ -253,8 +253,8 @@ class HuaweiLink {
   /// Gate B radio call. Requires authenticated session (`connected` or
   /// `gateAIncomplete`). Product unlock is enforced by workout_history.
   ///
-  /// [enrichStartUnix] is the incremental enrich floor (Count may be wider on
-  /// leftover-keep one-shot). Defaults to [startUnix] when omitted.
+  /// [enrichStartUnix] optionally narrows Data/Pace/Swim enrich relative to
+  /// Count [startUnix]. Defaults to [startUnix] when omitted.
   Future<WorkoutSyncResult> syncWorkouts({
     required int startUnix,
     required int endUnix,
