@@ -10,6 +10,7 @@ import 'package:fitness_os/features/diagnostics/data/run_session_export_service.
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
+import 'package:fitness_os/features/workout_history/data/workout_tcx_export_service.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
 import 'package:fitness_os/features/workout_history/domain/offline_swim_reasoner.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
@@ -44,6 +45,8 @@ class WorkoutDetailScreen extends StatefulWidget {
     this.exportBusyOverride,
     this.shareExport,
     this.historyOverride,
+    this.tcxExportService,
+    this.shareTcx,
   });
 
   final WorkoutSummary workout;
@@ -87,6 +90,12 @@ class WorkoutDetailScreen extends StatefulWidget {
 
   /// Test seam — recent-load bars without GetIt repository.
   final List<WorkoutSummary>? historyOverride;
+
+  /// Test seam — production uses [WorkoutTcxExportService] from DI.
+  final WorkoutTcxExportService? tcxExportService;
+
+  /// Test seam — production uses [SharePlus] with TCX mime type.
+  final Future<void> Function(File file)? shareTcx;
 
   @override
   State<WorkoutDetailScreen> createState() => _WorkoutDetailScreenState();
@@ -267,6 +276,12 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       appBar: AppBar(
         title: Text('${_typeLabel(workout.type)} #${workout.number}'),
         actions: [
+          if (!_sessionRemoved)
+            _ShareTcxAction(
+              workout: workout,
+              exportService: widget.tcxExportService,
+              shareTcx: widget.shareTcx,
+            ),
           if (isRun)
             _RunSessionExportAction(
               workout: workout,
@@ -1620,6 +1635,133 @@ class _Row extends StatelessWidget {
 
 bool _hasHr(WorkoutSummary w) =>
     w.hrMin != null || w.hrMax != null || w.hrPeak != null;
+
+class _ShareTcxAction extends StatefulWidget {
+  const _ShareTcxAction({
+    required this.workout,
+    this.exportService,
+    this.shareTcx,
+  });
+
+  final WorkoutSummary workout;
+  final WorkoutTcxExportService? exportService;
+  final Future<void> Function(File file)? shareTcx;
+
+  @override
+  State<_ShareTcxAction> createState() => _ShareTcxActionState();
+}
+
+class _ShareTcxActionState extends State<_ShareTcxAction> {
+  bool _busy = false;
+
+  WorkoutTcxExportService get _export {
+    final injected = widget.exportService;
+    if (injected != null) return injected;
+    return sl<WorkoutTcxExportService>();
+  }
+
+  Future<void> _onShare() async {
+    if (_busy) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Share as TCX?'),
+        content: const Text(
+          'Creates a TCX file of this workout for upload to Strava '
+          '(strava.com/upload) or another app. Includes distance, duration, '
+          'calories, and laps when available — not GPS or continuous HR. '
+          'After you share it, recipients may keep copies; clearing the '
+          'export cache does not revoke shared copies.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Share'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    setState(() => _busy = true);
+    final result = await _export.exportToCache(widget.workout);
+    if (!mounted) return;
+
+    if (!result.isSuccess || result.file == null) {
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message ?? 'TCX export failed')),
+      );
+      return;
+    }
+
+    final file = result.file!;
+    if (!_export.isSharePathAllowed(file)) {
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Export path refused — not under cache')),
+      );
+      return;
+    }
+
+    try {
+      final share = widget.shareTcx;
+      if (share != null) {
+        await share(file);
+      } else {
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [
+              XFile(
+                file.path,
+                mimeType: 'application/vnd.garmin.tcx+xml',
+                name: file.uri.pathSegments.last,
+              ),
+            ],
+            subject: 'Fathom workout TCX',
+            text:
+                'Upload at https://www.strava.com/upload/select (TCX). '
+                'No GPS track — choose indoor/stationary if offered.',
+          ),
+        );
+      }
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('TCX ready — upload on Strava if you saved the file'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Share failed: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Share as TCX (Strava upload)',
+      onPressed: _busy ? null : _onShare,
+      icon: _busy
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.ios_share_outlined),
+    );
+  }
+}
 
 bool _hasSwim(WorkoutSummary w) =>
     w.swimType != null ||

@@ -17,17 +17,19 @@ import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
+import 'package:fitness_os/features/workout_history/data/workout_tcx_export_service.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 
 /// Registers export service and composes Forget wipe/busy with vitals + food +
-/// workouts.
+/// workouts + TCX.
 ///
 /// Call **after** [initVitalsDependencies], [initFoodDependencies], and
 /// [initWorkoutHistoryDependencies] so wipe extras compose rather than overwrite.
 ///
 /// Last-writer composition: vitals clear → app export prune → food clear →
 /// food export prune → workout clearLocal → strength export prune →
-/// share_plus prune → cancel notifs → run session store clear → run export prune.
+/// workout TCX prune → share_plus prune → cancel notifs → run session store
+/// clear → run export prune.
 /// DO NOT assign onForgetWipeExtras from food_di or workout_history_di;
 /// this is the only site.
 Future<void> initDiagnosticsDependencies(GetIt sl) async {
@@ -99,6 +101,9 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
     final strengthExport = sl.isRegistered<StrengthSessionExportService>()
         ? sl<StrengthSessionExportService>()
         : null;
+    final tcxExport = sl.isRegistered<WorkoutTcxExportService>()
+        ? sl<WorkoutTcxExportService>()
+        : null;
 
     // Last-writer composition — optional stores must not silently overwrite
     // the vitals/food wipe body when workout DI is missing.
@@ -116,6 +121,9 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
       }
       if (strengthExport != null) {
         await strengthExport.pruneStrengthExportCache();
+      }
+      if (tcxExport != null) {
+        await tcxExport.pruneExportCache();
       }
       // Explicit share_plus prune even if app-data prune were skipped.
       await pruneSharePlusCache();
@@ -135,6 +143,7 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
         (foodExport?.exportInFlight ?? false) ||
         runExport.exportInFlight ||
         (strengthExport?.exportInFlight ?? false) ||
+        (tcxExport?.exportInFlight ?? false) ||
         (workouts?.isSyncOrMergeInFlight ?? false);
   }
 }
