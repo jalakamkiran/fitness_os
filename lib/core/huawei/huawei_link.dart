@@ -267,17 +267,25 @@ class HuaweiLink {
         workouts: [],
       );
     }
-    if (state != LinkState.connected &&
-        state != LinkState.gateAIncomplete) {
-      FosHuaweiLog.w(
-        'syncWorkouts rejected — linkState=$state',
-        op: 'sync',
-      );
-      return const WorkoutSyncResult(
-        status: WorkoutSyncStatus.notReady,
-        message: 'Connect and authenticate first',
-        workouts: [],
-      );
+    if (!sessionReady) {
+      // Force Sync often lands mid-reconnect (authenticating). Wait briefly
+      // instead of soft-failing — otherwise only a later delta Sync runs and
+      // older strength sessions never re-fetch Load / Recovery.
+      final becameReady = await _awaitSessionReady();
+      if (!becameReady) {
+        FosHuaweiLog.w(
+          'syncWorkouts rejected — linkState=$state',
+          op: 'sync',
+        );
+        return WorkoutSyncResult(
+          status: WorkoutSyncStatus.notReady,
+          message: state == LinkState.connecting ||
+                  state == LinkState.authenticating
+              ? 'Watch still connecting — wait until linked, then Force Sync again'
+              : 'Connect and authenticate first',
+          workouts: const [],
+        );
+      }
     }
     _syncInFlight = true;
     final enrichFloor = enrichStartUnix ?? startUnix;
@@ -517,6 +525,39 @@ class HuaweiLink {
     } finally {
       _syncInFlight = false;
     }
+  }
+
+  /// Wait while the link is mid-handshake. Fail fast on terminal / idle states.
+  Future<bool> _awaitSessionReady({
+    Duration timeout = const Duration(seconds: 45),
+  }) async {
+    if (sessionReady) return true;
+    // Use [state] (not [_state]) so test doubles that override the getter work.
+    final current = state;
+    if (current != LinkState.connecting &&
+        current != LinkState.authenticating) {
+      return false;
+    }
+    FosHuaweiLog.i(
+      'syncWorkouts waiting for sessionReady (state=$current)',
+      op: 'sync',
+    );
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (sessionReady) {
+        FosHuaweiLog.i(
+          'syncWorkouts sessionReady after wait (state=$state)',
+          op: 'sync',
+        );
+        return true;
+      }
+      final s = state;
+      if (s != LinkState.connecting && s != LinkState.authenticating) {
+        return false;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    return sessionReady;
   }
 
   void markGateAPassed() {
