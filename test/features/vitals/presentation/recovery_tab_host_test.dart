@@ -55,6 +55,13 @@ class _FakeRepo implements VitalsRepository {
       false;
 
   @override
+  Future<TruSleepSequenceSession?> loadTruSleepSummary(
+    SleepSessionSummary session,
+  ) async =>
+      null;
+
+
+  @override
   Future<String?> loadFeelOnWake(SleepSessionSummary session) async => null;
 
   @override
@@ -151,7 +158,7 @@ void main() {
     expect(find.byType(NavigationBar), findsNothing);
 
     // Default subtab is Sleep.
-    expect(find.text('View historic sleep data'), findsOneWidget);
+    expect(find.text('Sleep history'), findsOneWidget);
     expect(find.text('Enable auto-tracking'), findsNothing);
 
     await tester.tap(find.text('Vitals').last);
@@ -167,8 +174,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('View historic sleep data'), findsOneWidget);
-    expect(find.text('Advanced sleep metrics — unlock soon'), findsOneWidget);
+    expect(find.text('Sleep history'), findsOneWidget);
+    expect(find.text('Advanced sleep metrics'), findsOneWidget);
+    expect(find.textContaining('Available after an overnight Sync'), findsOneWidget);
   });
 
   testWidgets('Recovery host includes Food subtab in IndexedStack',

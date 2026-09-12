@@ -32,6 +32,11 @@ abstract class VitalsRepository {
   /// TruSleep FileDownload enrich present for this session (side-file ref).
   Future<bool> isSleepEnrichPresent(SleepSessionSummary session);
 
+  /// SEQUENCE_DATA summary scalars for this session (score/HRV/…), or null.
+  Future<TruSleepSequenceSession?> loadTruSleepSummary(
+    SleepSessionSummary session,
+  );
+
   /// Feel-on-wake answer for [session.mergeKey], or null if unanswered.
   Future<String?> loadFeelOnWake(SleepSessionSummary session);
 

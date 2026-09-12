@@ -93,15 +93,27 @@ SleepEnrichOutcome _fileEnrich(List<SleepStateInterval> intervals) {
 ActivitySyncResult _fileSync({
   required List<SleepStateInterval> intervals,
   List<SleepSessionSummary> messages = const [],
+  List<TruSleepSequenceSession> sequenceSessions = const [],
   ActivitySyncStatus status = ActivitySyncStatus.ok,
   Set<String> completedContainers = const {'sleep'},
-}) =>
-    ActivitySyncResult(
-      status: status,
-      sleepSessions: messages,
-      sleepEnrich: [_fileEnrich(intervals)],
-      completedContainers: completedContainers,
-    );
+}) {
+  final enrich = _fileEnrich(intervals);
+  return ActivitySyncResult(
+    status: status,
+    sleepSessions: messages,
+    sleepEnrich: [
+      SleepEnrichOutcome(
+        beginUnix: enrich.beginUnix,
+        endUnix: enrich.endUnix,
+        present: enrich.present,
+        stateIntervals: enrich.stateIntervals,
+        refs: enrich.refs,
+        sequenceSessions: sequenceSessions,
+      ),
+    ],
+    completedContainers: completedContainers,
+  );
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -1037,6 +1049,24 @@ void main() {
         expect(link.lastStartUnix, cursor! - _overlapSec);
       });
 
+      test('SEQUENCE impl bump forces 14d window despite prior cursor', () async {
+        SharedPreferences.setMockInitialValues(
+          _gateOpen(implVersion: _implV1 - 1, cursor: 1_700_100_001),
+        );
+        final prefs = await SharedPreferences.getInstance();
+        final link = _StubLink(
+          result: const ActivitySyncResult(status: ActivitySyncStatus.empty),
+        );
+        final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+        await repo.syncFromWatch();
+        final endUnix = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        final expectedWide =
+            endUnix - HuaweiLink.activityWindowDays * 24 * 60 * 60;
+        expect(link.lastStartUnix, closeTo(expectedWide, 5));
+        expect(prefs.getInt(GateAPrefs.activitySyncImplVersion), _implV1);
+      });
+
       test('incremental upsert retains prior nights outside pull', () async {
         SharedPreferences.setMockInitialValues({
           ..._gateOpen(implVersion: _implV1, cursor: 1_700_100_001),
@@ -1293,6 +1323,146 @@ void main() {
         final stages = await repo.loadSleepStages(sleep.first);
         expect(stages, hasLength(1));
         expect(stages.first.timestampUnix, stageTs);
+      });
+
+      test('SEQUENCE_DATA stages preferred over message stages; summary in enrich',
+          () async {
+        final tempRoot =
+            Directory.systemTemp.createTempSync('fos_seq_stages_');
+        addTearDown(() {
+          if (tempRoot.existsSync()) {
+            tempRoot.deleteSync(recursive: true);
+          }
+        });
+
+        SharedPreferences.setMockInitialValues(_gateOpen(implVersion: _implV1));
+        final prefs = await SharedPreferences.getInstance();
+        const fileBegin = 10_000;
+        const fileEnd = 20_000;
+        const seqStageTs = fileBegin + 120;
+        final link = _StubLink(
+          result: _fileSync(
+            intervals: const [
+              SleepStateInterval(beginUnix: fileBegin, endUnix: fileEnd),
+            ],
+            messages: [
+              SleepSessionSummary(
+                beginUnix: fileBegin,
+                endUnix: fileEnd,
+                stages: const [
+                  SleepStageSummary(
+                    timestampUnix: fileBegin + 60,
+                    durationMin: 99,
+                    wireType: 1,
+                  ),
+                ],
+              ),
+            ],
+            sequenceSessions: [
+              TruSleepSequenceSession(
+                beginUnix: fileBegin,
+                endUnix: fileEnd,
+                sleepScore: 84,
+                avgHrv: 41,
+                avgHeartRate: 57,
+                productStages: const [
+                  SleepStageSummary(
+                    timestampUnix: seqStageTs,
+                    durationMin: 45,
+                    wireType: 2,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+        final repo = VitalsRepositoryImpl(
+          link: link,
+          prefs: prefs,
+          sideFileRootOverride: () => tempRoot,
+        );
+
+        await repo.syncFromWatch();
+        final sleep = await repo.loadSleepSessions();
+        expect(sleep, hasLength(1));
+        final stages = await repo.loadSleepStages(sleep.first);
+        expect(stages, hasLength(1));
+        expect(stages.first.timestampUnix, seqStageTs);
+        expect(stages.first.wireType, 2);
+        final summary = await repo.loadTruSleepSummary(sleep.first);
+        expect(summary, isNotNull);
+        expect(summary!.sleepScore, 84);
+        expect(summary.avgHrv, 41);
+      });
+
+      test('thin SEQUENCE stub (score=0) does not wipe prior stages/summary',
+          () async {
+        final tempRoot =
+            Directory.systemTemp.createTempSync('fos_seq_stub_');
+        addTearDown(() {
+          if (tempRoot.existsSync()) {
+            tempRoot.deleteSync(recursive: true);
+          }
+        });
+
+        SharedPreferences.setMockInitialValues(_gateOpen(implVersion: _implV1));
+        final prefs = await SharedPreferences.getInstance();
+        const fileBegin = 10_000;
+        const fileEnd = 20_000;
+        const seqStageTs = fileBegin + 120;
+        final good = _StubLink(
+          result: _fileSync(
+            intervals: const [
+              SleepStateInterval(beginUnix: fileBegin, endUnix: fileEnd),
+            ],
+            sequenceSessions: [
+              TruSleepSequenceSession(
+                beginUnix: fileBegin,
+                endUnix: fileEnd,
+                sleepScore: 84,
+                avgHrv: 41,
+                productStages: const [
+                  SleepStageSummary(
+                    timestampUnix: seqStageTs,
+                    durationMin: 45,
+                    wireType: 2,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+        final repo = VitalsRepositoryImpl(
+          link: good,
+          prefs: prefs,
+          sideFileRootOverride: () => tempRoot,
+        );
+        await repo.syncFromWatch();
+
+        // Incremental-style re-sync: same sleep_state window, stub SEQUENCE.
+        good.result = _fileSync(
+          intervals: const [
+            SleepStateInterval(beginUnix: fileBegin, endUnix: fileEnd),
+          ],
+          sequenceSessions: [
+            TruSleepSequenceSession(
+              beginUnix: fileBegin,
+              endUnix: fileEnd,
+              sleepScore: 0,
+              productStages: const [],
+            ),
+          ],
+        );
+        await repo.syncFromWatch();
+
+        final sleep = await repo.loadSleepSessions();
+        expect(sleep, hasLength(1));
+        final stages = await repo.loadSleepStages(sleep.first);
+        expect(stages, hasLength(1));
+        expect(stages.first.timestampUnix, seqStageTs);
+        final summary = await repo.loadTruSleepSummary(sleep.first);
+        expect(summary?.sleepScore, 84);
+        expect(summary?.avgHrv, 41);
       });
 
       test('feel-on-wake migrates to file window with longest overlap',

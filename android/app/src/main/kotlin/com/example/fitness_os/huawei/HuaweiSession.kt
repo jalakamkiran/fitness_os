@@ -354,7 +354,7 @@ class HuaweiSession(
             val start = startUnix.toInt().coerceAtLeast(0)
             val end = endUnix.toInt().coerceAtLeast(start)
             return HuaweiPhysioCaptureProbe(
-                fileDownload = { diagnosticFileDownload() },
+                fileDownload = { diagnosticFileDownload(persistDiagnosticBodies = false) },
                 listenFeatureUploadSequence = { timeoutMs ->
                     listenForSequenceFeatureUpload(timeoutMs)
                 },
@@ -383,8 +383,123 @@ class HuaweiSession(
         }
     }
 
+    /**
+     * Debug-only: download `sleep_data.bin` and **persist** under
+     * `vitals/sleep_files/sleep_data.bin` for offline structure work.
+     * Never merges into Flutter TruSleep SoT. Caller must hold [HuaweiSyncLock].
+     */
+    fun persistSleepDataCapture(
+        startUnix: Long = 0L,
+        endUnix: Long = System.currentTimeMillis() / 1000L,
+    ): Map<String, Any?> {
+        if (sessionKey == null || !encryptionEnabled) {
+            Log.w(TAG, "sleep-data-persist rejected — session not ready")
+            return mapOf(
+                "status" to "not_ready",
+                "message" to "Session not ready — reconnect first",
+                "feedsProductSleepSot" to false,
+                "persisted" to false,
+            )
+        }
+        productSyncActive = true
+        try {
+            val start = startUnix.toInt().coerceAtLeast(0)
+            val end = endUnix.toInt().coerceAtLeast(start)
+            val observed = diagnosticFileDownload(persistDiagnosticBodies = true)
+                .downloadSleepDataStructureObserve(
+                    startUnix = start,
+                    endUnix = end,
+                    persist = true,
+                )
+            val persisted = !observed.path.isNullOrEmpty()
+            Log.i(
+                TAG,
+                "sleep-data-persist status=${observed.status} len=${observed.len} " +
+                    "path=${observed.path} persisted=$persisted",
+            )
+            return buildMap {
+                putAll(observed.toMap())
+                put("feedsProductSleepSot", false)
+                put("persisted", persisted)
+                put(
+                    "message",
+                    when {
+                        observed.status == "present" && persisted ->
+                            "Saved sleep_data.bin (${observed.len} B)"
+                        observed.status == "present" ->
+                            "Downloaded but persist failed (${observed.reason})"
+                        else ->
+                            "sleep_data ${observed.status}" +
+                                (observed.reason?.let { " ($it)" } ?: "")
+                    },
+                )
+            }
+        } finally {
+            productSyncActive = false
+        }
+    }
+
+    /**
+     * Debug-only: download SLEEP_DETAILS SEQUENCE_DATA and **persist** under
+     * `vitals/sleep_files/sequence_data.bin` for offline decode.
+     * Never merges into Flutter TruSleep SoT. Caller must hold [HuaweiSyncLock].
+     */
+    fun persistSleepDetailsSequenceCapture(
+        startUnix: Long = 0L,
+        endUnix: Long = System.currentTimeMillis() / 1000L,
+    ): Map<String, Any?> {
+        if (sessionKey == null || !encryptionEnabled) {
+            Log.w(TAG, "sleep-dict-persist rejected — session not ready")
+            return mapOf(
+                "status" to "not_ready",
+                "message" to "Session not ready — reconnect first",
+                "feedsProductSleepSot" to false,
+                "persisted" to false,
+            )
+        }
+        productSyncActive = true
+        try {
+            val start = startUnix.toInt().coerceAtLeast(0)
+            val end = endUnix.toInt().coerceAtLeast(start)
+            val observed = diagnosticFileDownload(persistDiagnosticBodies = true)
+                .downloadSleepDetailsSequenceObserve(
+                    startUnix = start,
+                    endUnix = end,
+                    persist = true,
+                )
+            val persisted = !observed.path.isNullOrEmpty()
+            Log.i(
+                TAG,
+                "sleep-dict-persist status=${observed.status} len=${observed.len} " +
+                    "path=${observed.path} persisted=$persisted " +
+                    "overnightKeys=${observed.overnightSummaryKeys}",
+            )
+            return buildMap {
+                putAll(observed.toMap())
+                put("feedsProductSleepSot", false)
+                put("persisted", persisted)
+                put("dictId", HuaweiFileDownload.DICT_SLEEP_DETAILS_CLASS)
+                put(
+                    "message",
+                    when {
+                        observed.status == "present" && persisted ->
+                            "Saved sequence_data.bin (${observed.len} B) " +
+                                "keys=${observed.overnightSummaryKeys}"
+                        observed.status == "present" ->
+                            "Downloaded but persist failed (${observed.reason})"
+                        else ->
+                            "sequence_data ${observed.status}" +
+                                (observed.reason?.let { " ($it)" } ?: "")
+                    },
+                )
+            }
+        } finally {
+            productSyncActive = false
+        }
+    }
+
     /** Live FileDownload collaborator for diagnostic probes (not product Sync). */
-    private fun diagnosticFileDownload(): HuaweiFileDownload =
+    private fun diagnosticFileDownload(persistDiagnosticBodies: Boolean = false): HuaweiFileDownload =
         HuaweiFileDownload(
             exchangeEncrypted = { req, svc, cmd, timeout ->
                 exchangeEncrypted(req, svc, cmd, timeout)
@@ -394,7 +509,16 @@ class HuaweiSession(
             awaitRawBlock = { svc, timeout -> awaitFileDownloadBlock(svc, timeout) },
             isConnected = { transport.isConnected() },
             liveDownloadEnabled = true,
-            persistFile = null, // never persist diagnostic dict/sleep_data bodies
+            persistFile = if (persistDiagnosticBodies) {
+                { id, bytes ->
+                    when (id) {
+                        "sleep_data", "sequence_data" -> persistSleepFile(id, bytes)
+                        else -> null
+                    }
+                }
+            } else {
+                null // wipe-only physio probe — never keep diagnostic bodies
+            },
             formatUnix = { unix -> syncedWatchZone.formatUnix(unix) },
             watchZoneLabel = {
                 "${syncedWatchZone.zoneId} ${syncedWatchZone.formatOffsetLabel()}"
