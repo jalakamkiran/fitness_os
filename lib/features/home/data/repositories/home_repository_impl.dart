@@ -7,13 +7,10 @@ import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/home/domain/home_precedence.dart';
 import 'package:fitness_os/features/home/domain/repositories/home_repository.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
+import 'package:fitness_os/features/vitals/presentation/widgets/sleep_formatters.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
-
-/// Huawei pool-swim activity type id (frozen: Totals 0x14 = 6).
-const int kPoolSwimType = 6;
-
-/// Open-water swim type id (frozen: Totals 0x14 = 8).
-const int kOpenWaterSwimType = 8;
+import 'package:fitness_os/features/workout_history/domain/strength_session_metrics.dart';
+import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
 
 /// When FT today reports 0 kcal but workouts burned more than this, treat the
 /// FT row as untrusted (e.g. wrong day-anchor zeros) and use workout-sum.
@@ -55,12 +52,14 @@ class HomeRepositoryImpl implements HomeRepository {
     final workouts = await _workouts.loadLocal();
     final hrDays = await _vitals.loadDailyHr();
     final fitnessTotals = await _vitals.loadFitnessTotals();
+    final sleepSessions = await _vitals.loadSleepSessions();
     final everSynced = _prefs.containsKey(GateAPrefs.lastSyncCursor) ||
         _prefs.containsKey(GateAPrefs.lastActivitySyncCursor) ||
         _prefs.containsKey(GateAPrefs.sleepSessionsJson) ||
         workouts.isNotEmpty ||
         hrDays.isNotEmpty ||
         fitnessTotals.isNotEmpty ||
+        sleepSessions.isNotEmpty ||
         _prefs.getString(GateAPrefs.homeLastSyncStatus) == 'ok';
 
     final syncInProgress = _link.syncInFlight ||
@@ -70,28 +69,15 @@ class HomeRepositoryImpl implements HomeRepository {
     final syncFailed =
         _prefs.getString(GateAPrefs.homeLastSyncStatus) == 'failed';
 
-    final today = _localDayKey(_now());
+    final now = _now();
+    final today = _localDayKey(now);
     final todayWorkouts = workouts.where((w) {
       if (w.startTime <= 0) return false;
       final dt =
           DateTime.fromMillisecondsSinceEpoch(w.startTime * 1000).toLocal();
       return _localDayKey(dt) == today;
-    }).toList();
-
-    final todaySwims = todayWorkouts
-        .where((w) => w.type == kPoolSwimType || w.type == kOpenWaterSwimType)
-        .toList();
-    final latestSwim = todaySwims.isNotEmpty
-        ? todaySwims.first
-        : workouts
-            .where(
-                (w) => w.type == kPoolSwimType || w.type == kOpenWaterSwimType)
-            .fold<WorkoutSummary?>(null, (best, w) {
-            if (best == null || w.startTime > best.startTime) return w;
-            return best;
-          });
-
-    final hasSwimTakeaway = latestSwim != null && todaySwims.isNotEmpty;
+    }).toList()
+      ..sort((a, b) => a.startTime.compareTo(b.startTime));
 
     final precedence = resolveHomePrecedence(
       HomePrecedenceInputs(
@@ -99,7 +85,6 @@ class HomeRepositoryImpl implements HomeRepository {
         everSynced: everSynced,
         syncInProgress: syncInProgress,
         syncFailed: syncFailed,
-        hasSwimTakeaway: hasSwimTakeaway,
       ),
     );
 
@@ -108,9 +93,30 @@ class HomeRepositoryImpl implements HomeRepository {
         ? null
         : _relativeSyncLabel(
             DateTime.fromMillisecondsSinceEpoch(lastSyncAt),
-            _now(),
+            now,
           );
 
+    final chromeOnly = precedence == HomePrecedence.notPaired ||
+        precedence == HomePrecedence.pairedNeverSynced;
+
+    // Sleep strip
+    String? sleepDurationLabel;
+    String? sleepWindowLabel;
+    String? sleepFeelCue;
+    if (!chromeOnly) {
+      final sleep = todaysSleepSession(sleepSessions, now: now);
+      if (sleep != null && sleep.endUnix > sleep.beginUnix) {
+        final durSec = sleep.endUnix - sleep.beginUnix;
+        sleepDurationLabel = sleepFormatDuration(durSec);
+        sleepWindowLabel = sleepFormatWindow(sleep.beginUnix, sleep.endUnix);
+        final feel = await _vitals.loadFeelOnWake(sleep);
+        if (feel != null && feel.trim().isNotEmpty) {
+          sleepFeelCue = feel.trim();
+        }
+      }
+    }
+
+    // Totals
     final workoutCalories = todayWorkouts.fold<int>(
       0,
       (sum, w) => sum + (w.calories ?? 0),
@@ -124,10 +130,6 @@ class HomeRepositoryImpl implements HomeRepository {
       (sum, w) => sum + w.durationSec,
     );
 
-    // Capture-locked: FT supplies day calories/steps; wire 0x07 is not exercise
-    // minutes, so workout time stays on today's workout-sum until a duration
-    // tag is owned. Sanity: FT cal=0 while workouts burned meaningfully →
-    // untrusted (wrong day-anchor residue) → full workout-sum triple.
     FitnessTotalsDay? ftToday;
     for (final d in fitnessTotals) {
       if (d.dayKey == today) {
@@ -151,34 +153,46 @@ class HomeRepositoryImpl implements HomeRepository {
       displayWorkoutSec = workoutSec;
     }
 
-    final hrToday = hrDays.where((d) => d.dayKey == today).toList();
-    final hr = hrToday.isNotEmpty
-        ? hrToday.first
-        : (hrDays.isNotEmpty ? hrDays.first : null);
-    final vitalsLabel = hr == null
-        ? null
-        : '${hr.minBpm} · ${hr.avgBpm} · ${hr.maxBpm}';
-
-    String? takeawayTitle;
-    String? takeawayBody;
-    int? sessionNumber;
-    if (hasSwimTakeaway && latestSwim != null) {
-      final swim = latestSwim;
-      sessionNumber = swim.number;
-      final label =
-          swim.type == kOpenWaterSwimType ? 'Open water' : 'Pool swim';
-      final km = swim.distanceM == null
-          ? null
-          : (swim.distanceM! / 1000).toStringAsFixed(1);
-      takeawayTitle =
-          km != null ? '$label · $km km' : '$label · #${swim.number}';
-      takeawayBody =
-          '${_formatDuration(swim.durationSec)} · open session for signals';
-    } else if (precedence == HomePrecedence.noSwimDataYet) {
-      takeawayTitle = 'No swim yet today';
-      takeawayBody =
-          'When you finish a pool session, the takeaway lands here — one line, not a chart.';
+    String? caloriesLabel;
+    String? stepsLabel;
+    String? workoutTimeLabel;
+    if (everSynced && !chromeOnly) {
+      caloriesLabel = _formatInt(calories);
+      stepsLabel = _formatInt(steps);
+      final mins = displayWorkoutSec ~/ 60;
+      final sessionCount = todayWorkouts.length;
+      if (sessionCount == 0) {
+        workoutTimeLabel = '${mins}m · no sessions';
+      } else if (mins >= 60) {
+        final h = mins ~/ 60;
+        final m = mins % 60;
+        final time = m > 0 ? '${h}h ${m}m' : '${h}h';
+        workoutTimeLabel =
+            '$time · $sessionCount session${sessionCount == 1 ? '' : 's'}';
+      } else {
+        workoutTimeLabel =
+            '${mins}m · $sessionCount session${sessionCount == 1 ? '' : 's'}';
+      }
     }
+
+    // Body HR — today dayKey only (no non-today fallback).
+    String? bodyHrLabel;
+    List<DailyHrSample> sparkSamples = const [];
+    if (!chromeOnly) {
+      final hrToday = hrDays.where((d) => d.dayKey == today).toList();
+      if (hrToday.isNotEmpty) {
+        final hr = hrToday.first;
+        bodyHrLabel = '${hr.minBpm} · ${hr.avgBpm} · ${hr.maxBpm}';
+        final series = await _vitals.loadDailyHrSeries(today);
+        if (series.length >= 2) {
+          sparkSamples = series;
+        }
+      }
+    }
+
+    final todaySessions = chromeOnly
+        ? const <HomeTodaySessionCard>[]
+        : todayWorkouts.map(buildHomeTodaySessionCard).toList();
 
     final sessionReady = _link.sessionReady;
 
@@ -195,31 +209,24 @@ class HomeRepositoryImpl implements HomeRepository {
         precedence,
         rememberedName,
         sessionReady: sessionReady,
+        sessionCount: todaySessions.length,
       ),
       syncCaption: _syncCaption(
         precedence,
         lastSyncedLabel,
         sessionReady: sessionReady,
+        sessionCount: todaySessions.length,
       ),
       lastSyncedLabel: lastSyncedLabel,
-      caloriesLabel: everSynced &&
-              precedence != HomePrecedence.pairedNeverSynced &&
-              precedence != HomePrecedence.notPaired
-          ? _formatInt(calories)
-          : null,
-      stepsLabel: everSynced &&
-              precedence != HomePrecedence.pairedNeverSynced &&
-              precedence != HomePrecedence.notPaired
-          ? _formatInt(steps)
-          : null,
-      workoutTimeLabel: precedence == HomePrecedence.noSwimDataYet ||
-              precedence == HomePrecedence.dataAvailable
-          ? '${displayWorkoutSec ~/ 60}m'
-          : null,
-      vitalsSnapshotLabel: vitalsLabel,
-      swimTakeawayTitle: takeawayTitle,
-      swimTakeawayBody: takeawayBody,
-      swimSessionNumber: sessionNumber,
+      caloriesLabel: caloriesLabel,
+      stepsLabel: stepsLabel,
+      workoutTimeLabel: workoutTimeLabel,
+      sleepDurationLabel: sleepDurationLabel,
+      sleepWindowLabel: sleepWindowLabel,
+      sleepFeelCue: sleepFeelCue,
+      bodyHrLabel: bodyHrLabel,
+      bodyHrSparkSamples: sparkSamples,
+      todaySessions: todaySessions,
     );
   }
 
@@ -257,6 +264,70 @@ class HomeRepositoryImpl implements HomeRepository {
   }
 }
 
+/// Maps a [WorkoutSummary] to Home session-card fields (omit absent load/TE/rec).
+HomeTodaySessionCard buildHomeTodaySessionCard(WorkoutSummary w) {
+  final title = workoutSessionTitle(w);
+  final whenParts = <String>[];
+  if (w.startTime > 0) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(w.startTime * 1000).toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    whenParts.add('${two(dt.hour)}:${two(dt.minute)}');
+  }
+  final clock = formatDurationClock(w.durationSec);
+  if (clock != '—') whenParts.add(clock);
+  if (isSwimWorkout(w.type) && w.distanceM != null && w.distanceM! > 0) {
+    whenParts.add(formatDistanceM(w.distanceM));
+  } else if (isRunWorkout(w.type)) {
+    final km = formatDistanceKm(w.distanceM);
+    if (km != null) whenParts.add(km);
+  }
+
+  final meta = <({String label, String value})>[];
+  if (w.load != null) {
+    meta.add((label: 'Load', value: '${w.load}'));
+  }
+
+  if (isStrengthWorkout(w.type)) {
+    if (w.aerobicEffect != null) {
+      meta.add((label: 'Intensity', value: '${w.aerobicEffect}'));
+    }
+    final recovery = formatRecoveryMinutes(w.recoveryTime);
+    if (recovery != null) {
+      meta.add((label: 'Recovery', value: recovery));
+    }
+  } else if (isRunWorkout(w.type)) {
+    if (w.aerobicEffect != null) {
+      meta.add((
+        label: 'TE',
+        value: (w.aerobicEffect! / 10.0).toStringAsFixed(1),
+      ));
+    }
+    final recovery = formatRecoveryMinutes(w.recoveryTime);
+    if (recovery != null) {
+      meta.add((label: 'Recovery', value: recovery));
+    }
+  } else {
+    // Swim and other sports — TE ÷10 when present (GT5 scaled int).
+    if (w.aerobicEffect != null) {
+      meta.add((
+        label: 'TE',
+        value: (w.aerobicEffect! / 10.0).toStringAsFixed(1),
+      ));
+    }
+    final recovery = formatRecoveryMinutes(w.recoveryTime);
+    if (recovery != null) {
+      meta.add((label: 'Recovery', value: recovery));
+    }
+  }
+
+  return HomeTodaySessionCard(
+    workout: w,
+    title: title,
+    whenLabel: whenParts.join(' · '),
+    meta: meta,
+  );
+}
+
 String _localDayKey(DateTime dt) {
   String two(int n) => n.toString().padLeft(2, '0');
   return '${dt.year}-${two(dt.month)}-${two(dt.day)}';
@@ -272,14 +343,6 @@ String _formatInt(int n) {
   return buf.toString();
 }
 
-String _formatDuration(int sec) {
-  if (sec <= 0) return '—';
-  final h = sec ~/ 3600;
-  final m = (sec % 3600) ~/ 60;
-  if (h > 0) return '${h}h ${m}m';
-  return '${m}m';
-}
-
 String _relativeSyncLabel(DateTime at, DateTime now) {
   final diff = now.difference(at);
   if (diff.inMinutes < 1) return 'just now';
@@ -293,9 +356,7 @@ String _pillLabel(HomePrecedence p) => switch (p) {
       HomePrecedence.pairedNeverSynced => 'Waiting',
       HomePrecedence.syncInProgress => 'Syncing',
       HomePrecedence.syncFailed => 'Failed',
-      HomePrecedence.dataAvailable ||
-      HomePrecedence.noSwimDataYet =>
-        'Synced',
+      HomePrecedence.dataAvailable => 'Synced',
     };
 
 String _brandSubtitle({
@@ -308,8 +369,7 @@ String _brandSubtitle({
       HomePrecedence.pairedNeverSynced => 'GT5 · never synced',
       HomePrecedence.syncInProgress => 'GT5 · syncing…',
       HomePrecedence.syncFailed => 'GT5 · sync failed',
-      HomePrecedence.dataAvailable ||
-      HomePrecedence.noSwimDataYet =>
+      HomePrecedence.dataAvailable =>
         'GT5 · synced ${lastSyncedLabel ?? 'just now'}',
     };
 
@@ -317,14 +377,14 @@ String _syncTitle(
   HomePrecedence p,
   String device, {
   required bool sessionReady,
+  required int sessionCount,
 }) =>
     switch (p) {
       HomePrecedence.notPaired => 'Pair a GT5 to begin',
       HomePrecedence.pairedNeverSynced => '$device paired',
       HomePrecedence.syncInProgress => 'Pulling today’s data',
       HomePrecedence.syncFailed => 'Couldn’t sync',
-      HomePrecedence.dataAvailable ||
-      HomePrecedence.noSwimDataYet =>
+      HomePrecedence.dataAvailable =>
         sessionReady ? '$device connected' : '$device paired',
     };
 
@@ -332,18 +392,19 @@ String _syncCaption(
   HomePrecedence p,
   String? lastSynced, {
   required bool sessionReady,
+  required int sessionCount,
 }) =>
     switch (p) {
       HomePrecedence.notPaired => 'Home stays empty until a watch is linked.',
       HomePrecedence.pairedNeverSynced =>
         'No sync yet · run first pass to load today.',
-      HomePrecedence.syncInProgress => 'One-shot pass on open · keep UI calm.',
+      HomePrecedence.syncInProgress =>
+        'Prior day kept · muted until pass finishes',
       HomePrecedence.syncFailed =>
-        'Last good data kept when available · retry when ready.',
+        'Last good day kept · retry when ready',
       HomePrecedence.dataAvailable => sessionReady
-          ? 'Auto-sync on open · last pass ${lastSynced ?? 'recently'}'
+          ? (sessionCount == 0
+              ? 'Sync healthy · rest day so far'
+              : 'Auto-sync on open · last pass ${lastSynced ?? 'recently'}')
           : 'Session offline · last pass ${lastSynced ?? 'recently'}',
-      HomePrecedence.noSwimDataYet => sessionReady
-          ? 'Sync healthy · no swim session today'
-          : 'Session offline · last sync kept · no swim session today',
     };
