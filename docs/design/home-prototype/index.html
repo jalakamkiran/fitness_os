@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Fathom — Home</title>
+  <title>Fathom — Home Today</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../tokens.css" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="../home-today.css" />
 </head>
 <body>
   <div class="stage">
@@ -35,8 +36,8 @@
           <span class="sync-pill"><i></i> Synced</span>
         </div>
 
-        <!-- Connection / sync health -->
-        <section class="card sync-card" aria-label="Connection health">
+        <!-- Supporting sync chrome (not the day hero) -->
+        <section class="card sync-card compact" aria-label="Connection health">
           <div class="sync-row">
             <div>
               <p class="kicker">Watch</p>
@@ -47,60 +48,92 @@
           </div>
         </section>
 
-        <!-- Today's totals -->
-        <section class="kpi-grid" aria-label="Today totals">
+        <!-- 1. Sleep strip (display-only) -->
+        <section class="card sleep-strip" aria-label="Last night sleep">
+          <div class="sleep-row">
+            <div>
+              <p class="kicker">Last night</p>
+              <p class="sleep-duration">7<span class="unit">h</span> 12<span class="unit">m</span></p>
+              <p class="sleep-window">23:18 → 06:30</p>
+            </div>
+          </div>
+          <p class="feel-cue"><strong>Feel on wake:</strong> OK — already answered</p>
+        </section>
+
+        <!-- 2. Activity totals (no on-track / vs-avg claims) -->
+        <section class="kpi-grid honest" aria-label="Today totals">
           <article class="card kpi">
             <p class="kpi-label">Calories</p>
             <p class="kpi-value">1,842</p>
-            <p class="kpi-delta up">+12% vs avg</p>
-            <svg class="spark" viewBox="0 0 100 28" aria-hidden="true">
-              <path d="M0 22 C12 20, 18 14, 28 16 S48 24, 58 12 S78 6, 100 10" />
-            </svg>
           </article>
           <article class="card kpi">
             <p class="kpi-label">Steps</p>
             <p class="kpi-value">7,420</p>
-            <p class="kpi-delta">on track</p>
-            <svg class="spark" viewBox="0 0 100 28" aria-hidden="true">
-              <path d="M0 18 C20 16, 30 20, 40 14 S70 8, 100 12" />
-            </svg>
           </article>
           <article class="card kpi wide">
             <div class="kpi-wide-row">
               <div>
                 <p class="kpi-label">Workout time</p>
-                <p class="kpi-value sm">42<span class="unit">m</span> · 1 session</p>
+                <p class="kpi-value sm">1<span class="unit">h</span> 18<span class="unit">m</span> · 2 sessions</p>
               </div>
               <span class="chip-static">Today</span>
             </div>
           </article>
         </section>
 
-        <!-- Vitals snapshot (not history) -->
-        <section class="card" aria-label="Vitals snapshot">
-          <div class="kpi-wide-row">
+        <!-- 3. Body HR + optional one tiny spark -->
+        <section class="card body-hr" aria-label="Body HR today">
+          <div class="hr-row">
             <div>
-              <p class="kicker">Vitals · now</p>
-              <p class="kpi-value sm">58<span class="unit"> rest</span> · 72<span class="unit"> last</span> · 97<span class="unit">% SpO₂</span></p>
+              <p class="kicker">Body · today</p>
+              <p class="hr-nums">52 · 68 · 118 <span class="unit">bpm</span></p>
+              <p class="hr-legend">min · avg · max</p>
             </div>
-            <a class="chip-link" href="#vitals">Vitals →</a>
+            <svg class="spark-tiny" viewBox="0 0 88 28" aria-hidden="true" title="Today HR spark">
+              <path d="M0 18 C10 16, 18 22, 28 14 S48 6, 58 12 S78 20, 88 10" />
+            </svg>
           </div>
         </section>
 
-        <!-- One swim takeaway — no chart, no reasoner settings -->
-        <section class="card insight" aria-label="Swim takeaway">
-          <div class="insight-head">
-            <div>
-              <p class="kicker">Swim · #11</p>
-              <h2>Efficient early, fatigue later</h2>
-            </div>
-            <span class="badge amber">med</span>
-          </div>
-          <p class="insight-body">Shorten sets before adding volume. Pace decay after interval 3.</p>
-          <div class="insight-actions single">
-            <a class="btn primary" href="#session">Open session</a>
-          </div>
-        </section>
+        <!-- 4. Today’s sessions (multi-sport, tappable) -->
+        <div class="sessions-head">
+          <h2>Today’s sessions</h2>
+          <span class="count">2</span>
+        </div>
+        <ul class="today-sessions" aria-label="Today sessions">
+          <li>
+            <a class="today-session" href="../swim-analytics.html">
+              <div class="session-top">
+                <div>
+                  <p class="session-title">Pool swim · #11</p>
+                  <p class="session-when">07:12 · 42:18 · 1,250 m</p>
+                </div>
+                <span class="session-chev" aria-hidden="true">›</span>
+              </div>
+              <div class="session-meta">
+                <div><p>Load</p><strong>148</strong></div>
+                <div><p>TE</p><strong>2.8</strong></div>
+                <div><p>Recovery</p><strong>16h</strong></div>
+              </div>
+            </a>
+          </li>
+          <li>
+            <a class="today-session" href="../strength-analytics.html">
+              <div class="session-top">
+                <div>
+                  <p class="session-title">Strength · #24</p>
+                  <p class="session-when">18:40 · 36:05</p>
+                </div>
+                <span class="session-chev" aria-hidden="true">›</span>
+              </div>
+              <div class="session-meta">
+                <div><p>Load</p><strong>92</strong></div>
+                <div><p>Intensity</p><strong>3</strong></div>
+                <div><p>Recovery</p><strong>22h</strong></div>
+              </div>
+            </a>
+          </li>
+        </ul>
       </main>
 
       <nav class="tabbar" aria-label="Primary">
@@ -112,17 +145,17 @@
 
     <aside class="rail">
       <p class="rail-back"><a href="../index.html">← Design review hub</a></p>
-      <h3>Fathom · Home</h3>
+      <h3>Fathom · Home Today</h3>
       <ol>
-        <li><strong>Now-state</strong> — sync health, vitals snapshot, one takeaway, today’s totals.</li>
-        <li><strong>Never</strong> — graphs, vitals history, diagnosis lists, reasoner settings.</li>
-        <li><strong>Tabs</strong> — Home | Vitals | Workouts (frozen ownership).</li>
+        <li><strong>Stack</strong> — sleep → totals → body HR (≤1 spark) → session cards.</li>
+        <li><strong>Never</strong> — hypnogram, workout charts, calendars, diagnoses, reasoner, food, composites.</li>
+        <li><strong>Chrome</strong> — pairing/sync supports the day picture; does not replace it.</li>
       </ol>
-      <p class="rail-note">Pool spatial board and pace chart moved off Home (charts research stays under Swim charts). KPI sparks remain subtle chrome only.</p>
+      <p class="rail-note">2026-09-12 instrument supersedes swim-only takeaway and absolute no-graphs. Review the <a href="../home-states.html" style="color:inherit;font-weight:700">state gallery</a> for chrome × stack and rest-day variants.</p>
       <div class="rail-actions">
         <button type="button" id="themeToggleRail">Toggle theme</button>
         <a class="btn primary" href="../home-states.html" style="display:inline-block;margin-top:10px;text-align:center">Home states →</a>
-        <a class="btn ghost" href="charts.html" style="display:inline-block;margin-top:8px;text-align:center">Swim charts →</a>
+        <a class="btn ghost" href="charts.html" style="display:inline-block;margin-top:8px;text-align:center">Swim charts (off Home) →</a>
       </div>
     </aside>
   </div>

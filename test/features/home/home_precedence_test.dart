@@ -8,7 +8,6 @@ void main() {
     bool everSynced = true,
     bool syncInProgress = false,
     bool syncFailed = false,
-    bool hasSwimTakeaway = false,
   }) {
     return resolveHomePrecedence(
       HomePrecedenceInputs(
@@ -16,7 +15,6 @@ void main() {
         everSynced: everSynced,
         syncInProgress: syncInProgress,
         syncFailed: syncFailed,
-        hasSwimTakeaway: hasSwimTakeaway,
       ),
     );
   }
@@ -27,7 +25,6 @@ void main() {
         isPaired: false,
         syncInProgress: true,
         syncFailed: true,
-        hasSwimTakeaway: true,
       ),
       HomePrecedence.notPaired,
     );
@@ -39,7 +36,7 @@ void main() {
       HomePrecedence.syncInProgress,
     );
     expect(
-      resolve(syncInProgress: true, syncFailed: true, hasSwimTakeaway: true),
+      resolve(syncInProgress: true, syncFailed: true),
       HomePrecedence.syncInProgress,
     );
   });
@@ -53,19 +50,31 @@ void main() {
 
   test('4 sync failed after a prior sync', () {
     expect(
-      resolve(syncFailed: true, hasSwimTakeaway: true),
+      resolve(syncFailed: true),
       HomePrecedence.syncFailed,
     );
   });
 
-  test('5 data available when swim takeaway exists', () {
-    expect(
-      resolve(hasSwimTakeaway: true),
-      HomePrecedence.dataAvailable,
-    );
+  test('5 trusted day without swim is still dataAvailable', () {
+    expect(resolve(), HomePrecedence.dataAvailable);
   });
 
-  test('6 no swim data yet', () {
-    expect(resolve(), HomePrecedence.noSwimDataYet);
+  test('snapshot fixture can carry multi-sport sessions without swim gate', () {
+    final snap = HomeSnapshot.forPrecedence(HomePrecedence.dataAvailable);
+    expect(snap.todaySessions, hasLength(2));
+    expect(snap.todaySessions.first.title, contains('Pool swim'));
+    expect(snap.todaySessions.last.title, contains('Strength'));
+    expect(snap.sleepDurationLabel, isNotNull);
+    expect(snap.bodyHrLabel, isNotNull);
+  });
+
+  test('rest-day fixture has empty sessions list', () {
+    final snap = HomeSnapshot.forPrecedence(
+      HomePrecedence.dataAvailable,
+      restDay: true,
+    );
+    expect(snap.todaySessions, isEmpty);
+    expect(snap.sleepDurationLabel, isNotNull);
+    expect(snap.bodyHrLabel, isNotNull);
   });
 }

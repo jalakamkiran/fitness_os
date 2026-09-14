@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Fathom — Home states</title>
+  <title>Fathom — Home Today instrument</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="tokens.css" />
   <link rel="stylesheet" href="home-prototype/styles.css" />
+  <link rel="stylesheet" href="home-today.css" />
   <style>
     body.states-page {
       background:
@@ -16,7 +17,7 @@
         var(--bg);
     }
     .page-wrap { max-width: 1280px; margin: 0 auto; padding: 40px 20px 80px; }
-    .page-head { max-width: 720px; margin-bottom: 32px; }
+    .page-head { max-width: 720px; margin-bottom: 8px; }
     .page-head .back {
       display: inline-block; font-size: 13px; font-weight: 700; color: var(--ink-dim);
       text-decoration: none; margin-bottom: 16px;
@@ -51,20 +52,15 @@
       font-family: var(--font-mono); font-size: 11px; color: var(--accent);
       letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 6px;
     }
-    /* Scale phones slightly for gallery density */
     .gallery .phone {
-      width: 300px; height: 650px; border-radius: 30px;
+      width: 300px; height: 680px; border-radius: 30px;
       transform-origin: top center;
     }
     .gallery .app-header { padding: 14px 12px 6px; }
     .gallery .scroll { padding: 6px 12px 88px; gap: 10px; }
     .gallery .tabbar { left: 10px; right: 10px; bottom: 10px; }
-    .gallery .sync-title { font-size: 18px; }
-    .gallery .kpi-value { font-size: 24px; }
-    .gallery .insight h2 { font-size: 18px; max-width: 18ch; }
-    .muted-cta {
-      opacity: 0.55; pointer-events: none;
-    }
+    .gallery .kpi-value { font-size: 22px; }
+    .gallery .kpi-value.sm { font-size: 16px; }
     .cta-stack { display: grid; gap: 8px; margin-top: 12px; }
     .foot-links {
       margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line);
@@ -72,6 +68,17 @@
     }
     .foot-links a { color: var(--ink); font-weight: 700; text-decoration: none; }
     .foot-links a:hover { color: var(--accent); }
+    .never-inline {
+      max-width: 720px; margin: 0 0 32px; padding: 0; list-style: none;
+      display: grid; gap: 8px;
+    }
+    .never-inline li {
+      font-size: 13px; color: var(--ink-dim); line-height: 1.4;
+      padding: 10px 12px; border-radius: 12px;
+      background: color-mix(in srgb, var(--hot) 8%, var(--bg-elev));
+      border: 1px solid color-mix(in srgb, var(--hot) 24%, var(--line));
+    }
+    .never-inline strong { color: var(--ink); }
   </style>
 </head>
 <body class="states-page">
@@ -79,14 +86,31 @@
   <div class="page-wrap">
     <header class="page-head">
       <a class="back" href="index.html">← Design review hub</a>
-      <p class="eyebrow">04 · Home state gallery</p>
-      <h1>Precedence states</h1>
-      <p class="lede">Six Home frames for owner review. Same Fathom chrome and calm now-state language — only connection/data truth changes.</p>
+      <p class="eyebrow">06 · Home Today · design review</p>
+      <h1>Today instrument stack</h1>
+      <p class="lede">Fixed composition: sleep → totals → body HR (≤1 spark) → today’s session cards. Pairing/sync stays supporting chrome. Supersedes the 2026-07-25 swim-only takeaway + absolute no-graphs Home lock.</p>
     </header>
+
+    <div class="review-banner">
+      <strong>Review this HTML before Flutter.</strong>
+      Stack order and chrome × day matrix are the product lock for this cut.
+      Spec: <code>docs/brainstorms/2026-09-12-home-today-instrument-requirements.md</code>
+    </div>
+
+    <ul class="never-inline">
+      <li><strong>Still off Home:</strong> hypnogram, workout charts, history calendars, diagnosis lists, reasoner settings, food/meals, composite readiness/strain scores.</li>
+      <li><strong>Allowed once:</strong> one tiny today-HR spark when ≥2 samples exist; otherwise numbers only.</li>
+      <li><strong>Sessions:</strong> all sports today, tappable into existing detail; load / TE / recovery as plain numbers when present — omit when absent.</li>
+    </ul>
+
+    <div class="section-divider" style="padding:0;margin:0 0 20px">
+      <h2>Chrome × stack</h2>
+      <p>Six pairing/sync frames. After ever-synced, trusted day blocks can remain under muted/stale chrome.</p>
+    </div>
 
     <div class="gallery">
 
-      <!-- 1 Not paired -->
+      <!-- 01 Not paired -->
       <div class="state-block">
         <div class="phone">
           <header class="app-header">
@@ -104,7 +128,7 @@
               <div class="seg"><button class="seg-btn active" type="button">Today</button></div>
               <span class="sync-pill fail"><i></i> Unpaired</span>
             </div>
-            <section class="card sync-card">
+            <section class="card sync-card compact">
               <div class="sync-row">
                 <div>
                   <p class="kicker">Watch</p>
@@ -118,7 +142,7 @@
               </div>
             </section>
             <section class="card">
-              <p class="empty-note">Vitals snapshot, swim takeaway, and today’s totals unlock after pairing.</p>
+              <p class="empty-note">Sleep, totals, body HR, and today’s sessions unlock after pairing — no invented metrics.</p>
             </section>
           </main>
           <nav class="tabbar" aria-label="Primary">
@@ -130,11 +154,11 @@
         <p class="caption">
           <span class="n">01</span>
           <strong>Not paired</strong>
-          Primary CTA to pair. No fake metrics, sparks, or takeaway. Sync pill shows unpaired (hot).
+          Chrome owns the message. No sleep strip, KPI zeros, sparks, or session cards.
         </p>
       </div>
 
-      <!-- 2 Paired, never synced -->
+      <!-- 02 Never synced -->
       <div class="state-block">
         <div class="phone">
           <header class="app-header">
@@ -152,7 +176,7 @@
               <div class="seg"><button class="seg-btn active" type="button">Today</button></div>
               <span class="sync-pill progress"><i></i> Waiting</span>
             </div>
-            <section class="card sync-card">
+            <section class="card sync-card compact">
               <div class="sync-row">
                 <div>
                   <p class="kicker">Watch</p>
@@ -167,7 +191,7 @@
             </section>
             <section class="card">
               <p class="kicker">Today</p>
-              <p class="empty-note">Totals and vitals appear after the first successful sync.</p>
+              <p class="empty-note">Day picture appears after the first successful sync.</p>
             </section>
           </main>
           <nav class="tabbar" aria-label="Primary">
@@ -179,11 +203,11 @@
         <p class="caption">
           <span class="n">02</span>
           <strong>Paired, never synced</strong>
-          Show paired identity + amber health. Offer explicit Sync now; do not invent zeros that look like real data.
+          Explicit Sync now. Do not invent zeros that look like real day data.
         </p>
       </div>
 
-      <!-- 3 Sync in progress -->
+      <!-- 03 Syncing with prior stack -->
       <div class="state-block">
         <div class="phone">
           <header class="app-header">
@@ -201,23 +225,37 @@
               <div class="seg"><button class="seg-btn active" type="button">Today</button></div>
               <span class="sync-pill progress"><i></i> Syncing</span>
             </div>
-            <section class="card sync-card">
+            <section class="card sync-card compact">
               <div class="sync-row">
                 <div>
                   <p class="kicker">Watch</p>
                   <h1 class="sync-title">Pulling today’s data</h1>
-                  <p class="hero-caption">One-shot pass on open · keep UI calm.</p>
+                  <p class="hero-caption">Prior day kept · muted until pass finishes</p>
                 </div>
                 <span class="status-dot spin"></span>
               </div>
             </section>
-            <section class="card muted-cta">
-              <p class="kpi-label">Calories</p>
-              <p class="kpi-value" style="color:var(--ink-faint)">—</p>
-            </section>
-            <section class="card muted-cta">
-              <p class="empty-note">Previous snapshot stays if present; otherwise placeholders — no decorative charts while syncing.</p>
-            </section>
+            <div class="stack-muted">
+              <section class="card sleep-strip">
+                <div class="sleep-row">
+                  <div>
+                    <p class="kicker">Last night</p>
+                    <p class="sleep-duration">7<span class="unit">h</span> 12<span class="unit">m</span></p>
+                    <p class="sleep-window">23:18 → 06:30</p>
+                  </div>
+                </div>
+              </section>
+              <section class="kpi-grid honest">
+                <article class="card kpi">
+                  <p class="kpi-label">Calories</p>
+                  <p class="kpi-value">1,842</p>
+                </article>
+                <article class="card kpi">
+                  <p class="kpi-label">Steps</p>
+                  <p class="kpi-value">7,420</p>
+                </article>
+              </section>
+            </div>
           </main>
           <nav class="tabbar" aria-label="Primary">
             <a class="tab active" href="#home"><span>⌂</span>Home</a>
@@ -228,11 +266,11 @@
         <p class="caption">
           <span class="n">03</span>
           <strong>Sync in progress</strong>
-          Pulsing mint status. No sticky tray theater — brief in-Home progress only. Avoid inventing spark lines mid-pass.
+          Keep last trusted Today stack visible but muted. Chrome carries the progress cue — no decorative charts mid-pass.
         </p>
       </div>
 
-      <!-- 4 Sync failed -->
+      <!-- 04 Sync failed + stale -->
       <div class="state-block">
         <div class="phone">
           <header class="app-header">
@@ -250,12 +288,12 @@
               <div class="seg"><button class="seg-btn active" type="button">Today</button></div>
               <span class="sync-pill fail"><i></i> Failed</span>
             </div>
-            <section class="card sync-card">
+            <section class="card sync-card compact">
               <div class="sync-row">
                 <div>
                   <p class="kicker">Watch</p>
                   <h1 class="sync-title">Couldn’t sync</h1>
-                  <p class="hero-caption">Last good data kept when available · retry when ready.</p>
+                  <p class="hero-caption">Last good day kept · retry when ready</p>
                 </div>
                 <span class="status-dot err"></span>
               </div>
@@ -263,10 +301,23 @@
                 <a class="btn primary" href="#retry">Retry sync</a>
               </div>
             </section>
-            <section class="card">
-              <p class="kicker">Last known</p>
-              <p class="empty-note">If a prior sync exists, show stale stamp (e.g. “as of 9:14”) — never silently clear trusted data.</p>
-            </section>
+            <p class="stale-cue">As of 09:14</p>
+            <div class="stack-muted">
+              <section class="card body-hr">
+                <div class="hr-row">
+                  <div>
+                    <p class="kicker">Body · today</p>
+                    <p class="hr-nums">52 · 68 · 118 <span class="unit">bpm</span></p>
+                    <p class="hr-legend">min · avg · max</p>
+                  </div>
+                </div>
+              </section>
+              <section class="card sessions-empty">
+                <p class="kicker">Sessions</p>
+                <p class="empty-title">No sessions yet today</p>
+                <p class="empty-note" style="margin-top:8px">Stale stamp stays explicit — never silently blank trusted data.</p>
+              </section>
+            </div>
           </main>
           <nav class="tabbar" aria-label="Primary">
             <a class="tab active" href="#home"><span>⌂</span>Home</a>
@@ -277,11 +328,11 @@
         <p class="caption">
           <span class="n">04</span>
           <strong>Sync failed</strong>
-          Hot status + Retry. Preserve last-known snapshot with an explicit stale cue; don’t blank the Home into zeros.
+          Hot retry chrome + explicit stale cue. Prior stack remains; no fake zeros.
         </p>
       </div>
 
-      <!-- 5 Data available -->
+      <!-- 05 Multi-sport trusted day (AE1/AE2/AE4/AE5) -->
       <div class="state-block">
         <div class="phone">
           <header class="app-header">
@@ -299,7 +350,7 @@
               <div class="seg"><button class="seg-btn active" type="button">Today</button></div>
               <span class="sync-pill"><i></i> Synced</span>
             </div>
-            <section class="card sync-card">
+            <section class="card sync-card compact">
               <div class="sync-row">
                 <div>
                   <p class="kicker">Watch</p>
@@ -309,39 +360,88 @@
                 <span class="status-dot ok"></span>
               </div>
             </section>
-            <section class="kpi-grid">
+
+            <section class="card sleep-strip" aria-label="Last night sleep">
+              <div class="sleep-row">
+                <div>
+                  <p class="kicker">Last night</p>
+                  <p class="sleep-duration">7<span class="unit">h</span> 12<span class="unit">m</span></p>
+                  <p class="sleep-window">23:18 → 06:30</p>
+                </div>
+              </div>
+              <p class="feel-cue"><strong>Feel on wake:</strong> OK — already answered</p>
+            </section>
+
+            <section class="kpi-grid honest" aria-label="Today totals">
               <article class="card kpi">
                 <p class="kpi-label">Calories</p>
                 <p class="kpi-value">1,842</p>
-                <svg class="spark" viewBox="0 0 100 28" aria-hidden="true"><path d="M0 22 C12 20, 18 14, 28 16 S48 24, 58 12 S78 6, 100 10"/></svg>
               </article>
               <article class="card kpi">
                 <p class="kpi-label">Steps</p>
                 <p class="kpi-value">7,420</p>
-                <svg class="spark" viewBox="0 0 100 28" aria-hidden="true"><path d="M0 18 C20 16, 30 20, 40 14 S70 8, 100 12"/></svg>
+              </article>
+              <article class="card kpi wide">
+                <div class="kpi-wide-row">
+                  <div>
+                    <p class="kpi-label">Workout time</p>
+                    <p class="kpi-value sm">1<span class="unit">h</span> 18<span class="unit">m</span> · 2 sessions</p>
+                  </div>
+                </div>
               </article>
             </section>
-            <section class="card">
-              <div class="kpi-wide-row">
+
+            <section class="card body-hr" aria-label="Body HR today">
+              <div class="hr-row">
                 <div>
-                  <p class="kicker">Vitals · now</p>
-                  <p class="kpi-value sm">58 · 72 · 97%</p>
+                  <p class="kicker">Body · today</p>
+                  <p class="hr-nums">52 · 68 · 118 <span class="unit">bpm</span></p>
+                  <p class="hr-legend">min · avg · max</p>
                 </div>
+                <svg class="spark-tiny" viewBox="0 0 88 28" aria-hidden="true">
+                  <path d="M0 18 C10 16, 18 22, 28 14 S48 6, 58 12 S78 20, 88 10" />
+                </svg>
               </div>
             </section>
-            <section class="card insight">
-              <div class="insight-head">
-                <div>
-                  <p class="kicker">Swim · #11</p>
-                  <h2>Efficient early, fatigue later</h2>
-                </div>
-                <span class="badge amber">med</span>
-              </div>
-              <p class="insight-body">Shorten sets before adding volume.</p>
-              <div class="insight-actions single">
-                <a class="btn primary" href="#session">Open session</a>
-              </div>
-            </section>
+
+            <div class="sessions-head">
+              <h2>Today’s sessions</h2>
+              <span class="count">2</span>
+            </div>
+            <ul class="today-sessions">
+              <li>
+                <a class="today-session" href="swim-analytics.html">
+                  <div class="session-top">
+                    <div>
+                      <p class="session-title">Pool swim · #11</p>
+                      <p class="session-when">07:12 · 42:18 · 1,250 m</p>
+                    </div>
+                    <span class="session-chev" aria-hidden="true">›</span>
+                  </div>
+                  <div class="session-meta">
+                    <div><p>Load</p><strong>148</strong></div>
+                    <div><p>TE</p><strong>2.8</strong></div>
+                    <div><p>Recovery</p><strong>16h</strong></div>
+                  </div>
+                </a>
+              </li>
+              <li>
+                <a class="today-session" href="strength-analytics.html">
+                  <div class="session-top">
+                    <div>
+                      <p class="session-title">Strength · #24</p>
+                      <p class="session-when">18:40 · 36:05</p>
+                    </div>
+                    <span class="session-chev" aria-hidden="true">›</span>
+                  </div>
+                  <div class="session-meta">
+                    <div><p>Load</p><strong>92</strong></div>
+                    <div><p>Intensity</p><strong>3</strong></div>
+                    <div><p>Recovery</p><strong>22h</strong></div>
+                  </div>
+                </a>
+              </li>
+            </ul>
           </main>
           <nav class="tabbar" aria-label="Primary">
             <a class="tab active" href="#home"><span>⌂</span>Home</a>
@@ -351,12 +451,12 @@
         </div>
         <p class="caption">
           <span class="n">05</span>
-          <strong>Data available</strong>
-          Canonical happy path (matches Home prototype): sync health, totals + subtle sparks, vitals snapshot, one takeaway. No graphs.
+          <strong>Trusted day · multi-sport</strong>
+          Canonical stack (AE1/AE2/AE4/AE5): sleep + feel cue, honest totals, one HR spark, swim + strength cards with plain load/TE/recovery. Swim takeaway gone.
         </p>
       </div>
 
-      <!-- 6 No swim data yet -->
+      <!-- 06 Rest day (AE3) -->
       <div class="state-block">
         <div class="phone">
           <header class="app-header">
@@ -374,17 +474,28 @@
               <div class="seg"><button class="seg-btn active" type="button">Today</button></div>
               <span class="sync-pill"><i></i> Synced</span>
             </div>
-            <section class="card sync-card">
+            <section class="card sync-card compact">
               <div class="sync-row">
                 <div>
                   <p class="kicker">Watch</p>
                   <h1 class="sync-title">GT5-A07 connected</h1>
-                  <p class="hero-caption">Sync healthy · no swim session today</p>
+                  <p class="hero-caption">Sync healthy · rest day so far</p>
                 </div>
                 <span class="status-dot ok"></span>
               </div>
             </section>
-            <section class="kpi-grid">
+
+            <section class="card sleep-strip">
+              <div class="sleep-row">
+                <div>
+                  <p class="kicker">Last night</p>
+                  <p class="sleep-duration">8<span class="unit">h</span> 04<span class="unit">m</span></p>
+                  <p class="sleep-window">22:50 → 06:54</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="kpi-grid honest">
               <article class="card kpi">
                 <p class="kpi-label">Calories</p>
                 <p class="kpi-value">920</p>
@@ -398,19 +509,24 @@
                 <p class="kpi-value sm">0<span class="unit">m</span> · no sessions</p>
               </article>
             </section>
-            <section class="card">
-              <div class="kpi-wide-row">
+
+            <section class="card body-hr">
+              <div class="hr-row">
                 <div>
-                  <p class="kicker">Vitals · now</p>
-                  <p class="kpi-value sm">61 · — · 98%</p>
+                  <p class="kicker">Body · today</p>
+                  <p class="hr-nums">54 · 62 · 96 <span class="unit">bpm</span></p>
+                  <p class="hr-legend">min · avg · max</p>
                 </div>
-                <a class="chip-link" href="#vitals">Vitals →</a>
+                <svg class="spark-tiny" viewBox="0 0 88 28" aria-hidden="true">
+                  <path d="M0 16 C14 14, 24 18, 36 12 S60 8, 72 14 S82 16, 88 12" />
+                </svg>
               </div>
             </section>
-            <section class="card insight">
-              <p class="kicker">Swim</p>
-              <h2 style="font-size:18px;margin:6px 0 0">No swim yet today</h2>
-              <p class="insight-body">When you finish a pool session, the takeaway lands here — one line, not a chart.</p>
+
+            <section class="card sessions-empty">
+              <p class="kicker">Sessions</p>
+              <p class="empty-title">No sessions yet today</p>
+              <p class="empty-note" style="margin-top:8px">Sleep and body stay useful on a rest day — no fake workout.</p>
             </section>
           </main>
           <nav class="tabbar" aria-label="Primary">
@@ -421,8 +537,274 @@
         </div>
         <p class="caption">
           <span class="n">06</span>
-          <strong>No swim data yet</strong>
-          Keep sync + vitals + daily totals honest. Replace takeaway with an empty swim cue — never invent a diagnosis or empty chart.
+          <strong>Rest day · empty sessions</strong>
+          Replaces “no swim data yet.” Upper blocks remain; sessions show a clear empty cue (AE3). No swim-empty hero.
+        </p>
+      </div>
+
+    </div>
+
+    <div class="section-divider">
+      <h2>Composition variants</h2>
+      <p>Edge layouts to stress density and honesty — same chrome language.</p>
+    </div>
+
+    <div class="gallery">
+
+      <!-- Run-only + TE scale -->
+      <div class="state-block">
+        <div class="phone">
+          <header class="app-header">
+            <button class="icon-round" type="button" aria-hidden="true">☰</button>
+            <div class="brand">
+              <span class="brand-mark">F</span>
+              <div>
+                <p class="brand-title">Fathom</p>
+                <p class="brand-sub mono">GT5 · synced 8m ago</p>
+              </div>
+            </div>
+          </header>
+          <main class="scroll">
+            <div class="period-row">
+              <div class="seg"><button class="seg-btn active" type="button">Today</button></div>
+              <span class="sync-pill"><i></i> Synced</span>
+            </div>
+            <section class="card sync-card compact">
+              <div class="sync-row">
+                <div>
+                  <p class="kicker">Watch</p>
+                  <h1 class="sync-title">GT5-A07 connected</h1>
+                  <p class="hero-caption">One outdoor run logged</p>
+                </div>
+                <span class="status-dot ok"></span>
+              </div>
+            </section>
+            <section class="card sleep-strip">
+              <div class="sleep-row">
+                <div>
+                  <p class="kicker">Last night</p>
+                  <p class="sleep-duration">6<span class="unit">h</span> 40<span class="unit">m</span></p>
+                  <p class="sleep-window">00:05 → 06:45</p>
+                </div>
+              </div>
+            </section>
+            <section class="kpi-grid honest">
+              <article class="card kpi">
+                <p class="kpi-label">Calories</p>
+                <p class="kpi-value">1,410</p>
+              </article>
+              <article class="card kpi">
+                <p class="kpi-label">Steps</p>
+                <p class="kpi-value">9,880</p>
+              </article>
+            </section>
+            <section class="card body-hr">
+              <div class="hr-row">
+                <div>
+                  <p class="kicker">Body · today</p>
+                  <p class="hr-nums">48 · 74 · 162 <span class="unit">bpm</span></p>
+                  <p class="hr-legend">min · avg · max</p>
+                </div>
+              </div>
+            </section>
+            <div class="sessions-head">
+              <h2>Today’s sessions</h2>
+              <span class="count">1</span>
+            </div>
+            <ul class="today-sessions">
+              <li>
+                <a class="today-session" href="run-analytics.html">
+                  <div class="session-top">
+                    <div>
+                      <p class="session-title">Outdoor run · #57</p>
+                      <p class="session-when">06:48 · 28:04 · 5.12 km</p>
+                    </div>
+                    <span class="session-chev" aria-hidden="true">›</span>
+                  </div>
+                  <div class="session-meta">
+                    <div><p>Load</p><strong>126</strong></div>
+                    <div><p>TE</p><strong>3.1</strong></div>
+                    <div><p>Recovery</p><strong>18h</strong></div>
+                  </div>
+                </a>
+              </li>
+            </ul>
+          </main>
+          <nav class="tabbar" aria-label="Primary">
+            <a class="tab active" href="#home"><span>⌂</span>Home</a>
+            <a class="tab" href="#vitals"><span>◉</span>Vitals</a>
+            <a class="tab" href="#workouts"><span>≡</span>Workouts</a>
+          </nav>
+        </div>
+        <p class="caption">
+          <span class="n">A</span>
+          <strong>Run day · no HR spark</strong>
+          Series missing → numbers only (no empty-chart copy). TE shown as ÷10 scale (3.1), not raw watch int.
+        </p>
+      </div>
+
+      <!-- Partial omit fields -->
+      <div class="state-block">
+        <div class="phone">
+          <header class="app-header">
+            <button class="icon-round" type="button" aria-hidden="true">☰</button>
+            <div class="brand">
+              <span class="brand-mark">F</span>
+              <div>
+                <p class="brand-title">Fathom</p>
+                <p class="brand-sub mono">GT5 · synced 1h ago</p>
+              </div>
+            </div>
+          </header>
+          <main class="scroll">
+            <div class="period-row">
+              <div class="seg"><button class="seg-btn active" type="button">Today</button></div>
+              <span class="sync-pill"><i></i> Synced</span>
+            </div>
+            <section class="card sync-card compact">
+              <div class="sync-row">
+                <div>
+                  <p class="kicker">Watch</p>
+                  <h1 class="sync-title">GT5-A07 connected</h1>
+                  <p class="hero-caption">Partial signals · omit, don’t invent</p>
+                </div>
+                <span class="status-dot ok"></span>
+              </div>
+            </section>
+            <section class="kpi-grid honest">
+              <article class="card kpi">
+                <p class="kpi-label">Calories</p>
+                <p class="kpi-value">1,102</p>
+              </article>
+              <article class="card kpi">
+                <p class="kpi-label">Steps</p>
+                <p class="kpi-value">4,560</p>
+              </article>
+            </section>
+            <div class="sessions-head">
+              <h2>Today’s sessions</h2>
+              <span class="count">1</span>
+            </div>
+            <ul class="today-sessions">
+              <li>
+                <a class="today-session" href="swim-analytics.html">
+                  <div class="session-top">
+                    <div>
+                      <p class="session-title">Pool swim · #12</p>
+                      <p class="session-when">12:05 · 26:40 · 800 m</p>
+                    </div>
+                    <span class="session-chev" aria-hidden="true">›</span>
+                  </div>
+                  <div class="session-meta cols-2">
+                    <div><p>Distance</p><strong>800 m</strong></div>
+                    <div><p>Time</p><strong>26:40</strong></div>
+                  </div>
+                </a>
+              </li>
+            </ul>
+            <section class="card">
+              <p class="empty-note">Sleep and body HR omitted when today signals are absent. Load/TE/recovery omitted on the card when the session lacks them — no fake 0s.</p>
+            </section>
+          </main>
+          <nav class="tabbar" aria-label="Primary">
+            <a class="tab active" href="#home"><span>⌂</span>Home</a>
+            <a class="tab" href="#vitals"><span>◉</span>Vitals</a>
+            <a class="tab" href="#workouts"><span>≡</span>Workouts</a>
+          </nav>
+        </div>
+        <p class="caption">
+          <span class="n">B</span>
+          <strong>Partial day · omit blocks</strong>
+          Missing sleep/HR/load fields disappear. Card keeps identity + volume only.
+        </p>
+      </div>
+
+      <!-- Two same-type sessions -->
+      <div class="state-block">
+        <div class="phone">
+          <header class="app-header">
+            <button class="icon-round" type="button" aria-hidden="true">☰</button>
+            <div class="brand">
+              <span class="brand-mark">F</span>
+              <div>
+                <p class="brand-title">Fathom</p>
+                <p class="brand-sub mono">GT5 · synced 4m ago</p>
+              </div>
+            </div>
+          </header>
+          <main class="scroll">
+            <div class="period-row">
+              <div class="seg"><button class="seg-btn active" type="button">Today</button></div>
+              <span class="sync-pill"><i></i> Synced</span>
+            </div>
+            <section class="card sync-card compact">
+              <div class="sync-row">
+                <div>
+                  <p class="kicker">Watch</p>
+                  <h1 class="sync-title">GT5-A07 connected</h1>
+                  <p class="hero-caption">Two pool swims · ordered by start</p>
+                </div>
+                <span class="status-dot ok"></span>
+              </div>
+            </section>
+            <section class="card sleep-strip">
+              <div class="sleep-row">
+                <div>
+                  <p class="kicker">Last night</p>
+                  <p class="sleep-duration">7<span class="unit">h</span> 00<span class="unit">m</span></p>
+                  <p class="sleep-window">23:40 → 06:40</p>
+                </div>
+              </div>
+            </section>
+            <div class="sessions-head">
+              <h2>Today’s sessions</h2>
+              <span class="count">2</span>
+            </div>
+            <ul class="today-sessions">
+              <li>
+                <a class="today-session" href="swim-analytics.html">
+                  <div class="session-top">
+                    <div>
+                      <p class="session-title">Pool swim · #11</p>
+                      <p class="session-when">06:50 · 34:05 · 1,000 m</p>
+                    </div>
+                    <span class="session-chev" aria-hidden="true">›</span>
+                  </div>
+                  <div class="session-meta">
+                    <div><p>Load</p><strong>110</strong></div>
+                    <div><p>TE</p><strong>2.4</strong></div>
+                    <div><p>Recovery</p><strong>12h</strong></div>
+                  </div>
+                </a>
+              </li>
+              <li>
+                <a class="today-session" href="swim-analytics.html">
+                  <div class="session-top">
+                    <div>
+                      <p class="session-title">Pool swim · #12</p>
+                      <p class="session-when">17:20 · 26:40 · 800 m</p>
+                    </div>
+                    <span class="session-chev" aria-hidden="true">›</span>
+                  </div>
+                  <div class="session-meta">
+                    <div><p>Load</p><strong>86</strong></div>
+                    <div><p>TE</p><strong>2.0</strong></div>
+                    <div><p>Recovery</p><strong>10h</strong></div>
+                  </div>
+                </a>
+              </li>
+            </ul>
+          </main>
+          <nav class="tabbar" aria-label="Primary">
+            <a class="tab active" href="#home"><span>⌂</span>Home</a>
+            <a class="tab" href="#vitals"><span>◉</span>Vitals</a>
+            <a class="tab" href="#workouts"><span>≡</span>Workouts</a>
+          </nav>
+        </div>
+        <p class="caption">
+          <span class="n">C</span>
+          <strong>Same-type multiples</strong>
+          Both cards listed by start time; each tap targets that session’s identity — not “first swim of the day.”
         </p>
       </div>
 
@@ -430,7 +812,7 @@
 
     <div class="foot-links">
       <a href="index.html">← Review hub</a>
-      <a href="home-prototype/">Home prototype →</a>
+      <a href="home-prototype/">Interactive Home prototype →</a>
       <a href="design-system.html">Design system →</a>
     </div>
   </div>

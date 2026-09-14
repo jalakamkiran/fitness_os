@@ -34,7 +34,9 @@ class _EmptyWorkouts implements WorkoutHistoryRepository {
   Future<List<WorkoutSummary>> loadLocal() async => const [];
 
   @override
-  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch() async =>
+  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch({
+    bool forceFullHistory = false,
+  }) async =>
       const Right([]);
 
   @override
@@ -177,7 +179,7 @@ void main() {
       final repo = await repoWith(linkState: LinkState.disconnected);
       final snap = await repo.loadSnapshot();
 
-      expect(snap.precedence, HomePrecedence.noSwimDataYet);
+      expect(snap.precedence, HomePrecedence.dataAvailable);
       expect(snap.syncPillLabel, 'Synced');
       expect(snap.syncTitle, 'HUAWEI WATCH GT 5-A07 paired');
       expect(snap.syncTitle.toLowerCase(), isNot(contains('connected')));
@@ -189,8 +191,8 @@ void main() {
     final repo = await repoWith(linkState: LinkState.connected);
     final snap = await repo.loadSnapshot();
 
-    expect(snap.precedence, HomePrecedence.noSwimDataYet);
+    expect(snap.precedence, HomePrecedence.dataAvailable);
     expect(snap.syncTitle, 'HUAWEI WATCH GT 5-A07 connected');
-    expect(snap.syncCaption, 'Sync healthy · no swim session today');
+    expect(snap.syncCaption, 'Sync healthy · rest day so far');
   });
 }

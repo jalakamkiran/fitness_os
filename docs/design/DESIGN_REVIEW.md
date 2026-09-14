@@ -56,12 +56,12 @@ Primary package (brand, Home IA, swim analytics) is approved. Residual Fitness O
 | Requirement | Result | Notes |
 |---|---|---|
 | Tabs: Home \| Vitals \| Workouts | **PASS** | `home-prototype/index.html` L106–109; all six frames in `home-states.html` tabbars. Frozen ownership table in `design-system.html` L218–247. |
-| Home = sync / vitals snapshot / one swim takeaway / today’s totals | **PASS** | Happy-path Home: sync card L38–48, KPI totals L50–77, vitals snapshot L79–88, one takeaway L90–103. |
-| Home never: graphs | **PASS** | Pool spatial board / pace charts removed from Home; rail notes move them to Swim charts (`home-prototype/index.html` L121). Subtle KPI sparks allowed by DS never-list (`design-system.html` L255–257). |
+| Home = sync / Today stack (sleep → totals → body HR ±1 spark → sessions) | **PASS** (2026-09-12) | Supersedes swim-only takeaway. See `home-states.html` / `home-prototype/`. |
+| Home never: analytics graphs (≤1 HR spark OK) | **PASS** (2026-09-12) | Hypnogram / workout charts / calendars still banned; one today-HR spark allowed. |
 | Home never: vitals history | **PASS** | Snapshot only + “Vitals →” (`home-prototype/index.html` L79–87). |
-| Home never: diagnosis lists | **PASS** | Single takeaway card; no Evidence→Diagnosis stack on Home. |
-| Home never: reasoner settings | **PASS** | No reasoner/settings controls on Home; comment + rail (`home-prototype/index.html` L90, L118). |
-| Six Home precedence states | **PASS** | `home-states.html` states 01–06 match plan order: Not paired → Paired never synced → Syncing → Failed → Data available → No swim data yet. |
+| Home never: diagnosis lists | **PASS** | Session cards only; no Evidence→Diagnosis stack on Home. |
+| Home never: reasoner settings | **PASS** | No reasoner/settings controls on Home. |
+| Six Home chrome × stack states | **PASS** (2026-09-12) | `home-states.html`: unpaired → never synced → syncing → failed → multi-sport day → rest day. |
 | Brand name Fathom on product surfaces | **PASS** (primary) | Hub, DS, logo, Home, states all say Fathom. |
 | Branding as tokens (not string-only) | **PASS** (prototype) | Shared `tokens.css`; Manrope + mint/amber pool-night language. |
 
