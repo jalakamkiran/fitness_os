@@ -236,8 +236,17 @@ void main() {
   });
 
   testWidgets('swim/run keep Reasoner settings action', (tester) async {
-    // Use run (not swim) so diagnoses/reasoner loaders do not require GetIt.
-    await pumpDetail(tester, workout: runWorkout());
+    // Non-run/non-strength so AppBar keeps Reasoner without GetIt loaders.
+    await pumpDetail(
+      tester,
+      workout: const WorkoutSummary(
+        number: 9,
+        startTime: 1723000000,
+        endTime: 1723000433,
+        durationSec: 433,
+        type: 9,
+      ),
+    );
 
     expect(find.byTooltip('Reasoner settings'), findsOneWidget);
     expect(find.byTooltip('Export this session'), findsNothing);

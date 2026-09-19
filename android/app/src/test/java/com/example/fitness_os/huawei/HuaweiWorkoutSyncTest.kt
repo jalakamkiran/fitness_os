@@ -887,6 +887,10 @@ class HuaweiWorkoutSyncTest {
 
     @Test
     fun sync_historicalSwimOutsideEnrichWindow_skipsDataTotalsOnly() {
+        // AE5 / R6: a stored totals-only row is not fetched unless Count lists it
+        // in this window (Force full-history is the retry while the watch still
+        // holds pages). Product Sync uses enrich floor = Count start, so this
+        // test uses a narrower enrichStartUnix than Count start.
         var dataCalls = 0
         val enrichingSync = HuaweiWorkoutSync(
             exchangeEncrypted = { _, service, cmd, _ ->
@@ -920,6 +924,87 @@ class HuaweiWorkoutSyncTest {
         assertEquals("none", workouts[0]["enrichmentStatus"])
         assertEquals("none", workouts[0]["sampleFetch"])
         assertEquals(0, dataCalls)
+    }
+
+    @Test
+    fun sync_countListedSwimWithDataInWindow_requestsData() {
+        var dataCalls = 0
+        val enrichingSync = HuaweiWorkoutSync(
+            exchangeEncrypted = { _, service, cmd, _ ->
+                when {
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
+                        countFrame(number = 67, dataCount = 1, paceCount = 0, segmentsCount = 0)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
+                        totalsFrame(number = 67, start = 1_700_000_500, duration = 1800, type = 6)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_DATA -> {
+                        dataCalls++
+                        dataPageFrame(
+                            workoutNumber = 67,
+                            pageIndex = 0,
+                            timestamp = 1_700_000_500,
+                            intervalSec = 5,
+                            sampleCount = 4,
+                            dataLength = 4,
+                            bitmap = 0x0001,
+                            leftover = listOf(HuaweiFraming.Tlv(0x7a, byteArrayOf(0x11, 0x22, 0x33, 0x44))),
+                        )
+                    }
+                    else -> null
+                }
+            },
+            persistWorkoutSamples = { id, _ -> "workouts/hr_samples/$id.bin" },
+        )
+
+        val result = enrichingSync.sync(1_700_000_000, 1_800_000_000)
+        assertEquals("ok", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val workouts = result["workouts"] as List<Map<String, Any?>>
+        assertEquals(1, workouts.size)
+        assertEquals(1, dataCalls)
+        assertEquals(1, workouts[0]["dataCount"])
+        assertEquals(6, workouts[0]["type"])
+    }
+
+    @Test
+    fun sync_countListedStrengthWithDataInWindow_requestsData() {
+        var dataCalls = 0
+        val enrichingSync = HuaweiWorkoutSync(
+            exchangeEncrypted = { _, service, cmd, _ ->
+                when {
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_COUNT -> {
+                        countFrame(number = 70, dataCount = 1, paceCount = 0, segmentsCount = 0)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_TOTALS -> {
+                        totalsFrame(number = 70, start = 1_700_000_800, duration = 900, type = 140)
+                    }
+                    service == HuaweiWorkoutSync.SVC && cmd == HuaweiWorkoutSync.CMD_DATA -> {
+                        dataCalls++
+                        dataPageFrame(
+                            workoutNumber = 70,
+                            pageIndex = 0,
+                            timestamp = 1_700_000_800,
+                            intervalSec = 5,
+                            sampleCount = 4,
+                            dataLength = 4,
+                            bitmap = 0x0001,
+                            leftover = listOf(HuaweiFraming.Tlv(0x7a, byteArrayOf(0x11, 0x22, 0x33, 0x44))),
+                        )
+                    }
+                    else -> null
+                }
+            },
+            persistWorkoutSamples = { id, _ -> "workouts/hr_samples/$id.bin" },
+        )
+
+        val result = enrichingSync.sync(1_700_000_000, 1_800_000_000)
+        assertEquals("ok", result["status"])
+        @Suppress("UNCHECKED_CAST")
+        val workouts = result["workouts"] as List<Map<String, Any?>>
+        assertEquals(1, workouts.size)
+        assertEquals(1, dataCalls)
+        assertEquals("ok", workouts[0]["sampleFetch"])
     }
 
     @Test

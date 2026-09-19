@@ -653,7 +653,18 @@ List<RunStreamPoint> mergeRunStreamPaceAndHr({
 /// Wire record (8 bytes): `00 00 23 <cadence?> <hr> 00 <u16>` at ~5 s.
 /// HR from byte4 is locked vs Totals min/max. Pace comes from
 /// [runPaceSeriesFromSplits] — sample u16 is not charted yet.
+///
+/// Swim/strength in-session curves use the type-gated HR lock helper instead —
+/// do not call this from those hosts (it is the 0x23 run walk, not a type gate).
 List<RunStreamPoint> decodeRunSamplePoints(List<PeeledPageBodies> pages) {
+  return decodeGt5EightByteHrRecords(pages, marker: 0x23);
+}
+
+/// Walk leftover `0x05` bodies as 8-byte `00 00 <marker> …` HR/cadence records.
+List<RunStreamPoint> decodeGt5EightByteHrRecords(
+  List<PeeledPageBodies> pages, {
+  required int marker,
+}) {
   if (pages.isEmpty) return const [];
   final sorted = [...pages]..sort((a, b) => a.index.compareTo(b.index));
   final stream = <int>[];
@@ -670,7 +681,9 @@ List<RunStreamPoint> decodeRunSamplePoints(List<PeeledPageBodies> pages) {
   var i = 0;
   var sampleIndex = 0;
   while (i + 8 <= stream.length) {
-    if (stream[i] == 0x00 && stream[i + 1] == 0x00 && stream[i + 2] == 0x23) {
+    if (stream[i] == 0x00 &&
+        stream[i + 1] == 0x00 &&
+        stream[i + 2] == marker) {
       final cadence = stream[i + 3];
       final hr = stream[i + 4];
       final cadOk = cadence >= 40 && cadence <= 250;
