@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
+import 'package:fitness_os/features/workout_history/domain/gt5_run_sample_parser.dart';
 import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_detail_screen.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/run_pace_splits_table.dart';
@@ -99,6 +100,31 @@ group('RunSessionMetrics invent-guard (AE3 / AE4)', () {
       expect(m.hasThisRunTraining, isFalse);
     });
 
+    test('fromSummary maps lean Totals TE/load/recovery (Walk #72)', () {
+      // Native Totals parser promotes 0x0d/0x0e/0x11/0x20 onto WorkoutSummary
+      // and strips them from leftovers. Product tiles must still show.
+      const w = WorkoutSummary(
+        number: 72,
+        startTime: 1789792790,
+        endTime: 1789794045,
+        durationSec: 1150,
+        type: 1,
+        steps: 2918,
+        distanceM: 3010,
+        load: 75,
+        aerobicEffect: 24,
+        anaerobicEffect: 15,
+        recoveryTime: 1560,
+      );
+      final m = RunSessionMetrics.fromSummary(w);
+      expect(m.sessionLoad, 75);
+      expect(m.aerobicEffect, 2.4);
+      expect(m.anaerobicEffect, 1.5);
+      expect(m.recoverySec, 1560 * 60);
+      expect(m.hasThisRunTraining, isTrue);
+      expect(RunInventGuard.showsVo2(m), isFalse);
+    });
+
     test('fromLeftovers locks #60 watch scalars', () {
       final bodies = <LeftoverTlvBody>[
         LeftoverTlvBody(id: 0x0b, len: 4, bodyBase64: base64Encode([0, 0, 0, 27])),
@@ -181,21 +207,24 @@ group('RunSessionMetrics invent-guard (AE3 / AE4)', () {
           ],
         ),
       ];
-      expect(decodeRunSamplePoints(pages), isEmpty);
-      expect(decodeRunSamplePoints(const []), isEmpty);
+      expect(decodeRunSamplePoints(pages, workoutType: 2), isEmpty);
+      expect(decodeRunSamplePoints(const [], workoutType: 2), isEmpty);
     });
 
     test('decodeRunSamplePoints reads GT5 0x05 HR records', () {
-      // 00 00 23 cad hr 00 .. ..
+      // 00 00 23 cad hr 00 .. .. — Outdoor Run #60
       final rec1 = [0x00, 0x00, 0x23, 100, 140, 0x00, 0x0D, 0x08];
       final rec2 = [0x00, 0x00, 0x23, 110, 150, 0x00, 0x17, 0x0C];
       final body = base64Encode([...rec1, ...rec2]);
-      final points = decodeRunSamplePoints([
-        PeeledPageBodies(
-          index: 0,
-          bodies: [LeftoverTlvBody(id: 0x05, len: 16, bodyBase64: body)],
-        ),
-      ]);
+      final points = decodeRunSamplePoints(
+        [
+          PeeledPageBodies(
+            index: 0,
+            bodies: [LeftoverTlvBody(id: 0x05, len: 16, bodyBase64: body)],
+          ),
+        ],
+        workoutType: 2,
+      );
       expect(points, hasLength(2));
       expect(points[0].offsetSec, 0);
       expect(points[0].hrBpm, 140);
@@ -203,6 +232,51 @@ group('RunSessionMetrics invent-guard (AE3 / AE4)', () {
       expect(points[0].paceSecPerKm, isNull); // pace from splits, not samples
       expect(points[1].offsetSec, 5);
       expect(points[1].hrBpm, 150);
+    });
+
+    test('Walk type decodes 0x22 samples; Run type does not', () {
+      // Walk #72 first two records: magic 0x22, HR 102 then 107 (hrMin lock).
+      final rec1 = [0x00, 0x00, 0x22, 0x79, 0x66, 0x00, 0x0d, 0x08];
+      final rec2 = [0x00, 0x00, 0x22, 0x79, 0x6b, 0x00, 0x1b, 0x0d];
+      final body = base64Encode([...rec1, ...rec2]);
+      final pages = [
+        PeeledPageBodies(
+          index: 0,
+          bodies: [LeftoverTlvBody(id: 0x05, len: 16, bodyBase64: body)],
+        ),
+      ];
+      final walk = decodeRunSamplePoints(pages, workoutType: 1);
+      expect(walk, hasLength(2));
+      expect(walk[0].hrBpm, 102);
+      expect(walk[0].cadenceSpm, 0x79);
+      expect(walk[1].hrBpm, 107);
+      expect(walk[1].offsetSec, 5);
+      expect(walk[0].paceSecPerKm, isNull);
+
+      expect(decodeRunSamplePoints(pages, workoutType: 2), isEmpty);
+    });
+
+    test('Run type decodes 0x23 samples; Walk type does not', () {
+      final rec = [0x00, 0x00, 0x23, 100, 140, 0x00, 0x0D, 0x08];
+      final pages = [
+        PeeledPageBodies(
+          index: 0,
+          bodies: [
+            LeftoverTlvBody(id: 0x05, len: 8, bodyBase64: base64Encode(rec)),
+          ],
+        ),
+      ];
+      expect(decodeRunSamplePoints(pages, workoutType: 2), hasLength(1));
+      expect(decodeRunSamplePoints(pages, workoutType: 5), hasLength(1));
+      expect(decodeRunSamplePoints(pages, workoutType: 1), isEmpty);
+    });
+
+    test('sample marker catalog is type-dispatched', () {
+      expect(Gt5RunSampleParser.markerForWorkoutType(1), 0x22);
+      expect(Gt5RunSampleParser.markerForWorkoutType(2), 0x23);
+      expect(Gt5RunSampleParser.markerForWorkoutType(5), 0x23);
+      expect(Gt5RunSampleParser.markerForWorkoutType(6), isNull);
+      expect(decodeRunSamplePoints(const [], workoutType: 9), isEmpty);
     });
 
     test('0x83 flag0 decodes watch km splits; flag1 skipped', () {
@@ -342,6 +416,90 @@ group('RunSessionMetrics invent-guard (AE3 / AE4)', () {
 
       expect(find.textContaining('No enrichment counts'), findsNothing);
       expect(find.text('Export for AI'), findsNothing);
+    });
+
+    testWidgets('Walk lean Totals TE shows without leftover tags', (tester) async {
+      const workout = WorkoutSummary(
+        number: 72,
+        startTime: 1789792790,
+        endTime: 1789794045,
+        durationSec: 1150,
+        type: 1,
+        calories: 194,
+        distanceM: 3010,
+        steps: 2918,
+        hrMin: 102,
+        hrMax: 180,
+        load: 75,
+        aerobicEffect: 24,
+        anaerobicEffect: 15,
+        recoveryTime: 1560,
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: WorkoutDetailScreen(
+            workout: workout,
+            preloadedPaceSplits: [],
+            preloadedStreamPoints: [],
+            preloadedLeftovers: [],
+          ),
+        ),
+      );
+      await _pumpReady(tester);
+
+      expect(find.text('WALK'), findsOneWidget);
+      expect(find.text('2.4'), findsOneWidget);
+      expect(find.text('1.5'), findsOneWidget);
+      expect(find.text('75'), findsOneWidget);
+      expect(find.text('102–180'), findsOneWidget);
+    });
+
+    testWidgets('Walk 0x22 samples unlock HR and cadence story tabs',
+        (tester) async {
+      const workout = WorkoutSummary(
+        number: 72,
+        startTime: 10,
+        endTime: 20,
+        durationSec: 1150,
+        type: 1,
+        distanceM: 3010,
+        hrMin: 102,
+        hrMax: 180,
+      );
+      final rec1 = [0x00, 0x00, 0x22, 0x79, 0x66, 0x00, 0x0d, 0x08];
+      final rec2 = [0x00, 0x00, 0x22, 0x79, 0x6b, 0x00, 0x1b, 0x0d];
+      final points = decodeRunSamplePoints(
+        [
+          PeeledPageBodies(
+            index: 0,
+            bodies: [
+              LeftoverTlvBody(
+                id: 0x05,
+                len: 16,
+                bodyBase64: base64Encode([...rec1, ...rec2]),
+              ),
+            ],
+          ),
+        ],
+        workoutType: 1,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: WorkoutDetailScreen(
+            workout: workout,
+            preloadedPaceSplits: const [],
+            preloadedStreamPoints: points,
+            preloadedLeftovers: const [],
+          ),
+        ),
+      );
+      await _pumpReady(tester);
+
+      expect(find.text('HR'), findsOneWidget);
+      expect(find.text('Cadence'), findsWidgets);
+      expect(find.text('Heart rate'), findsOneWidget);
     });
 
     testWidgets('Indoor Run (AE8): thinner show-fetched — steps in terrain',

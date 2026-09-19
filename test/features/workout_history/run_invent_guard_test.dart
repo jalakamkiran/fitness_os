@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/features/workout_history/domain/gt5_run_sample_parser.dart';
 import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
 
 /// Sibling invent-guard coverage for Run detail (AE3 / AE4).
@@ -51,14 +52,17 @@ void main() {
 
     test('opaque leftover pages do not decode into stream points', () {
       expect(
-        decodeRunSamplePoints(const [
-          PeeledPageBodies(
-            index: 0,
-            bodies: [
-              LeftoverTlvBody(id: 0x66, len: 8, bodyBase64: 'AAAAAAAAAAA='),
-            ],
-          ),
-        ]),
+        decodeRunSamplePoints(
+          const [
+            PeeledPageBodies(
+              index: 0,
+              bodies: [
+                LeftoverTlvBody(id: 0x66, len: 8, bodyBase64: 'AAAAAAAAAAA='),
+              ],
+            ),
+          ],
+          workoutType: 2,
+        ),
         isEmpty,
       );
     });

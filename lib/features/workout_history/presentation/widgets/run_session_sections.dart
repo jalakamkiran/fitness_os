@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
+import 'package:fitness_os/features/workout_history/domain/gt5_run_sample_parser.dart';
 import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/run_pace_splits_table.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/run_session_charts.dart';
@@ -15,12 +16,16 @@ class RunSessionStreamsSection extends StatefulWidget {
   const RunSessionStreamsSection({
     super.key,
     required this.workoutNumber,
+    this.workoutType = 2,
     this.store,
     this.preloadedSplits,
     this.preloadedPoints,
   });
 
   final int workoutNumber;
+
+  /// Totals type (Walk=1, Outdoor Run=2, Indoor run=5) for sample-marker dispatch.
+  final int workoutType;
 
   /// Test seam — production uses [sl]<[RunSessionStore]>.
   final RunSessionStore? store;
@@ -46,7 +51,7 @@ class _RunSessionStreamsSectionState extends State<RunSessionStreamsSection> {
       return;
     }
     final sessionStore = widget.store ?? sl<RunSessionStore>();
-    _future = _load(sessionStore, widget.workoutNumber);
+    _future = _load(sessionStore, widget.workoutNumber, widget.workoutType);
   }
 
   @override
@@ -100,12 +105,16 @@ class _RunSessionStreamsSectionState extends State<RunSessionStreamsSection> {
   static Future<_RunStreamsBundle> _load(
     RunSessionStore store,
     int workoutNumber,
+    int workoutType,
   ) async {
     try {
       final pacePages = await store.loadPaceBlocks(workoutNumber);
       final dataPages = await store.loadDataPages(workoutNumber);
       final splits = runPaceSplitsFromPages(pacePages);
-      final hrSamples = decodeRunSamplePoints(dataPages);
+      final hrSamples = decodeRunSamplePoints(
+        dataPages,
+        workoutType: workoutType,
+      );
       final paceSteps = runPaceSeriesFromSplits(splits);
       final points = mergeRunStreamPaceAndHr(
         hrSamples: hrSamples,
@@ -357,6 +366,7 @@ class RunSessionEnrichmentSection extends StatefulWidget {
     super.key,
     required this.workoutNumber,
     required this.baseMetrics,
+    this.workoutType = 2,
     this.distanceM,
     this.store,
     this.preloadedLeftovers,
@@ -364,6 +374,9 @@ class RunSessionEnrichmentSection extends StatefulWidget {
 
   final int workoutNumber;
   final RunSessionMetrics baseMetrics;
+
+  /// Totals type for sample-marker dispatch (avg HR from stream).
+  final int workoutType;
   final int? distanceM;
   final RunSessionStore? store;
 
@@ -390,6 +403,7 @@ class _RunSessionEnrichmentSectionState
       store,
       widget.workoutNumber,
       widget.baseMetrics,
+      workoutType: widget.workoutType,
       distanceM: widget.distanceM,
     );
   }
@@ -455,6 +469,7 @@ class _RunSessionEnrichmentSectionState
     RunSessionStore store,
     int workoutNumber,
     RunSessionMetrics base, {
+    required int workoutType,
     int? distanceM,
   }) async {
     try {
@@ -468,7 +483,10 @@ class _RunSessionEnrichmentSectionState
 
       // Avg HR from sample stream when present (locked vs watch avg 153).
       final dataPages = await store.loadDataPages(workoutNumber);
-      final samples = decodeRunSamplePoints(dataPages);
+      final samples = decodeRunSamplePoints(
+        dataPages,
+        workoutType: workoutType,
+      );
       final hrs = samples.map((p) => p.hrBpm).whereType<int>().toList();
       if (hrs.isNotEmpty) {
         final avg = (hrs.reduce((a, b) => a + b) / hrs.length).round();
