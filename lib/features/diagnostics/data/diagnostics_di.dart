@@ -17,6 +17,7 @@ import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
+import 'package:fitness_os/features/workout_history/data/swim_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/workout_tcx_export_service.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 
@@ -50,10 +51,13 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
             sl.isRegistered<WorkoutHistoryRepository>()
                 ? sl<WorkoutHistoryRepository>().isSyncOrMergeInFlight
                 : false,
-        isStrengthExportInFlight: () =>
-            sl.isRegistered<StrengthSessionExportService>()
-                ? sl<StrengthSessionExportService>().exportInFlight
-                : false,
+        isStrengthExportInFlight: () {
+          final strength = sl.isRegistered<StrengthSessionExportService>() &&
+              sl<StrengthSessionExportService>().exportInFlight;
+          final swim = sl.isRegistered<SwimSessionExportService>() &&
+              sl<SwimSessionExportService>().exportInFlight;
+          return strength || swim;
+        },
         isQwenInstalled: () => sl<SwimReasonerService>().qwen3.isInstalled(),
       );
     },
@@ -101,6 +105,9 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
     final strengthExport = sl.isRegistered<StrengthSessionExportService>()
         ? sl<StrengthSessionExportService>()
         : null;
+    final swimExport = sl.isRegistered<SwimSessionExportService>()
+        ? sl<SwimSessionExportService>()
+        : null;
     final tcxExport = sl.isRegistered<WorkoutTcxExportService>()
         ? sl<WorkoutTcxExportService>()
         : null;
@@ -121,6 +128,9 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
       }
       if (strengthExport != null) {
         await strengthExport.pruneStrengthExportCache();
+      }
+      if (swimExport != null) {
+        await swimExport.pruneSwimExportCache();
       }
       if (tcxExport != null) {
         await tcxExport.pruneExportCache();
@@ -143,6 +153,7 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
         (foodExport?.exportInFlight ?? false) ||
         runExport.exportInFlight ||
         (strengthExport?.exportInFlight ?? false) ||
+        (swimExport?.exportInFlight ?? false) ||
         (tcxExport?.exportInFlight ?? false) ||
         (workouts?.isSyncOrMergeInFlight ?? false);
   }
