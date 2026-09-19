@@ -40,12 +40,108 @@ void main() {
       expect(points.map((p) => p.hrBpm), [140, 150]);
     });
 
-    test('types 6/8/140 stay empty even when bytes look like 0x23 run records',
-        () {
+    test('types 6/8 stay empty for run-shaped 8-byte records', () {
       final pages = [_page([_rec(hr: 140), _rec(hr: 150)])];
       expect(lockInSessionHrPoints(pages, workoutType: 6), isEmpty);
       expect(lockInSessionHrPoints(pages, workoutType: 8), isEmpty);
-      expect(lockInSessionHrPoints(pages, workoutType: 140), isEmpty);
+    });
+
+    test('type 6 swim 7-byte records lock at 5 s with totals agreement', () {
+      // Session #67 shape: HR 00 A 00 B 00 C, first byte BPM.
+      final body = <int>[
+        76, 0, 5, 0, 79, 0, 18,
+        79, 0, 5, 0, 79, 0, 18,
+        153, 0, 3, 0, 120, 0, 12,
+      ];
+      final points = lockInSessionHrPoints(
+        [_packedPage(body)],
+        workoutType: 6,
+        hrMin: 76,
+        hrMax: 153,
+      );
+      expect(points.map((p) => p.hrBpm), [76, 79, 153]);
+      expect(points.map((p) => p.offsetSec), [0, 5, 10]);
+    });
+
+    test('type 8 open water uses the same 7-byte swim packing', () {
+      final body = <int>[
+        80, 0, 4, 0, 70, 0, 10,
+        90, 0, 4, 0, 70, 0, 10,
+      ];
+      expect(
+        lockInSessionHrPoints(
+          [_packedPage(body)],
+          workoutType: 8,
+          hrMin: 80,
+          hrMax: 90,
+        ).map((p) => p.hrBpm),
+        [80, 90],
+      );
+    });
+
+    test('type 6 with totals disagreement omits', () {
+      final body = <int>[
+        76, 0, 5, 0, 79, 0, 18,
+        100, 0, 5, 0, 79, 0, 18,
+      ];
+      expect(
+        lockInSessionHrPoints(
+          [_packedPage(body)],
+          workoutType: 6,
+          hrMin: 50,
+          hrMax: 60,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('type 6 truncated mid-record omits', () {
+      expect(
+        lockInSessionHrPoints(
+          [_packedPage([76, 0, 5, 0, 79, 0])], // 6 bytes, not 7
+          workoutType: 6,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('type 140 with fewer than two in-band BPM bytes omits', () {
+      expect(
+        lockInSessionHrPoints(
+          [_packedPage([0x00, 10, 84])],
+          workoutType: 140,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('type 140 packed BPM series locks at 5 s with totals agreement', () {
+      // Session #70 shape: leading 0x00 pad then consecutive BPM.
+      final body = [0x00, 84, 90, 100, 110, 120, 135];
+      final points = lockInSessionHrPoints(
+        [_packedPage(body)],
+        workoutType: 140,
+        hrMin: 84,
+        hrMax: 135,
+      );
+      expect(points.where((p) => p.hrBpm != null).length, 6);
+      expect(points.first.hrBpm, isNull);
+      expect(points[1].offsetSec, 5);
+      expect(points[1].hrBpm, 84);
+      expect(points.last.hrBpm, 135);
+      expect(points.last.offsetSec, 30);
+    });
+
+    test('type 140 packed series disagrees with totals omits', () {
+      expect(
+        lockInSessionHrPoints(
+          [_packedPage([84, 90, 100])],
+          workoutType: 140,
+          hrMin: 50,
+          hrMax: 60,
+        ),
+        isEmpty,
+      );
     });
 
     test('plausible bpm with totals absent still locks', () {
@@ -130,6 +226,16 @@ void main() {
       );
     });
   });
+
+  group('decodeStrengthPackedHrPoints', () {
+    test('maps consecutive bytes to 5 s offsets', () {
+      final points = decodeStrengthPackedHrPoints([
+        _packedPage([92, 96, 98]),
+      ]);
+      expect(points.map((p) => p.hrBpm), [92, 96, 98]);
+      expect(points.map((p) => p.offsetSec), [0, 5, 10]);
+    });
+  });
 }
 
 List<int> _rec({int marker = 0x23, int cadence = 100, required int hr}) =>
@@ -137,6 +243,10 @@ List<int> _rec({int marker = 0x23, int cadence = 100, required int hr}) =>
 
 PeeledPageBodies _page(List<List<int>> records) {
   final bytes = [for (final r in records) ...r];
+  return _packedPage(bytes);
+}
+
+PeeledPageBodies _packedPage(List<int> bytes) {
   return PeeledPageBodies(
     index: 0,
     bodies: [

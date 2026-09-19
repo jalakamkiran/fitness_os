@@ -10,12 +10,13 @@ import 'package:fitness_os/features/workout_history/data/repositories/workout_hi
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
+import 'package:fitness_os/features/workout_history/data/swim_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/workout_leftover_store.dart';
 import 'package:fitness_os/features/workout_history/data/workout_tcx_export_service.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_bloc.dart';
 
-/// Registers workout stores, repository, reasoner, strength export, and TCX export.
+/// Registers workout stores, repository, reasoner, session JSON exports, and TCX.
 ///
 /// Does **not** assign Forget wipe/prune — diagnostics_di composes that in U6.
 Future<void> initWorkoutHistoryDependencies(GetIt sl) async {
@@ -41,6 +42,23 @@ Future<void> initWorkoutHistoryDependencies(GetIt sl) async {
       () {
         final pairing = sl<DevicePairingRepository>();
         return StrengthSessionExportService(
+          repository: sl<WorkoutHistoryRepository>(),
+          leftoverStore: sl<WorkoutLeftoverStore>(),
+          isForgetInFlight: () => pairing is DevicePairingRepositoryImpl
+              ? pairing.forgetInFlight
+              : false,
+          isSyncOrMergeInFlight: () =>
+              sl<WorkoutHistoryRepository>().isSyncOrMergeInFlight,
+        );
+      },
+    );
+  }
+
+  if (!sl.isRegistered<SwimSessionExportService>()) {
+    sl.registerLazySingleton<SwimSessionExportService>(
+      () {
+        final pairing = sl<DevicePairingRepository>();
+        return SwimSessionExportService(
           repository: sl<WorkoutHistoryRepository>(),
           leftoverStore: sl<WorkoutLeftoverStore>(),
           isForgetInFlight: () => pairing is DevicePairingRepositoryImpl
