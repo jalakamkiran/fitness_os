@@ -16,6 +16,7 @@ class RunSessionCharts extends StatefulWidget {
     required this.points,
     this.title = 'Session charts',
     this.caption = 'This run · fetched streams only',
+    this.hrCaption = 'bpm · in-run samples',
     this.showStoryTabs = false,
     this.showProbeNote = false,
   });
@@ -23,6 +24,9 @@ class RunSessionCharts extends StatefulWidget {
   final List<RunStreamPoint> points;
   final String title;
   final String caption;
+
+  /// Inner HR-block caption. Swim/strength hosts pass in-session wording.
+  final String hrCaption;
 
   /// Product story filter chips (All / Pace / HR / Cadence).
   final bool showStoryTabs;
@@ -150,7 +154,7 @@ class _RunSessionChartsState extends State<RunSessionCharts> {
           if (showHr)
             _ChartBlock(
               title: 'Heart rate',
-              caption: 'bpm · in-run samples',
+              caption: widget.hrCaption,
               child: _RunLineChart(
                 values: hrs,
                 color: SwimChartColors.hot,

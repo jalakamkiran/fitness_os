@@ -10,6 +10,7 @@ import 'package:fitness_os/features/diagnostics/data/run_session_export_service.
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
+import 'package:fitness_os/features/workout_history/data/swim_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/workout_tcx_export_service.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
 import 'package:fitness_os/features/workout_history/domain/offline_swim_reasoner.dart';
@@ -23,7 +24,9 @@ import 'package:fitness_os/features/workout_history/domain/swim_stroke_label.dar
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/coach_settings_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/in_session_hr_curve_host.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/run_session_analytics.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/strava_mark_icon.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/strength_session_analytics.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_session_charts.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_stroke_icon.dart';
@@ -44,6 +47,10 @@ class WorkoutDetailScreen extends StatefulWidget {
     this.exportOverride,
     this.exportBusyOverride,
     this.shareExport,
+    this.swimExportService,
+    this.swimExportOverride,
+    this.swimExportBusyOverride,
+    this.shareSwimExport,
     this.historyOverride,
     this.tcxExportService,
     this.shareTcx,
@@ -88,6 +95,19 @@ class WorkoutDetailScreen extends StatefulWidget {
   /// Test seam — production uses [SharePlus] with `application/json` for strength.
   final Future<void> Function(File file)? shareExport;
 
+  /// Test / DI seam — production uses [SwimSessionExportService] from GetIt.
+  final SwimSessionExportService? swimExportService;
+
+  /// Test seam — when set, used instead of [SwimSessionExportService.exportSessionToCache].
+  final Future<SwimSessionExportResult> Function(int workoutNumber)?
+      swimExportOverride;
+
+  /// Test seam — when set, used instead of [SwimSessionExportService.isBusy].
+  final bool Function()? swimExportBusyOverride;
+
+  /// Test seam — production uses [SharePlus] with `application/json` for swim.
+  final Future<void> Function(File file)? shareSwimExport;
+
   /// Test seam — recent-load bars without GetIt repository.
   final List<WorkoutSummary>? historyOverride;
 
@@ -109,19 +129,56 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   WorkoutSummary get workout => widget.workout;
 
   bool get _isStrength => isStrengthWorkout(workout.type);
+  bool get _isSwim => isSwimWorkout(workout.type);
+  bool get _supportsJsonExport => _isStrength || _isSwim;
 
-  StrengthSessionExportService get _export =>
+  StrengthSessionExportService get _strengthExport =>
       widget.exportService ?? sl<StrengthSessionExportService>();
 
-  bool get _serviceBusy =>
-      widget.exportBusyOverride?.call() ?? _export.isBusy;
+  SwimSessionExportService get _swimExport =>
+      widget.swimExportService ?? sl<SwimSessionExportService>();
 
-  Future<StrengthSessionExportResult> _runExport(int number) =>
-      widget.exportOverride?.call(number) ??
-      _export.exportSessionToCache(number);
+  bool get _serviceBusy {
+    if (_isSwim) {
+      return widget.swimExportBusyOverride?.call() ?? _swimExport.isBusy;
+    }
+    return widget.exportBusyOverride?.call() ?? _strengthExport.isBusy;
+  }
+
+  Future<({bool isSuccess, File? file, int? byteLength, String? message})>
+      _runJsonExport(int number) async {
+    if (_isSwim) {
+      final result = await (widget.swimExportOverride?.call(number) ??
+          _swimExport.exportSessionToCache(number));
+      return (
+        isSuccess: result.isSuccess,
+        file: result.file,
+        byteLength: result.byteLength,
+        message: result.message,
+      );
+    }
+    final result = await (widget.exportOverride?.call(number) ??
+        _strengthExport.exportSessionToCache(number));
+    return (
+      isSuccess: result.isSuccess,
+      file: result.file,
+      byteLength: result.byteLength,
+      message: result.message,
+    );
+  }
+
+  String get _jsonExportSportLabel => _isSwim ? 'swim' : 'strength';
+
+  String get _jsonExportCacheDir => _isSwim
+      ? SwimSessionExportService.exportCacheDirName
+      : StrengthSessionExportService.exportCacheDirName;
+
+  int get _jsonExportSoftWarnBytes => _isSwim
+      ? SwimSessionExportService.softWarnBytes
+      : StrengthSessionExportService.softWarnBytes;
 
   Future<void> _onExportThisSession() async {
-    if (_sessionRemoved || _exportBusy) return;
+    if (_sessionRemoved || _exportBusy || !_supportsJsonExport) return;
     if (_serviceBusy) {
       setState(() {
         _exportStatus =
@@ -137,9 +194,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Export this session?'),
-        content: const Text(
-          'This creates a JSON file of this strength session, including '
-          'session totals and heart-rate samples when available. '
+        content: Text(
+          'This creates a JSON file of this $_jsonExportSportLabel session, '
+          'including session totals and heart-rate samples when available. '
           'It contains non-anonymized health data. '
           'After you share it, recipients may keep copies — deleting the '
           'export cache does not revoke shared copies.',
@@ -164,7 +221,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       _exportStatus = 'Assembling export…';
     });
 
-    final result = await _runExport(workout.number);
+    final result = await _runJsonExport(workout.number);
     if (!mounted) return;
 
     if (!result.isSuccess || result.file == null) {
@@ -186,7 +243,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     final bytes = result.byteLength ?? await file.length();
     if (!mounted) return;
 
-    if (bytes > StrengthSessionExportService.softWarnBytes) {
+    if (bytes > _jsonExportSoftWarnBytes) {
       final mb = (bytes / (1024 * 1024)).toStringAsFixed(1);
       final cont = await showDialog<bool>(
         context: context,
@@ -219,9 +276,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
     if (!mounted) return;
     final sharePath = file.absolute.path;
-    if (!sharePath.contains(
-      '/${StrengthSessionExportService.exportCacheDirName}/',
-    )) {
+    if (!sharePath.contains('/$_jsonExportCacheDir/')) {
       setState(() {
         _exportBusy = false;
         _exportStatus = 'Export path refused — not under export cache.';
@@ -233,14 +288,14 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     }
 
     try {
-      final share = widget.shareExport;
+      final share = _isSwim ? widget.shareSwimExport : widget.shareExport;
       if (share != null) {
         await share(file);
       } else {
         await SharePlus.instance.share(
           ShareParams(
             files: [XFile(file.path, mimeType: 'application/json')],
-            subject: 'Fathom strength session export',
+            subject: 'Fathom $_jsonExportSportLabel session export',
           ),
         );
       }
@@ -290,7 +345,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
               exportOverride: widget.sessionExportOverride,
               exportBusyOverride: widget.sessionExportBusyOverride,
             ),
-          if (isStrength)
+          if (isStrength || isSwimWorkout(workout.type))
             IconButton(
               tooltip: 'Export this session',
               icon: _exportBusy
@@ -330,6 +385,8 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   StrengthSessionAnalytics(
                     workout: workout,
                     historyOverride: widget.historyOverride,
+                    runSessionStore: widget.runSessionStore,
+                    preloadedStreamPoints: widget.preloadedStreamPoints,
                     exportBusy: _exportBusy,
                     onExport: _sessionRemoved ? null : _onExportThisSession,
                     onAllSessions: () => Navigator.of(context).maybePop(),
@@ -417,12 +474,19 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                     const SizedBox(height: 12),
                     _CoachRecsLoader(workoutNumber: workout.number),
                   ],
+                  if (isSwimWorkout(workout.type)) ...[
+                    const SizedBox(height: 12),
+                    InSessionHrCurveHost(
+                      workout: workout,
+                      runSessionStore: widget.runSessionStore,
+                      preloadedStreamPoints: widget.preloadedStreamPoints,
+                    ),
+                  ],
                   if (swim != null && swim.p0.laps.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     _SwimChartsAndIntervals(
                       laps: swim.p0.laps,
                       poolLengthM: swim.poolLengthM,
-                      hrCoverage: swim.p0.hrCoverage,
                     ),
                   ] else if (workout.segments != null &&
                       workout.segments!.isNotEmpty) ...[
@@ -1270,13 +1334,11 @@ class _CountChip extends StatelessWidget {
 class _SwimChartsAndIntervals extends StatefulWidget {
   const _SwimChartsAndIntervals({
     required this.laps,
-    required this.hrCoverage,
     this.poolLengthM,
   });
 
   final List<SwimLapMetrics> laps;
   final int? poolLengthM;
-  final SwimHrCoverage hrCoverage;
 
   @override
   State<_SwimChartsAndIntervals> createState() =>
@@ -1336,7 +1398,6 @@ class _SwimChartsAndIntervalsState extends State<_SwimChartsAndIntervals> {
           ),
         SwimSessionCharts(
           laps: active,
-          hrCoverage: widget.hrCoverage,
         ),
         if (active.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -1758,7 +1819,7 @@ class _ShareTcxActionState extends State<_ShareTcxAction> {
               height: 20,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.ios_share_outlined),
+          : const StravaMarkIcon(),
     );
   }
 }

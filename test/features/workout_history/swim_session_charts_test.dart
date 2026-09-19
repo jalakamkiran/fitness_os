@@ -83,12 +83,6 @@ void main() {
     expect(find.textContaining('pace'), findsOneWidget);
     expect(find.text('swolf'), findsOneWidget);
 
-    // HR empty note when no sample stream.
-    expect(
-      find.textContaining('Heart rate — hidden'),
-      findsOneWidget,
-    );
-
     // Title order: Pace before SWOLF before Strokes before Overlay.
     final paceY = tester.getTopLeft(find.text('Pace by interval')).dy;
     final swolfY = tester.getTopLeft(find.text('SWOLF')).dy;
@@ -133,7 +127,8 @@ void main() {
     expect(find.text('SWOLF'), findsNothing);
   });
 
-  testWidgets('hides HR empty note when sample stream present', (tester) async {
+  testWidgets('does not show a silent-omit stand-in for missing HR samples',
+      (tester) async {
     const laps = [
       SwimLapMetrics(
         index: 0,
@@ -149,15 +144,13 @@ void main() {
       const MaterialApp(
         home: Scaffold(
           body: SingleChildScrollView(
-            child: SwimSessionCharts(
-              laps: laps,
-              hrCoverage: SwimHrCoverage.present,
-            ),
+            child: SwimSessionCharts(laps: laps),
           ),
         ),
       ),
     );
 
     expect(find.textContaining('Heart rate — hidden'), findsNothing);
+    expect(find.textContaining('HR absent'), findsNothing);
   });
 }
