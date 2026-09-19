@@ -6,8 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
+import 'package:fitness_os/features/workout_history/data/swim_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/coach_settings_screen.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_detail_screen.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/strava_mark_icon.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -250,6 +252,58 @@ void main() {
 
     expect(find.byTooltip('Reasoner settings'), findsOneWidget);
     expect(find.byTooltip('Export this session'), findsNothing);
+  });
+
+  testWidgets('swim detail shows JSON export and Strava TCX action',
+      (tester) async {
+    var exportedNumber = -1;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: BpTheme.light(),
+        home: WorkoutDetailScreen(
+          workout: const WorkoutSummary(
+            number: 6,
+            startTime: 1723000000,
+            endTime: 1723001800,
+            durationSec: 1800,
+            type: 6,
+            distanceM: 1500,
+            calories: 300,
+            poolLength: 25,
+            laps: 60,
+          ),
+          swimExportBusyOverride: () => false,
+          swimExportOverride: (n) async {
+            exportedNumber = n;
+            final dir = Directory(
+              '${tempDir.path}/${SwimSessionExportService.exportCacheDirName}',
+            )..createSync(recursive: true);
+            final file = File('${dir.path}/swim_session_$n.json')
+              ..writeAsStringSync('{"ok":true}');
+            return SwimSessionExportResult.success(
+              file: file,
+              byteLength: 11,
+            );
+          },
+          shareSwimExport: (_) async {},
+          historyOverride: const [],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Export this session'), findsOneWidget);
+    expect(find.byTooltip('Share as TCX (Strava upload)'), findsOneWidget);
+    expect(find.byType(StravaMarkIcon), findsOneWidget);
+    expect(find.byTooltip('Reasoner settings'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Export this session'));
+    await tester.pumpAndSettle();
+    expect(find.text('Export this session?'), findsOneWidget);
+    expect(find.textContaining('swim session'), findsOneWidget);
+    await tester.tap(find.text('Export'));
+    await tester.pumpAndSettle();
+    expect(exportedNumber, 6);
   });
 }
 
