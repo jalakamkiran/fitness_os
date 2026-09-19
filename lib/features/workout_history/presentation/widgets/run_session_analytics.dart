@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
+import 'package:fitness_os/features/workout_history/domain/gt5_run_sample_parser.dart';
 import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/domain/strength_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
@@ -164,7 +165,10 @@ class _RunProductBundle {
               distanceM: workout.distanceM,
             ).mergeSummary(base);
       final splits = runPaceSplitsFromPages(pacePages);
-      final hrSamples = decodeRunSamplePoints(dataPages);
+      final hrSamples = decodeRunSamplePoints(
+        dataPages,
+        workoutType: workout.observedType ?? workout.type,
+      );
       final paceSteps = runPaceSeriesFromSplits(splits);
       final points = mergeRunStreamPaceAndHr(
         hrSamples: hrSamples,

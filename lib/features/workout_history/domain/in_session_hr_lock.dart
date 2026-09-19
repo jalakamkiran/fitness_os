@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/features/workout_history/domain/gt5_run_sample_parser.dart';
 import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
 
 /// Type-gated in-session HR lock over peeled WorkoutData leftover `0x05`.
@@ -46,14 +47,9 @@ List<RunStreamPoint> lockInSessionHrPoints(
 }
 
 /// Third-byte marker for the 8-byte sample walk, or null to omit.
+///
+/// Prefers [Gt5RunSampleParser.markerForWorkoutType] for Walk/Run/Indoor run —
+/// this helper stays for the swim/strength omit gate.
 int? markerForInSessionHrLock(int workoutType) {
-  switch (workoutType) {
-    case 1:
-      return 0x22;
-    case 2:
-    case 5:
-      return 0x23;
-    default:
-      return null;
-  }
+  return Gt5RunSampleParser.markerForWorkoutType(workoutType);
 }

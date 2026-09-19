@@ -76,7 +76,9 @@ class RunSessionMetrics {
   /// Every leftover with oracle name + raw/display for fetch probe.
   final List<RunLeftoverDecoded> decodedLeftovers;
 
-  /// Map from lean [WorkoutSummary]. Enrichment comes from [fromLeftovers].
+  /// Map from lean [WorkoutSummary]. Named TE/load/recovery live here when
+  /// native Totals stripped those tags from leftovers (Walk #72). Form tiles
+  /// still come from [fromLeftovers].
   factory RunSessionMetrics.fromSummary(WorkoutSummary w) {
     final stride = (w.distanceM != null &&
             w.steps != null &&
@@ -84,7 +86,15 @@ class RunSessionMetrics {
             w.steps! > 0)
         ? ((w.distanceM! / w.steps!) * 100).round()
         : null;
-    return RunSessionMetrics(steps: w.steps, strideCm: stride);
+    return RunSessionMetrics(
+      steps: w.steps,
+      strideCm: stride,
+      sessionLoad: w.load,
+      aerobicEffect: _teFromTotalsWire(w.aerobicEffect),
+      anaerobicEffect: _teFromTotalsWire(w.anaerobicEffect),
+      recoverySec: w.recoveryTime != null ? w.recoveryTime! * 60 : null,
+      trainingPoints: w.trainingPoints,
+    );
   }
 
   /// Decode Totals leftover TLVs. Scales locked vs watch #60 recap where noted.
@@ -132,7 +142,7 @@ class RunSessionMetrics {
           }
         case 0x0e: // aerobicEffect ÷10 (23 → 2.3)
           if (be != null) {
-            aerobicEffect = be / 10.0;
+            aerobicEffect = _teFromTotalsWire(be);
             display = aerobicEffect!.toStringAsFixed(1);
             mapped = true;
           }
@@ -168,7 +178,7 @@ class RunSessionMetrics {
           }
         case 0x20: // anaerobicEffect ÷10 (17 → 1.7)
           if (be != null) {
-            anaerobicEffect = be / 10.0;
+            anaerobicEffect = _teFromTotalsWire(be);
             display = anaerobicEffect!.toStringAsFixed(1);
             mapped = true;
           }
@@ -492,6 +502,12 @@ String _oracleName(int id) {
   return names[id] ?? 'tag_0x${id.toRadixString(16)}';
 }
 
+/// Totals aerobic/anaerobic effect is wire ×10 (24 → 2.4). Same scale as Home.
+double? _teFromTotalsWire(int? raw) {
+  if (raw == null) return null;
+  return raw / 10.0;
+}
+
 String _formatRecoveryDisplay(int sec) {
   if (sec <= 0) return '0';
   final h = sec ~/ 3600;
@@ -646,61 +662,6 @@ List<RunStreamPoint> mergeRunStreamPaceAndHr({
         cadenceSpm: s.cadenceSpm,
       ),
   ];
-}
-
-/// Decode GT5 WorkoutData sample streams (`0x05` bodies) into chart points.
-///
-/// Wire record (8 bytes): `00 00 23 <cadence?> <hr> 00 <u16>` at ~5 s.
-/// HR from byte4 is locked vs Totals min/max. Pace comes from
-/// [runPaceSeriesFromSplits] — sample u16 is not charted yet.
-///
-/// Swim/strength in-session curves use the type-gated HR lock helper instead —
-/// do not call this from those hosts (it is the 0x23 run walk, not a type gate).
-List<RunStreamPoint> decodeRunSamplePoints(List<PeeledPageBodies> pages) {
-  return decodeGt5EightByteHrRecords(pages, marker: 0x23);
-}
-
-/// Walk leftover `0x05` bodies as 8-byte `00 00 <marker> …` HR/cadence records.
-List<RunStreamPoint> decodeGt5EightByteHrRecords(
-  List<PeeledPageBodies> pages, {
-  required int marker,
-}) {
-  if (pages.isEmpty) return const [];
-  final sorted = [...pages]..sort((a, b) => a.index.compareTo(b.index));
-  final stream = <int>[];
-  for (final page in sorted) {
-    for (final body in page.bodies) {
-      if (body.id != 0x05) continue;
-      stream.addAll(_decodeBase64(body.bodyBase64));
-    }
-  }
-  if (stream.length < 8) return const [];
-
-  const intervalSec = 5;
-  final points = <RunStreamPoint>[];
-  var i = 0;
-  var sampleIndex = 0;
-  while (i + 8 <= stream.length) {
-    if (stream[i] == 0x00 &&
-        stream[i + 1] == 0x00 &&
-        stream[i + 2] == marker) {
-      final cadence = stream[i + 3];
-      final hr = stream[i + 4];
-      final cadOk = cadence >= 40 && cadence <= 250;
-      points.add(
-        RunStreamPoint(
-          offsetSec: sampleIndex * intervalSec,
-          hrBpm: (hr >= 40 && hr <= 220) ? hr : null,
-          cadenceSpm: cadOk ? cadence : null,
-        ),
-      );
-      sampleIndex++;
-      i += 8;
-    } else {
-      i++;
-    }
-  }
-  return points;
 }
 
 List<int> _decodeBase64(String b64) {
