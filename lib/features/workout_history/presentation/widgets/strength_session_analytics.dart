@@ -2,8 +2,11 @@ import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
+import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/domain/strength_session_metrics.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/in_session_hr_curve_host.dart';
 
 /// Product strength session body — mirrors `docs/design/strength-analytics.html`.
 class StrengthSessionAnalytics extends StatelessWidget {
@@ -11,6 +14,8 @@ class StrengthSessionAnalytics extends StatelessWidget {
     super.key,
     required this.workout,
     this.historyOverride,
+    this.runSessionStore,
+    this.preloadedStreamPoints,
     this.onExport,
     this.exportBusy = false,
     this.onAllSessions,
@@ -20,6 +25,12 @@ class StrengthSessionAnalytics extends StatelessWidget {
 
   /// Test seam — when set, skips repository load for recent-load bars.
   final List<WorkoutSummary>? historyOverride;
+
+  /// Optional override for peeled sample loaders (tests). Production uses DI.
+  final RunSessionStore? runSessionStore;
+
+  /// Test seam: inject chart points without side-file IO.
+  final List<RunStreamPoint>? preloadedStreamPoints;
 
   final VoidCallback? onExport;
   final bool exportBusy;
@@ -35,6 +46,11 @@ class StrengthSessionAnalytics extends StatelessWidget {
           _BasicsRow(metrics: metrics),
           const SizedBox(height: 14),
         ],
+        InSessionHrCurveHost(
+          workout: workout,
+          runSessionStore: runSessionStore,
+          preloadedStreamPoints: preloadedStreamPoints,
+        ),
         if (metrics.hasImpact) ...[
           _SectionKicker('This session'),
           const SizedBox(height: 10),

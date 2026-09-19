@@ -25,18 +25,16 @@ abstract final class SwimChartColors {
 
 /// Interval charts for a swim session — Pace → SWOLF → Strokes → Overlay.
 ///
-/// Hidden when [laps] is empty or no chartable series. HR chart only when
-/// [hrCoverage] is [SwimHrCoverage.present]; otherwise a locked empty note.
+/// Hidden when [laps] is empty or no chartable series. In-session HR is a
+/// sibling host, not this card.
 /// Caller should pass invent-guard–filtered laps (same set as the intervals table).
 class SwimSessionCharts extends StatelessWidget {
   const SwimSessionCharts({
     super.key,
     required this.laps,
-    this.hrCoverage = SwimHrCoverage.absent,
   });
 
   final List<SwimLapMetrics> laps;
-  final SwimHrCoverage hrCoverage;
 
   @override
   Widget build(BuildContext context) {
@@ -59,8 +57,6 @@ class SwimSessionCharts extends StatelessWidget {
     final labels = [
       for (var i = 0; i < ordered.length; i++) 'I${i + 1}',
     ];
-    final showHrChart = hrCoverage == SwimHrCoverage.present;
-
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -136,16 +132,6 @@ class SwimSessionCharts extends StatelessWidget {
                   paceColor: SwimChartColors.hot,
                   swolfColor: SwimChartColors.amber,
                   labels: labels,
-                ),
-              ),
-            ],
-            if (!showHrChart) ...[
-              const SizedBox(height: 12),
-              Text(
-                'Heart rate — hidden (no sample stream on this session)',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontFamily: 'monospace',
-                  color: scheme.onSurfaceVariant,
                 ),
               ),
             ],

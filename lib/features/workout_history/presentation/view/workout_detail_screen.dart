@@ -23,6 +23,7 @@ import 'package:fitness_os/features/workout_history/domain/swim_stroke_label.dar
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/coach_settings_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/in_session_hr_curve_host.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/run_session_analytics.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/strength_session_analytics.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_session_charts.dart';
@@ -330,6 +331,8 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   StrengthSessionAnalytics(
                     workout: workout,
                     historyOverride: widget.historyOverride,
+                    runSessionStore: widget.runSessionStore,
+                    preloadedStreamPoints: widget.preloadedStreamPoints,
                     exportBusy: _exportBusy,
                     onExport: _sessionRemoved ? null : _onExportThisSession,
                     onAllSessions: () => Navigator.of(context).maybePop(),
@@ -417,12 +420,19 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                     const SizedBox(height: 12),
                     _CoachRecsLoader(workoutNumber: workout.number),
                   ],
+                  if (isSwimWorkout(workout.type)) ...[
+                    const SizedBox(height: 12),
+                    InSessionHrCurveHost(
+                      workout: workout,
+                      runSessionStore: widget.runSessionStore,
+                      preloadedStreamPoints: widget.preloadedStreamPoints,
+                    ),
+                  ],
                   if (swim != null && swim.p0.laps.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     _SwimChartsAndIntervals(
                       laps: swim.p0.laps,
                       poolLengthM: swim.poolLengthM,
-                      hrCoverage: swim.p0.hrCoverage,
                     ),
                   ] else if (workout.segments != null &&
                       workout.segments!.isNotEmpty) ...[
@@ -1270,13 +1280,11 @@ class _CountChip extends StatelessWidget {
 class _SwimChartsAndIntervals extends StatefulWidget {
   const _SwimChartsAndIntervals({
     required this.laps,
-    required this.hrCoverage,
     this.poolLengthM,
   });
 
   final List<SwimLapMetrics> laps;
   final int? poolLengthM;
-  final SwimHrCoverage hrCoverage;
 
   @override
   State<_SwimChartsAndIntervals> createState() =>
@@ -1336,7 +1344,6 @@ class _SwimChartsAndIntervalsState extends State<_SwimChartsAndIntervals> {
           ),
         SwimSessionCharts(
           laps: active,
-          hrCoverage: widget.hrCoverage,
         ),
         if (active.isNotEmpty) ...[
           const SizedBox(height: 12),
