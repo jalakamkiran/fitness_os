@@ -186,7 +186,7 @@ void main() {
       );
       expect(find.text('Dig deeper'), findsOneWidget);
       expect(find.text('Enrichment counts'), findsOneWidget);
-      expect(find.text('Dev'), findsOneWidget);
+      expect(find.byKey(const Key('swim-interval-sets')), findsOneWidget);
       expect(find.text('Run reasoner'), findsNothing);
       expect(find.byTooltip('Reasoner settings'), findsNothing);
     });
@@ -205,7 +205,10 @@ void main() {
       expect(find.byKey(const Key('swim-jump-charts')), findsOneWidget);
       await tester.tap(find.byKey(const Key('swim-jump-intervals')));
       await tester.pumpAndSettle();
-      expect(find.text('Intervals'), findsWidgets);
+      expect(find.byKey(const Key('swim-interval-sets')), findsOneWidget);
+      expect(find.textContaining('Main set'), findsOneWidget);
+      // Collapsed warmup/cool headers present; open main by default.
+      expect(find.byKey(const Key('swim-set-main')), findsOneWidget);
     });
   });
 

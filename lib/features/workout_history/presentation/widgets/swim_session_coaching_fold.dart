@@ -15,9 +15,8 @@ import 'package:fitness_os/features/workout_history/domain/swim_session_insight.
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/swim_chart_expanded_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
-import 'package:fitness_os/features/workout_history/presentation/widgets/in_session_hr_curve_host.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/swim_interval_sets.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_session_charts.dart';
-import 'package:fitness_os/features/workout_history/presentation/widgets/swim_stroke_icon.dart';
 
 /// Coach-led athlete fold for pool / open-water swim detail.
 class SwimSessionCoachingFold extends StatefulWidget {
@@ -29,6 +28,7 @@ class SwimSessionCoachingFold extends StatefulWidget {
     this.digDeeperOverride,
     this.insightOverride,
     this.lapsOverride,
+    this.hrPointsOverride,
     this.scrollController,
   });
 
@@ -44,6 +44,9 @@ class SwimSessionCoachingFold extends StatefulWidget {
 
   /// Test seam — invent-guarded laps for charts/intervals when set with insight.
   final List<SwimLapMetrics>? lapsOverride;
+
+  /// Test seam — locked HR points when set with insightOverride.
+  final List<RunStreamPoint>? hrPointsOverride;
 
   final ScrollController? scrollController;
 
@@ -113,7 +116,8 @@ class _SwimSessionCoachingFoldState extends State<SwimSessionCoachingFold> {
       }
     }
 
-    final lockedHr = await _resolveLockedHr();
+    final hrPoints = await _resolveHrPoints();
+    final lockedHr = _kpisFromHrPoints(hrPoints);
     final inventGuarded = filterSwimLapsForAnalytics(
       focus.p0.laps,
       poolLengthM: focus.poolLengthM,
@@ -133,14 +137,17 @@ class _SwimSessionCoachingFoldState extends State<SwimSessionCoachingFold> {
       focus: focus,
       inventGuardedLaps: inventGuarded,
       allLaps: focus.p0.laps,
-      lockedHr: lockedHr,
+      hrPoints: hrPoints,
     );
   }
 
-  Future<SwimLockedHrKpis?> _resolveLockedHr() async {
+  Future<List<RunStreamPoint>> _resolveHrPoints() async {
     final preloaded = widget.preloadedStreamPoints;
     if (preloaded != null) {
-      return _kpisFromHrPoints(preloaded);
+      return [
+        for (final p in preloaded)
+          if (p.hrBpm != null) p,
+      ];
     }
 
     RunSessionStore? store = widget.runSessionStore;
@@ -148,20 +155,19 @@ class _SwimSessionCoachingFoldState extends State<SwimSessionCoachingFold> {
       try {
         store = sl<RunSessionStore>();
       } catch (_) {
-        return null;
+        return const [];
       }
     }
     try {
       final pages = await store.loadDataPages(widget.workout.number);
-      final points = lockInSessionHrPoints(
+      return lockInSessionHrPoints(
         pages,
         workoutType: widget.workout.observedType ?? widget.workout.type,
         hrMin: widget.workout.hrMin,
         hrMax: widget.workout.hrMax,
       );
-      return _kpisFromHrPoints(points);
     } catch (_) {
-      return null;
+      return const [];
     }
   }
 
@@ -205,6 +211,7 @@ class _SwimSessionCoachingFoldState extends State<SwimSessionCoachingFold> {
           insight: widget.insightOverride!,
           inventGuardedLaps: laps,
           allLaps: laps,
+          hrPoints: widget.hrPointsOverride ?? const [],
         ),
       );
     }
@@ -248,12 +255,18 @@ class _SwimSessionCoachingFoldState extends State<SwimSessionCoachingFold> {
       payload.allLaps.isNotEmpty ? payload.allLaps : payload.inventGuardedLaps,
       poolLengthM: poolLength,
     );
-    final hasCharts = active.any(
-      (l) =>
-          (l.paceSecPer100m != null && l.paceSecPer100m! > 0) ||
-          (l.swolf != null && l.swolf! > 0) ||
-          (l.strokes != null && l.strokes! > 0),
-    );
+    final hrPoints = [
+      for (final p in payload.hrPoints)
+        if (p.hrBpm != null) p,
+    ];
+    final hasHr = hrPoints.length >= 2;
+    final hasCharts = hasHr ||
+        active.any(
+          (l) =>
+              (l.paceSecPer100m != null && l.paceSecPer100m! > 0) ||
+              (l.swolf != null && l.swolf! > 0) ||
+              (l.strokes != null && l.strokes! > 0),
+        );
     final hasIntervals = active.isNotEmpty;
     final hasFindings = insight.secondaryFindings.isNotEmpty;
 
@@ -348,30 +361,25 @@ class _SwimSessionCoachingFoldState extends State<SwimSessionCoachingFold> {
           SwimSessionCharts(
             key: _chartsKey,
             laps: active,
+            hrPoints: hrPoints,
             initialSeries: _series,
             onSeriesChanged: (s) => _series = s,
             onExpand: (current) => SwimChartExpandedRoute.open(
               context,
               laps: active,
               series: current,
+              hrPoints: hrPoints,
             ),
-          ),
-        ],
-        if (payload.lockedHr != null) ...[
-          const SizedBox(height: 12),
-          InSessionHrCurveHost(
-            workout: widget.workout,
-            runSessionStore: widget.runSessionStore,
-            preloadedStreamPoints: widget.preloadedStreamPoints,
           ),
         ],
         if (hasIntervals) ...[
           const SizedBox(height: 12),
           KeyedSubtree(
             key: _intervalsKey,
-            child: _AthleticIntervalsTable(
+            child: SwimIntervalSetsView(
               laps: active,
-              showDevColumn: digDeeper,
+              poolLengthM: poolLength,
+              showDevIndex: digDeeper,
             ),
           ),
         ],
@@ -423,7 +431,7 @@ class _FoldPayload {
     this.focus,
     this.inventGuardedLaps = const [],
     this.allLaps = const [],
-    this.lockedHr,
+    this.hrPoints = const [],
   });
 
   factory _FoldPayload.partial({
@@ -444,7 +452,7 @@ class _FoldPayload {
   final CanonicalSwimSession? focus;
   final List<SwimLapMetrics> inventGuardedLaps;
   final List<SwimLapMetrics> allLaps;
-  final SwimLockedHrKpis? lockedHr;
+  final List<RunStreamPoint> hrPoints;
 }
 
 class _LoadingFold extends StatelessWidget {
@@ -658,94 +666,6 @@ class _KpiPrimary extends StatelessWidget {
       ],
     );
   }
-}
-
-class _AthleticIntervalsTable extends StatelessWidget {
-  const _AthleticIntervalsTable({
-    required this.laps,
-    required this.showDevColumn,
-  });
-
-  final List<SwimLapMetrics> laps;
-  final bool showDevColumn;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: scheme.outlineVariant),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Intervals',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowHeight: 36,
-                dataRowMinHeight: 36,
-                dataRowMaxHeight: 48,
-                columns: [
-                  const DataColumn(label: Text('#')),
-                  if (showDevColumn) const DataColumn(label: Text('Dev')),
-                  const DataColumn(label: Text('Dist')),
-                  const DataColumn(label: Text('Time')),
-                  const DataColumn(label: Text('Strokes')),
-                  const DataColumn(label: Text('SWOLF')),
-                  const DataColumn(label: Text('Pace')),
-                ],
-                rows: [
-                  for (var i = 0; i < laps.length; i++)
-                    DataRow(
-                      cells: [
-                        DataCell(
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SwimStrokeIcon(style: laps[i].style),
-                              const SizedBox(width: 6),
-                              Text('I${i + 1}'),
-                            ],
-                          ),
-                        ),
-                        if (showDevColumn)
-                          DataCell(Text('${laps[i].index + 1}')),
-                        DataCell(Text(_cell(laps[i].distanceM, suffix: 'm'))),
-                        DataCell(
-                          Text(_fmtDur(laps[i].durationSec ?? 0)),
-                        ),
-                        DataCell(Text(_cell(laps[i].strokes))),
-                        DataCell(Text(_cell(laps[i].swolf))),
-                        DataCell(Text(_paceCell(laps[i].paceSecPer100m))),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _cell(int? v, {String suffix = ''}) =>
-      v == null ? '—' : '$v$suffix';
-
-  String _paceCell(int? secPer100m) =>
-      secPer100m == null ? '—' : '${secPer100m}s/100m';
 }
 
 String _fmtDur(int sec) {
