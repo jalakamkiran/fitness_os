@@ -1,5 +1,6 @@
 import 'package:fitness_os/app/shell/app_shell_route.dart';
 import 'package:fitness_os/features/device_pairing/presentation/view/device_pairing_route.dart';
+import 'package:fitness_os/features/diagnostics/presentation/view/advanced_tools_route.dart';
 import 'package:fitness_os/features/food/presentation/view/food_capture_route.dart';
 import 'package:fitness_os/features/food/presentation/view/food_meal_edit_route.dart';
 import 'package:fitness_os/features/food/presentation/view/food_schedule_route.dart';
@@ -8,6 +9,7 @@ import 'package:fitness_os/features/vitals/presentation/view/recovery_tab_host.d
 import 'package:fitness_os/features/vitals/presentation/view/sleep_detail_route.dart';
 import 'package:fitness_os/features/vitals/presentation/view/sleep_history_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/coach_settings_route.dart';
+import 'package:fitness_os/features/workout_history/presentation/view/swim_chart_expanded_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_detail_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_screen.dart';
@@ -25,6 +27,8 @@ class RouteRegistry {
     SleepDetailRoute.register();
     SleepHistoryRoute.register();
     CoachSettingsRoute.register();
+    AdvancedToolsRoute.register();
+    SwimChartExpandedRoute.register();
     FoodCaptureRoute.register();
     FoodMealEditRoute.register();
     FoodScheduleRoute.register();

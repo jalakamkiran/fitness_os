@@ -73,4 +73,7 @@ abstract final class GateAPrefs {
   static const foodScheduleJson = 'food_schedule_json';
   /// Reminders globally enabled (default false until user opts in).
   static const foodRemindersEnabled = 'food_reminders_enabled';
+
+  /// Swim dig-deeper / pipeline chrome on workout detail (default off).
+  static const swimDigDeeper = 'swim_dig_deeper';
 }
