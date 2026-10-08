@@ -220,7 +220,7 @@ void main() {
     );
   }
 
-  test('FT today drives calories and steps; workout-sum drives workout time',
+  test('FT today plus session Totals drive calories and steps; workout-sum drives workout time',
       () async {
     final today = dayKey(fixedNow);
     final repo = await buildRepo(
@@ -236,7 +236,8 @@ void main() {
       ),
     );
     final snap = await repo.loadSnapshot();
-    expect(snap.caloriesLabel, '525');
+    // Wire FT undercounts Activity when workouts exist — add session Totals.
+    expect(snap.caloriesLabel, '874');
     expect(snap.stepsLabel, '7,825');
     expect(snap.workoutTimeLabel, '55m · 1 session');
   });
@@ -291,6 +292,51 @@ void main() {
     expect(snap.stepsLabel, '12');
     expect(snap.workoutTimeLabel, '55m · 1 session');
   });
+
+  test(
+    'owner walk day: FT plus Walk Totals (matches Activity better than FT alone)',
+    () async {
+      // Device 2026-09-19: watch Activity 387/6331; FT wire 231/3533; Walk #72
+      // Totals 194/2918. Home must add session cal/steps onto FT.
+      final today = dayKey(fixedNow);
+      final repo = await buildRepo(
+        workouts: [
+          workout(calories: 194, steps: 2918, durationSec: 1150),
+        ],
+        ftToday: FitnessTotalsDay(
+          dayKey: today,
+          dayStartUnix: 0,
+          calories: 231,
+          steps: 3533,
+          exerciseDurationSec: 2365,
+        ),
+      );
+      final snap = await repo.loadSnapshot();
+      expect(snap.caloriesLabel, '425');
+      expect(snap.stepsLabel, '6,451');
+      expect(snap.workoutTimeLabel, '19m · 1 session');
+    },
+  );
+
+  test(
+    'FT with no today sessions stays on FT alone',
+    () async {
+      final today = dayKey(fixedNow);
+      final repo = await buildRepo(
+        workouts: const [],
+        ftToday: FitnessTotalsDay(
+          dayKey: today,
+          dayStartUnix: 0,
+          calories: 231,
+          steps: 3533,
+          exerciseDurationSec: 0,
+        ),
+      );
+      final snap = await repo.loadSnapshot();
+      expect(snap.caloriesLabel, '231');
+      expect(snap.stepsLabel, '3,533');
+    },
+  );
 
   test('FT for yesterday only → today workout-sum', () async {
     final yesterday = dayKey(fixedNow.subtract(const Duration(days: 1)));
@@ -358,10 +404,26 @@ void main() {
     expect(snap.todaySessions, hasLength(1));
     expect(snap.todaySessions.first.title, 'Indoor run · #35');
     expect(
+      snap.todaySessions.first.meta.map((m) => m.label).toList(),
+      ['Cal', 'Steps', 'Load', 'TE', 'Recovery'],
+    );
+    expect(
       snap.todaySessions.first.meta
           .where((m) => m.label == 'TE')
           .map((m) => m.value),
       ['2.3'],
+    );
+    expect(
+      snap.todaySessions.first.meta
+          .where((m) => m.label == 'Cal')
+          .map((m) => m.value),
+      ['80'],
+    );
+    expect(
+      snap.todaySessions.first.meta
+          .where((m) => m.label == 'Steps')
+          .map((m) => m.value),
+      ['1,200'],
     );
     expect(snap.workoutTimeLabel, '7m · 1 session');
   });
