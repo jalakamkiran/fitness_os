@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/swim_session_export_service.dart';
+import 'package:fitness_os/features/workout_history/domain/swim_session_insight.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/coach_settings_screen.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_detail_screen.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/strava_mark_icon.dart';
@@ -287,15 +288,28 @@ void main() {
           },
           shareSwimExport: (_) async {},
           historyOverride: const [],
+          digDeeperOverride: false,
+          swimInsightOverride: const SwimSessionInsight(
+            story: 'Session logged for export smoke.',
+            chips: [],
+            kpis: SwimSessionKpis(
+              distanceM: 1500,
+              durationPrimaryLabel: '30:00',
+            ),
+            secondaryFindings: [],
+          ),
+          swimLapsOverride: const [],
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
 
     expect(find.byTooltip('Export this session'), findsOneWidget);
     expect(find.byTooltip('Share as TCX (Strava upload)'), findsOneWidget);
     expect(find.byType(StravaMarkIcon), findsOneWidget);
-    expect(find.byTooltip('Reasoner settings'), findsOneWidget);
+    // Swim athlete path: reasoner AppBar removed (export via Advanced host).
+    expect(find.byTooltip('Reasoner settings'), findsNothing);
 
     await tester.tap(find.byTooltip('Export this session'));
     await tester.pumpAndSettle();

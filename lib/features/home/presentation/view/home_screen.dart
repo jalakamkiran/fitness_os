@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/features/device_pairing/presentation/view/device_pairing_route.dart';
+import 'package:fitness_os/features/diagnostics/presentation/view/advanced_tools_route.dart';
 import 'package:fitness_os/features/home/domain/home_precedence.dart';
 import 'package:fitness_os/features/home/presentation/bloc/home_bloc.dart';
 import 'package:fitness_os/features/home/presentation/bloc/home_event.dart';
@@ -273,6 +274,12 @@ class _BrandHeader extends StatelessWidget {
               ),
             ],
           ),
+        ),
+        IconButton(
+          key: const Key('home-advanced-tools'),
+          tooltip: 'Advanced',
+          icon: Icon(Icons.tune, color: colors.inkDim),
+          onPressed: () => AdvancedToolsRoute.go(context),
         ),
       ],
     );

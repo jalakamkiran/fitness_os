@@ -26,6 +26,11 @@ html[data-theme="light"] {
   --mark-min: 16px;
   --wordmark-min: 20px;
   --clear-space: 0.35em;
+  /* Coach-fold (swim detail redesign) */
+  --chip-up-bg: color-mix(in srgb, var(--up) 10%, var(--bg-elev));
+  --chip-down-bg: color-mix(in srgb, var(--amber) 10%, var(--bg-elev));
+  --tip-wash: color-mix(in srgb, var(--accent) 14%, var(--bg-elev));
+  --kpi-wash: color-mix(in srgb, var(--bg-elev) 88%, var(--accent) 12%);
 }
 
 html[data-theme="dark"] {
@@ -48,4 +53,8 @@ html[data-theme="dark"] {
   --gauge-track: #2a323c;
   --tab-bg: rgba(12, 14, 18, 0.9);
   --spark: #5dffc4;
+  --chip-up-bg: color-mix(in srgb, var(--up) 10%, var(--bg-elev));
+  --chip-down-bg: color-mix(in srgb, var(--amber) 10%, var(--bg-elev));
+  --tip-wash: color-mix(in srgb, var(--accent) 14%, var(--bg-elev));
+  --kpi-wash: color-mix(in srgb, var(--bg-elev) 88%, var(--accent) 12%);
 }

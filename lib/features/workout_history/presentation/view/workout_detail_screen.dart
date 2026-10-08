@@ -3,32 +3,29 @@ import 'dart:io';
 import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/diagnostics/data/run_session_export_envelope.dart';
 import 'package:fitness_os/features/diagnostics/data/run_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
-import 'package:fitness_os/features/workout_history/data/swim_reasoner_service.dart';
 import 'package:fitness_os/features/workout_history/data/swim_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/workout_tcx_export_service.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
-import 'package:fitness_os/features/workout_history/domain/offline_swim_reasoner.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
-import 'package:fitness_os/features/workout_history/domain/swim_invent_guard.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_p0_metrics.dart';
-import 'package:fitness_os/features/workout_history/domain/swim_recommendations.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_session_analytics.dart';
-import 'package:fitness_os/features/workout_history/domain/swim_stroke_label.dart';
+import 'package:fitness_os/features/workout_history/domain/swim_session_insight.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/coach_settings_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
-import 'package:fitness_os/features/workout_history/presentation/widgets/in_session_hr_curve_host.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/run_session_analytics.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/strava_mark_icon.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/strength_session_analytics.dart';
-import 'package:fitness_os/features/workout_history/presentation/widgets/swim_session_charts.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/swim_session_coaching_fold.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_stroke_icon.dart';
 
 class WorkoutDetailScreen extends StatefulWidget {
@@ -54,6 +51,9 @@ class WorkoutDetailScreen extends StatefulWidget {
     this.historyOverride,
     this.tcxExportService,
     this.shareTcx,
+    this.digDeeperOverride,
+    this.swimInsightOverride,
+    this.swimLapsOverride,
   });
 
   final WorkoutSummary workout;
@@ -116,6 +116,15 @@ class WorkoutDetailScreen extends StatefulWidget {
 
   /// Test seam — production uses [SharePlus] with TCX mime type.
   final Future<void> Function(File file)? shareTcx;
+
+  /// Test seam — swim dig-deeper flag (skips SharedPreferences when set).
+  final bool? digDeeperOverride;
+
+  /// Test seam — inject ready insight for swim coach fold.
+  final SwimSessionInsight? swimInsightOverride;
+
+  /// Test seam — invent-guarded laps paired with [swimInsightOverride].
+  final List<SwimLapMetrics>? swimLapsOverride;
 
   @override
   State<WorkoutDetailScreen> createState() => _WorkoutDetailScreenState();
@@ -316,20 +325,35 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     }
   }
 
+  bool get _digDeeper {
+    if (widget.digDeeperOverride != null) return widget.digDeeperOverride!;
+    try {
+      return sl<SharedPreferences>().getBool(GateAPrefs.swimDigDeeper) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final isRun = isRunWorkout(workout.type);
     final isStrength = _isStrength;
-    final swim = isRun || isStrength
-        ? null
-        : CanonicalSwimSession.fromWorkoutSummary(workout);
+    final isSwim = _isSwim;
+    final digDeeper = _digDeeper;
+    final swim = (!isRun && !isStrength)
+        ? CanonicalSwimSession.fromWorkoutSummary(workout)
+        : null;
     final analytics = swim == null ? null : analyzeSwimSession(swim.p0);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('${_typeLabel(workout.type)} #${workout.number}'),
+        title: Text(
+          isSwim
+              ? '${workoutTypeLabel(workout.type)} #${workout.number}'
+              : '${_typeLabel(workout.type)} #${workout.number}',
+        ),
         actions: [
           if (!_sessionRemoved)
             _ShareTcxAction(
@@ -345,7 +369,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
               exportOverride: widget.sessionExportOverride,
               exportBusyOverride: widget.sessionExportBusyOverride,
             ),
-          if (isStrength || isSwimWorkout(workout.type))
+          if (isStrength || isSwim)
             IconButton(
               tooltip: 'Export this session',
               icon: _exportBusy
@@ -359,7 +383,9 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   ? null
                   : _onExportThisSession,
             ),
-          if (!isStrength && !isRun)
+          // Reasoner settings: residual non-swim/non-run/non-strength only.
+          // Swim athlete path uses Advanced tools (Home), not psychology AppBar.
+          if (!isStrength && !isRun && !isSwim)
             IconButton(
               tooltip: 'Reasoner settings',
               icon: const Icon(Icons.psychology_outlined),
@@ -400,10 +426,83 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                     preloadedLeftovers: widget.preloadedLeftovers,
                     onAllSessions: () => Navigator.of(context).maybePop(),
                   ),
+                ] else if (isSwim) ...[
+                  SwimSessionCoachingFold(
+                    workout: workout,
+                    runSessionStore: widget.runSessionStore,
+                    preloadedStreamPoints: widget.preloadedStreamPoints,
+                    digDeeperOverride: widget.digDeeperOverride,
+                    insightOverride: widget.swimInsightOverride,
+                    lapsOverride: widget.swimLapsOverride,
+                  ),
+                  if (digDeeper) ...[
+                    const SizedBox(height: 20),
+                    Text(
+                      'Dig deeper',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _CountHintsCard(workout: workout),
+                    const SizedBox(height: 12),
+                    _SectionCard(
+                      title: 'Session',
+                      children: [
+                        _Row('Start', _formatWhen(workout.startTime)),
+                        _Row('End', _formatWhen(workout.endTime)),
+                        _Row(
+                          'Duration',
+                          _formatDuration(workout.durationSec),
+                        ),
+                        _Row(
+                          'Type',
+                          '${workout.type} (${_typeLabel(workout.type)})',
+                        ),
+                        if (workout.calories != null)
+                          _Row('Calories', '${workout.calories} kcal'),
+                        if (workout.distanceM != null)
+                          _Row('Distance', '${workout.distanceM} m'),
+                      ],
+                    ),
+                    if (swim != null) ...[
+                      const SizedBox(height: 12),
+                      _P0MetricsCard(session: swim),
+                      if (analytics != null) ...[
+                        const SizedBox(height: 12),
+                        _SessionAnalyticsCard(analytics: analytics),
+                      ],
+                      const SizedBox(height: 12),
+                      _DiagnosesLoader(workoutNumber: workout.number),
+                    ],
+                    if (workout.sampleCount != null &&
+                        workout.sampleCount! > 0) ...[
+                      const SizedBox(height: 12),
+                      _SectionCard(
+                        title: 'Samples',
+                        children: [
+                          _Row('Sample count', '${workout.sampleCount}'),
+                        ],
+                      ),
+                    ],
+                    if (workout.enrichmentTags != null &&
+                        workout.enrichmentTags!.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _SectionCard(
+                        title: 'Enrichment tags',
+                        subtitle:
+                            '${workout.enrichmentTags!.length} tag(s) on wire',
+                        children: [
+                          for (final tag in workout.enrichmentTags!)
+                            _Row('Tag ${tag.id}', 'len ${tag.len}'),
+                        ],
+                      ),
+                    ],
+                  ],
                 ] else ...[
+                  // Residual non-swim instrument dump (cycle/elliptical/etc).
                   _CountHintsCard(workout: workout),
                   const SizedBox(height: 16),
-                  // IA (1): session header.
                   _SectionCard(
                     title: 'Session',
                     children: [
@@ -436,59 +535,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                       ],
                     ),
                   ],
-                  if (_hasSwim(workout)) ...[
-                    const SizedBox(height: 12),
-                    _SectionCard(
-                      title: 'Swim',
-                      children: [
-                        if (workout.swimType != null)
-                          _Row(
-                            'Swim type',
-                            swimStrokeLabel(workout.swimType!),
-                          ),
-                        if (workout.strokes != null)
-                          _Row('Strokes', '${workout.strokes}'),
-                        if (workout.strokeRate != null)
-                          _Row('Stroke rate', '${workout.strokeRate} /min'),
-                        if (workout.avgSwolf != null)
-                          _Row('Avg SWOLF', '${workout.avgSwolf}'),
-                        if (workout.poolLength != null)
-                          _Row(
-                            'Pool length',
-                            _formatPoolLength(workout.poolLength!),
-                          ),
-                        if (workout.laps != null)
-                          _Row('Laps', '${workout.laps}'),
-                      ],
-                    ),
-                  ],
-                  if (swim != null) ...[
-                    const SizedBox(height: 12),
-                    _P0MetricsCard(session: swim),
-                    if (analytics != null) ...[
-                      const SizedBox(height: 12),
-                      _SessionAnalyticsCard(analytics: analytics),
-                    ],
-                    const SizedBox(height: 12),
-                    _DiagnosesLoader(workoutNumber: workout.number),
-                    const SizedBox(height: 12),
-                    _CoachRecsLoader(workoutNumber: workout.number),
-                  ],
-                  if (isSwimWorkout(workout.type)) ...[
-                    const SizedBox(height: 12),
-                    InSessionHrCurveHost(
-                      workout: workout,
-                      runSessionStore: widget.runSessionStore,
-                      preloadedStreamPoints: widget.preloadedStreamPoints,
-                    ),
-                  ],
-                  if (swim != null && swim.p0.laps.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    _SwimChartsAndIntervals(
-                      laps: swim.p0.laps,
-                      poolLengthM: swim.poolLengthM,
-                    ),
-                  ] else if (workout.segments != null &&
+                  if (workout.segments != null &&
                       workout.segments!.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     _LapTable(segments: workout.segments!),
@@ -689,191 +736,6 @@ class _RunSessionExportActionState extends State<_RunSessionExportAction> {
   }
 }
 
-class _CoachRecsLoader extends StatelessWidget {
-  const _CoachRecsLoader({required this.workoutNumber});
-
-  final int workoutNumber;
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<SwimDiagnosisReport>(
-      future: sl<WorkoutHistoryRepository>().loadSwimDiagnosisReport(
-        focusWorkoutNumber: workoutNumber,
-      ),
-      builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done || snap.data == null) {
-          return const _SectionCard(
-            title: 'Recommendations',
-            children: [
-              Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text('Loading recommendations…'),
-              ),
-            ],
-          );
-        }
-        return _CoachRecsCard(
-          workoutNumber: workoutNumber,
-          report: snap.data!,
-        );
-      },
-    );
-  }
-}
-
-class _CoachRecsCard extends StatefulWidget {
-  const _CoachRecsCard({
-    required this.workoutNumber,
-    required this.report,
-  });
-
-  final int workoutNumber;
-  final SwimDiagnosisReport report;
-
-  @override
-  State<_CoachRecsCard> createState() => _CoachRecsCardState();
-}
-
-class _CoachRecsCardState extends State<_CoachRecsCard> {
-  bool _loadingCoach = false;
-  SwimReasonerResult? _coach;
-  late List<SwimRecommendation> _recs;
-
-  @override
-  void initState() {
-    super.initState();
-    _recs = recommendationsForReport(widget.report);
-  }
-
-  Future<void> _runReasoner() async {
-    setState(() {
-      _loadingCoach = true;
-      _coach = null;
-    });
-    final result = await sl<SwimReasonerService>().reason(
-      report: widget.report,
-      recommendations: _recs,
-      workoutNumber: widget.workoutNumber,
-    );
-    if (!mounted) return;
-    setState(() {
-      _loadingCoach = false;
-      _coach = result;
-      if (result.ok && result.orderedRecIds.isNotEmpty) {
-        final byId = {for (final r in _recs) r.id: r};
-        _recs = [
-          for (final id in result.orderedRecIds)
-            if (byId[id] != null) byId[id]!,
-          for (final r in _recs)
-            if (!result.orderedRecIds.contains(r.id)) r,
-        ];
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return _SectionCard(
-      title: 'Recommendations + reasoner',
-      subtitle: 'Allow-listed actions · Qwen3 / offline ranking',
-      children: [
-        if (_recs.isEmpty)
-          const _Row('Recs', 'None mapped for this session')
-        else
-          for (final r in _recs) ...[
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    r.title,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    r.detail,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'via ${r.sourceDiagnosisIds.join(', ')} · '
-                    'metrics: ${r.metricIds.join(', ')}'
-                    '${r.bibleHint != null ? ' · ${r.bibleHint}' : ''}'
-                    '${_coach?.rationaleByRecId[r.id] != null ? ' · ${_coach!.rationaleByRecId[r.id]}' : ''}',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.outline,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            FilledButton.tonalIcon(
-              onPressed: _loadingCoach ? null : _runReasoner,
-              icon: _loadingCoach
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.psychology_outlined, size: 18),
-              label: const Text('Run reasoner'),
-            ),
-            const SizedBox(width: 8),
-            TextButton(
-              onPressed: () => CoachSettingsRoute.go(context),
-              child: const Text('Qwen3 settings'),
-            ),
-          ],
-        ),
-        if (_coach != null) ...[
-          const SizedBox(height: 12),
-          if (!_coach!.ok)
-            Text(
-              _coach!.error ?? 'Reasoner failed',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
-              ),
-            )
-          else ...[
-            Text(
-              'Reasoning (${_coach!.source})',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _coach!.summary?.isNotEmpty == true
-                  ? _coach!.summary!
-                  : 'No summary returned.',
-              style: theme.textTheme.bodySmall,
-            ),
-            if (_coach!.notes != null && _coach!.notes!.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                _coach!.notes!,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ],
-        ],
-      ],
-    );
-  }
-}
-
 class _DiagnosesLoader extends StatelessWidget {
   const _DiagnosesLoader({required this.workoutNumber});
 
@@ -881,10 +743,16 @@ class _DiagnosesLoader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<SwimDiagnosisReport>(
-      future: sl<WorkoutHistoryRepository>().loadSwimDiagnosisReport(
+    Future<SwimDiagnosisReport>? future;
+    try {
+      future = sl<WorkoutHistoryRepository>().loadSwimDiagnosisReport(
         focusWorkoutNumber: workoutNumber,
-      ),
+      );
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+    return FutureBuilder<SwimDiagnosisReport>(
+      future: future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const _SectionCard(
@@ -1330,195 +1198,6 @@ class _CountChip extends StatelessWidget {
   }
 }
 
-/// Charts + interval table share one invent-guard filter (default: hide garbage).
-class _SwimChartsAndIntervals extends StatefulWidget {
-  const _SwimChartsAndIntervals({
-    required this.laps,
-    this.poolLengthM,
-  });
-
-  final List<SwimLapMetrics> laps;
-  final int? poolLengthM;
-
-  @override
-  State<_SwimChartsAndIntervals> createState() =>
-      _SwimChartsAndIntervalsState();
-}
-
-class _SwimChartsAndIntervalsState extends State<_SwimChartsAndIntervals> {
-  /// Product lock: invent-guard on by default (filtered laps hidden).
-  bool _includeFiltered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final filteredCount = countInventGuardFilteredLaps(
-      widget.laps,
-      poolLengthM: widget.poolLengthM,
-    );
-    final active = filterSwimLapsForAnalytics(
-      widget.laps,
-      poolLengthM: widget.poolLengthM,
-      includeFiltered: _includeFiltered,
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (filteredCount > 0)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Material(
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
-              borderRadius: BorderRadius.circular(10),
-              child: CheckboxListTile(
-                dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                value: _includeFiltered,
-                onChanged: (v) => setState(() => _includeFiltered = v ?? false),
-                controlAffinity: ListTileControlAffinity.leading,
-                title: Text(
-                  'Include filtered laps',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                subtitle: Text(
-                  _includeFiltered
-                      ? 'Showing $filteredCount filtered laps — charts/table use the same set'
-                      : '$filteredCount hidden by invent-guard · charts/table synced',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontFamily: 'monospace',
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        SwimSessionCharts(
-          laps: active,
-        ),
-        if (active.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _SwimLapMetricsTable(
-            laps: active,
-            includeFiltered: _includeFiltered,
-            filteredCount: filteredCount,
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _SwimLapMetricsTable extends StatelessWidget {
-  const _SwimLapMetricsTable({
-    required this.laps,
-    required this.includeFiltered,
-    required this.filteredCount,
-  });
-
-  final List<SwimLapMetrics> laps;
-  final bool includeFiltered;
-  final int filteredCount;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: scheme.outlineVariant),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Intervals',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Text(
-              'Same lap set as charts',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowHeight: 36,
-                dataRowMinHeight: 36,
-                dataRowMaxHeight: 48,
-                columns: const [
-                  DataColumn(label: Text('#')),
-                  DataColumn(label: Text('Dev')),
-                  DataColumn(label: Text('Dist')),
-                  DataColumn(label: Text('Time')),
-                  DataColumn(label: Text('Strokes')),
-                  DataColumn(label: Text('SWOLF')),
-                  DataColumn(label: Text('Pace')),
-                ],
-                rows: [
-                  for (var i = 0; i < laps.length; i++)
-                    DataRow(
-                      cells: [
-                        DataCell(
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SwimStrokeIcon(style: laps[i].style),
-                              const SizedBox(width: 6),
-                              Text('I${i + 1}'),
-                            ],
-                          ),
-                        ),
-                        DataCell(Text('${laps[i].index + 1}')),
-                        DataCell(Text(_cell(laps[i].distanceM, suffix: 'm'))),
-                        DataCell(
-                          Text(_formatDuration(laps[i].durationSec ?? 0)),
-                        ),
-                        DataCell(Text(_cell(laps[i].strokes))),
-                        DataCell(Text(_cell(laps[i].swolf))),
-                        DataCell(Text(_paceCell(laps[i].paceSecPer100m))),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-            if (filteredCount > 0) ...[
-              const SizedBox(height: 4),
-              Text(
-                includeFiltered
-                    ? 'Showing $filteredCount filtered laps — charts/table use the same set.'
-                    : 'Invent-guard hiding $filteredCount garbage laps from charts and table. P0 card still uses full parsed set.',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontFamily: 'monospace',
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _cell(int? v, {String suffix = ''}) =>
-      v == null ? '—' : '$v$suffix';
-
-  String _paceCell(int? secPer100m) =>
-      secPer100m == null ? '—' : '${secPer100m}s/100m';
-}
-
 class _LapTable extends StatelessWidget {
   const _LapTable({required this.segments});
 
@@ -1824,13 +1503,6 @@ class _ShareTcxActionState extends State<_ShareTcxAction> {
   }
 }
 
-bool _hasSwim(WorkoutSummary w) =>
-    w.swimType != null ||
-    w.strokes != null ||
-    w.strokeRate != null ||
-    w.avgSwolf != null ||
-    w.poolLength != null ||
-    w.laps != null;
 
 bool _hasEnrichment(WorkoutSummary w) =>
     _dataFetchedStatus(w) == true ||
@@ -1903,17 +1575,6 @@ String _typeLabel(int type) {
 }
 
 /// Totals tag 0x18 is pool length in centimetres (catalog + 2500→25m probe).
-String _formatPoolLength(int cm) {
-  if (cm >= 100 && cm % 100 == 0) {
-    return '${cm ~/ 100} m';
-  }
-  if (cm >= 100) {
-    final m = cm / 100.0;
-    return '${m.toStringAsFixed(m.truncateToDouble() == m ? 0 : 1)} m';
-  }
-  // Already metres (legacy / mis-scaled) — show as-is.
-  return '$cm m';
-}
 
 String _formatWhen(int unixSec) {
   if (unixSec <= 0) return 'unknown time';

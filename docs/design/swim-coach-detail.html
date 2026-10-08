@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fathom — Pool swim coach detail</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="home-prototype/styles.css" />
+  <link rel="stylesheet" href="swim-analytics.css" />
+  <link rel="stylesheet" href="swim-coach-detail.css?v=9" />
+</head>
+<body class="analytics-page coach-page" data-dig-deeper="off" data-landscape="off">
+  <button class="theme fixed-theme" id="themeToggle" type="button">Dark</button>
+
+  <div class="stage analytics-stage">
+    <div class="phone-slot">
+      <div class="phone" id="phone">
+        <div class="phone-portrait" id="portraitShell">
+          <header class="app-header">
+            <a class="icon-round" href="workouts-tab.html" aria-label="Back to workouts">←</a>
+            <div class="brand">
+              <span class="brand-mark">F</span>
+              <div>
+                <p class="brand-title" id="headerTitle">Pool swim · #94</p>
+                <p class="brand-sub mono" id="headerMeta">—</p>
+              </div>
+            </div>
+            <button class="theme-toggle" id="themeTogglePhone" type="button">Dark</button>
+          </header>
+          <main class="scroll" id="main"></main>
+        </div>
+        <!-- Shared with swim-analytics.js chart tooltips -->
+        <div class="sa-tooltip" id="saTip" hidden></div>
+
+        <!-- Landscape lives inside the phone so expand = device rotate, not a page modal -->
+        <div class="sc-land-inphone" id="landscape" role="dialog" aria-modal="true" aria-labelledby="landTitle" hidden>
+          <div class="sc-land-top">
+            <button type="button" class="icon-round" id="landClose" aria-label="Back to portrait">←</button>
+            <div class="sc-land-titleblock">
+              <h2 id="landTitle">Pace · expanded</h2>
+              <p class="mono" id="landMeta">Landscape analysis</p>
+            </div>
+            <div class="sc-series sc-series-compact" id="landSeries" role="tablist" aria-label="Series"></div>
+          </div>
+          <div class="sc-land-chart" id="landChart"></div>
+          <div class="sc-scrub" id="landScrub">
+            <span>Tap a bar to inspect</span>
+            <strong>—</strong>
+          </div>
+        </div>
+      </div>
+      <p class="phone-hint mono" id="phoneHint">Portrait · coach fold</p>
+    </div>
+
+    <aside class="rail">
+      <p class="rail-back"><a href="index.html">← Design hub</a></p>
+      <p class="eyebrow">Review · coach-led swim detail</p>
+      <h1>Verdict → tip → evidence</h1>
+      <p class="lede">
+        Hybrid story + chips, one tip, compact KPIs, pace chart with true in-phone landscape,
+        and collapsible interval sets (horizontal length bars — MySwimPro-inspired, Fathom tokens).
+      </p>
+
+      <div class="rail-controls">
+        <label>
+          Fixture
+          <select id="fixtureSelect" aria-label="Session fixture">
+            <option value="dense">Dense pool · 40 intervals (AE3)</option>
+            <option value="typical" selected>Typical pool · fatigue tip (AE1/AE4)</option>
+            <option value="thin">Thin history · no chips</option>
+            <option value="nohr">No HR lock · omit HR</option>
+            <option value="escape">Empty tip escape</option>
+            <option value="openwater">Open water · shared shell</option>
+          </select>
+        </label>
+        <div class="toggle-row">
+          <span>Dig deeper (Developer)</span>
+          <input type="checkbox" id="digDeeper" aria-label="Dig deeper Developer mode" />
+        </div>
+      </div>
+
+      <ol class="rail-list">
+        <li>Story + comparison chips</li>
+        <li>One primary tip</li>
+        <li>KPI strip · not equal-card dump</li>
+        <li>Charts reuse <code>swim-analytics</code> canvas (fade bars / area)</li>
+        <li>Rotate phone for landscape expand</li>
+        <li>Collapsible sets with length bars</li>
+      </ol>
+
+      <ul class="ae-list" aria-label="Acceptance coverage">
+        <li><span class="ok">AE1</span> First viewport clean · no Sync/Type/reasoner</li>
+        <li><span class="ok">AE2</span> HR omit when unlocked</li>
+        <li><span class="ok">AE3</span> Dense → landscape expand (in-phone)</li>
+        <li><span class="ok">AE4</span> One tip · findings collapsed</li>
+        <li><span class="ok">AE5</span> Dev notes only when dig-deeper on</li>
+        <li><span class="ok">AE6</span> Jump links scroll · no tab bar</li>
+      </ul>
+
+      <a class="btn ghost" href="swim-analytics.html">Legacy instrument dump →</a>
+      <a class="btn ghost" href="design-system.html">Design system →</a>
+      <p class="rail-note mono">Plan · 2026-10-09-001 · HTML PoL</p>
+    </aside>
+  </div>
+
+  <script src="swim-coach-detail.js?v=9"></script>
+</body>
+</html>
