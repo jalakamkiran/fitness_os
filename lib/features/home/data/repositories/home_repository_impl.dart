@@ -16,6 +16,13 @@ import 'package:fitness_os/features/workout_history/presentation/view/workout_hi
 /// FT row as untrusted (e.g. wrong day-anchor zeros) and use workout-sum.
 const int _kFitnessTotalsUntrustedWorkoutCalThreshold = 10;
 
+/// Home day energy/steps: FitnessTotals wire undercounts vs watch Activity UI
+/// (owner 2026-09-19: FT 233/3695 after fresh sync vs Activity 387/6331 while
+/// Walk #72 Totals were 194/2918). Add today's session Totals on top of FT.
+int _homeDayTotal({required int fitnessTotals, required int workoutSum}) {
+  return fitnessTotals + workoutSum;
+}
+
 class HomeRepositoryImpl implements HomeRepository {
   HomeRepositoryImpl({
     required SharedPreferences prefs,
@@ -144,8 +151,16 @@ class HomeRepositoryImpl implements HomeRepository {
     if (ft != null &&
         !(ft.calories == 0 &&
             workoutCalories > _kFitnessTotalsUntrustedWorkoutCalThreshold)) {
-      calories = ft.calories;
-      steps = ft.steps;
+      // FT alone tracks below watch Activity when formal workouts exist; add
+      // today's session calories/steps (null session fields contribute 0).
+      calories = _homeDayTotal(
+        fitnessTotals: ft.calories,
+        workoutSum: workoutCalories,
+      );
+      steps = _homeDayTotal(
+        fitnessTotals: ft.steps,
+        workoutSum: workoutSteps,
+      );
       displayWorkoutSec = workoutSec;
     } else {
       calories = workoutCalories;
@@ -283,6 +298,12 @@ HomeTodaySessionCard buildHomeTodaySessionCard(WorkoutSummary w) {
   }
 
   final meta = <({String label, String value})>[];
+  if (w.calories != null && w.calories! > 0) {
+    meta.add((label: 'Cal', value: '${w.calories}'));
+  }
+  if (w.steps != null && w.steps! > 0) {
+    meta.add((label: 'Steps', value: _formatInt(w.steps!)));
+  }
   if (w.load != null) {
     meta.add((label: 'Load', value: '${w.load}'));
   }
