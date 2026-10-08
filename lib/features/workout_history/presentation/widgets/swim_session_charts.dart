@@ -23,24 +23,76 @@ abstract final class SwimChartColors {
   }
 }
 
-/// Interval charts for a swim session — Pace → SWOLF → Strokes → Overlay.
+/// Athlete chart series (pace-first progressive disclosure).
+enum SwimChartSeries { pace, swolf, strokes, overlay }
+
+/// Interval charts for a swim session — pace default, other series via chips.
 ///
-/// Hidden when [laps] is empty or no chartable series. In-session HR is a
-/// sibling host, not this card.
-/// Caller should pass invent-guard–filtered laps (same set as the intervals table).
-class SwimSessionCharts extends StatelessWidget {
+/// Null / non-positive pace is never plotted as 0 (gap/skip). Caller should
+/// pass invent-guard–filtered laps (same set as the intervals table).
+class SwimSessionCharts extends StatefulWidget {
   const SwimSessionCharts({
     super.key,
     required this.laps,
+    this.initialSeries = SwimChartSeries.pace,
+    this.onSeriesChanged,
+    this.scrollKey,
+    this.showExpand = true,
+    this.onExpand,
   });
 
   final List<SwimLapMetrics> laps;
+  final SwimChartSeries initialSeries;
+  final ValueChanged<SwimChartSeries>? onSeriesChanged;
+
+  /// Anchor for jump-link scroll restore.
+  final Key? scrollKey;
+
+  /// When false, hide landscape expand CTA (e.g. already expanded).
+  final bool showExpand;
+
+  /// Opens landscape analysis; returns last series when dismissed.
+  final Future<SwimChartSeries?> Function(SwimChartSeries current)? onExpand;
+
+  @override
+  State<SwimSessionCharts> createState() => _SwimSessionChartsState();
+}
+
+class _SwimSessionChartsState extends State<SwimSessionCharts> {
+  late SwimChartSeries _series;
+
+  @override
+  void initState() {
+    super.initState();
+    _series = widget.initialSeries;
+  }
+
+  @override
+  void didUpdateWidget(covariant SwimSessionCharts oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialSeries != widget.initialSeries) {
+      _series = widget.initialSeries;
+    }
+  }
+
+  void _select(SwimChartSeries s) {
+    setState(() => _series = s);
+    widget.onSeriesChanged?.call(s);
+  }
+
+  Future<void> _expand() async {
+    final expand = widget.onExpand;
+    if (expand == null) return;
+    final result = await expand(_series);
+    if (!mounted || result == null) return;
+    _select(result);
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (laps.isEmpty) return const SizedBox.shrink();
+    if (widget.laps.isEmpty) return const SizedBox.shrink();
 
-    final ordered = [...laps]..sort((a, b) => a.index.compareTo(b.index));
+    final ordered = [...widget.laps]..sort((a, b) => a.index.compareTo(b.index));
     final paces = ordered.map((l) => l.paceSecPer100m).toList();
     final swolfs = ordered.map((l) => l.swolf).toList();
     final strokes = ordered.map((l) => l.strokes).toList();
@@ -51,95 +103,146 @@ class SwimSessionCharts extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
+    final available = <SwimChartSeries>[
+      if (hasPace) SwimChartSeries.pace,
+      if (hasSwolf) SwimChartSeries.swolf,
+      if (hasStrokes) SwimChartSeries.strokes,
+      if (hasPace && hasSwolf) SwimChartSeries.overlay,
+    ];
+    if (!available.contains(_series)) {
+      _series = available.first;
+    }
+
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final accent = SwimChartColors.accent(context);
     final labels = [
       for (var i = 0; i < ordered.length; i++) 'I${i + 1}',
     ];
+    final dense = ordered.length >= 10;
+    final tickStep = dense ? math.max(1, (ordered.length / 6).ceil()) : 1;
+
     return Card(
+      key: widget.scrollKey,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: scheme.outlineVariant),
       ),
-      child: Theme(
-        data: theme.copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: true,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          title: Text(
-            'Session charts',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          subtitle: Text(
-            '${ordered.length} intervals · synced to table',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Locked order: Pace → SWOLF → Strokes → normalized overlay.
-            if (hasPace) ...[
-              _ChartBlock(
-                title: 'Pace by interval',
-                caption: 's/100m · higher = slower',
-                child: _IntervalBarChart(
-                  values: paces,
-                  color: accent,
-                  labels: labels,
-                  progressiveHot: true,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Charts',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
+                if (widget.showExpand && widget.onExpand != null)
+                  TextButton.icon(
+                    key: const Key('swim-chart-expand'),
+                    onPressed: _expand,
+                    icon: const Icon(Icons.open_in_full, size: 16),
+                    label: Text(
+                      'Expand',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: dense ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            Text(
+              '${ordered.length} intervals',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
               ),
-              const SizedBox(height: 16),
-            ],
-            if (hasSwolf) ...[
-              _ChartBlock(
-                title: 'SWOLF',
-                caption: 'time + strokes · lower better',
-                child: _IntervalLineChart(
-                  values: swolfs,
-                  color: accent,
-                  fill: true,
-                  labels: labels,
-                  hotTail: true,
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-            if (hasStrokes) ...[
-              _ChartBlock(
-                title: 'Strokes per length',
-                caption: 'count · spike = churn',
-                child: _IntervalBarChart(
-                  values: strokes,
-                  color: SwimChartColors.hot,
-                  labels: labels,
-                ),
-              ),
-              if (hasPace && hasSwolf) const SizedBox(height: 16),
-            ],
-            if (hasPace && hasSwolf) ...[
-              _ChartBlock(
-                title: 'Pace + SWOLF',
-                caption: '0–1 normalized · ↑ = worse',
-                child: _PaceSwolfOverlay(
-                  paces: paces,
-                  swolfs: swolfs,
-                  paceColor: SwimChartColors.hot,
-                  swolfColor: SwimChartColors.amber,
-                  labels: labels,
-                ),
-              ),
-            ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final s in available)
+                  ChoiceChip(
+                    key: Key('swim-series-${s.name}'),
+                    label: Text(_seriesLabel(s)),
+                    selected: _series == s,
+                    onSelected: (_) => _select(s),
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _ChartBlock(
+              title: _seriesTitle(_series),
+              caption: _seriesCaption(_series),
+              child: switch (_series) {
+                SwimChartSeries.pace => _IntervalBarChart(
+                    values: paces,
+                    color: accent,
+                    labels: labels,
+                    progressiveHot: true,
+                    tickStep: tickStep,
+                    gapNull: true,
+                  ),
+                SwimChartSeries.swolf => _IntervalLineChart(
+                    values: swolfs,
+                    color: accent,
+                    fill: true,
+                    labels: labels,
+                    hotTail: true,
+                    tickStep: tickStep,
+                  ),
+                SwimChartSeries.strokes => _IntervalBarChart(
+                    values: strokes,
+                    color: SwimChartColors.hot,
+                    labels: labels,
+                    tickStep: tickStep,
+                    gapNull: true,
+                  ),
+                SwimChartSeries.overlay => _PaceSwolfOverlay(
+                    paces: paces,
+                    swolfs: swolfs,
+                    paceColor: SwimChartColors.hot,
+                    swolfColor: SwimChartColors.amber,
+                    labels: labels,
+                    tickStep: tickStep,
+                  ),
+              },
+            ),
           ],
         ),
       ),
     );
   }
+
+  static String _seriesLabel(SwimChartSeries s) => switch (s) {
+        SwimChartSeries.pace => 'Pace',
+        SwimChartSeries.swolf => 'SWOLF',
+        SwimChartSeries.strokes => 'Strokes',
+        SwimChartSeries.overlay => 'Overlay',
+      };
+
+  static String _seriesTitle(SwimChartSeries s) => switch (s) {
+        SwimChartSeries.pace => 'Pace by interval',
+        SwimChartSeries.swolf => 'SWOLF',
+        SwimChartSeries.strokes => 'Strokes per length',
+        SwimChartSeries.overlay => 'Pace + SWOLF',
+      };
+
+  static String _seriesCaption(SwimChartSeries s) => switch (s) {
+        SwimChartSeries.pace => 's/100m · higher = slower',
+        SwimChartSeries.swolf => 'time + strokes · lower better',
+        SwimChartSeries.strokes => 'count · spike = churn',
+        SwimChartSeries.overlay => '0–1 normalized · ↑ = worse',
+      };
 }
 
 class _ChartBlock extends StatelessWidget {
@@ -174,7 +277,7 @@ class _ChartBlock extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        SizedBox(height: 132, child: child),
+        SizedBox(height: 160, child: child),
       ],
     );
   }
@@ -186,14 +289,18 @@ class _IntervalBarChart extends StatelessWidget {
     required this.color,
     required this.labels,
     this.progressiveHot = false,
+    this.tickStep = 1,
+    this.gapNull = false,
   });
 
   final List<int?> values;
   final Color color;
   final List<String> labels;
-
-  /// When true, late intervals shift accent → amber → hot (locked pace chart).
   final bool progressiveHot;
+  final int tickStep;
+
+  /// When true, null/non-positive values are omitted (not plotted as 0).
+  final bool gapNull;
 
   @override
   Widget build(BuildContext context) {
@@ -211,8 +318,9 @@ class _IntervalBarChart extends StatelessWidget {
     final amberFrom = (n * 0.55).floor();
 
     Color rodColor(int i) {
-      if (values[i] == null || values[i]! <= 0) {
-        return scheme.outlineVariant.withValues(alpha: 0.35);
+      final v = values[i];
+      if (v == null || v <= 0) {
+        return Colors.transparent;
       }
       if (!progressiveHot) return color.withValues(alpha: 0.85);
       if (i >= hotFrom) return SwimChartColors.hot.withValues(alpha: 0.9);
@@ -256,6 +364,9 @@ class _IntervalBarChart extends StatelessWidget {
                 if (i < 0 || i >= labels.length) {
                   return const SizedBox.shrink();
                 }
+                if (tickStep > 1 && i % tickStep != 0 && i != labels.length - 1) {
+                  return const SizedBox.shrink();
+                }
                 return Text(
                   labels[i],
                   style: TextStyle(
@@ -280,19 +391,20 @@ class _IntervalBarChart extends StatelessWidget {
         borderData: FlBorderData(show: false),
         barGroups: [
           for (var i = 0; i < values.length; i++)
-            BarChartGroupData(
-              x: i,
-              barRods: [
-                BarChartRodData(
-                  toY: (values[i] ?? 0).toDouble(),
-                  color: rodColor(i),
-                  width: _barWidth(values.length),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(2),
+            if (!(gapNull && (values[i] == null || values[i]! <= 0)))
+              BarChartGroupData(
+                x: i,
+                barRods: [
+                  BarChartRodData(
+                    toY: values[i]!.toDouble(),
+                    color: rodColor(i),
+                    width: _barWidth(values.length),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(2),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
         ],
       ),
     );
@@ -306,15 +418,15 @@ class _IntervalLineChart extends StatelessWidget {
     required this.labels,
     this.fill = false,
     this.hotTail = false,
+    this.tickStep = 1,
   });
 
   final List<int?> values;
   final Color color;
   final List<String> labels;
   final bool fill;
-
-  /// Last two points use hot accent (locked SWOLF chart).
   final bool hotTail;
+  final int tickStep;
 
   @override
   Widget build(BuildContext context) {
@@ -368,10 +480,12 @@ class _IntervalLineChart extends StatelessWidget {
             sideTitles: SideTitles(
               showTitles: true,
               reservedSize: 18,
-              interval: 1,
               getTitlesWidget: (v, meta) {
                 final i = v.toInt();
                 if (i < 0 || i >= labels.length || v != i.toDouble()) {
+                  return const SizedBox.shrink();
+                }
+                if (tickStep > 1 && i % tickStep != 0 && i != labels.length - 1) {
                   return const SizedBox.shrink();
                 }
                 return Text(
@@ -433,6 +547,7 @@ class _PaceSwolfOverlay extends StatelessWidget {
     required this.paceColor,
     required this.swolfColor,
     required this.labels,
+    this.tickStep = 1,
   });
 
   final List<int?> paces;
@@ -440,6 +555,7 @@ class _PaceSwolfOverlay extends StatelessWidget {
   final Color paceColor;
   final Color swolfColor;
   final List<String> labels;
+  final int tickStep;
 
   @override
   Widget build(BuildContext context) {
@@ -516,6 +632,11 @@ class _PaceSwolfOverlay extends StatelessWidget {
                     getTitlesWidget: (v, meta) {
                       final i = v.toInt();
                       if (i < 0 || i >= labels.length || v != i.toDouble()) {
+                        return const SizedBox.shrink();
+                      }
+                      if (tickStep > 1 &&
+                          i % tickStep != 0 &&
+                          i != labels.length - 1) {
                         return const SizedBox.shrink();
                       }
                       return Text(

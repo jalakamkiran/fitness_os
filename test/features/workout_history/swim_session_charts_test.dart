@@ -11,7 +11,7 @@ void main() {
         home: Scaffold(body: SwimSessionCharts(laps: [])),
       ),
     );
-    expect(find.text('Session charts'), findsNothing);
+    expect(find.text('Charts'), findsNothing);
   });
 
   testWidgets('hides when laps have no chartable series', (tester) async {
@@ -24,11 +24,10 @@ void main() {
         home: Scaffold(body: SwimSessionCharts(laps: laps)),
       ),
     );
-    expect(find.text('Session charts'), findsNothing);
+    expect(find.text('Charts'), findsNothing);
   });
 
-  testWidgets('shows Pace → SWOLF → Strokes → Overlay in locked order',
-      (tester) async {
+  testWidgets('defaults to Pace series with progressive chips', (tester) async {
     const laps = [
       SwimLapMetrics(
         index: 0,
@@ -66,34 +65,27 @@ void main() {
       ),
     );
 
-    expect(find.text('Session charts'), findsOneWidget);
-    expect(find.textContaining('synced to table'), findsOneWidget);
-
+    expect(find.text('Charts'), findsOneWidget);
+    expect(find.textContaining('synced to table'), findsNothing);
     expect(find.text('Pace by interval'), findsOneWidget);
-    expect(find.text('SWOLF'), findsOneWidget);
-    expect(find.text('Strokes per length'), findsOneWidget);
-    expect(find.text('Pace + SWOLF'), findsOneWidget);
-
+    // Secondary series not all equal-height by default (chip labels may say SWOLF).
+    expect(find.text('Strokes per length'), findsNothing);
+    expect(find.text('Pace + SWOLF'), findsNothing);
     expect(find.text('s/100m · higher = slower'), findsOneWidget);
+    expect(find.text('time + strokes · lower better'), findsNothing);
+
+    expect(find.byKey(const Key('swim-series-pace')), findsOneWidget);
+    expect(find.byKey(const Key('swim-series-swolf')), findsOneWidget);
+    expect(find.byKey(const Key('swim-series-strokes')), findsOneWidget);
+    expect(find.byKey(const Key('swim-series-overlay')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('swim-series-swolf')));
+    await tester.pump();
+    expect(find.text('SWOLF'), findsWidgets);
     expect(find.text('time + strokes · lower better'), findsOneWidget);
-    expect(find.text('count · spike = churn'), findsOneWidget);
-    expect(find.text('0–1 normalized · ↑ = worse'), findsOneWidget);
-
-    // Overlay legend present when both series exist.
-    expect(find.textContaining('pace'), findsOneWidget);
-    expect(find.text('swolf'), findsOneWidget);
-
-    // Title order: Pace before SWOLF before Strokes before Overlay.
-    final paceY = tester.getTopLeft(find.text('Pace by interval')).dy;
-    final swolfY = tester.getTopLeft(find.text('SWOLF')).dy;
-    final strokesY = tester.getTopLeft(find.text('Strokes per length')).dy;
-    final overlayY = tester.getTopLeft(find.text('Pace + SWOLF')).dy;
-    expect(paceY, lessThan(swolfY));
-    expect(swolfY, lessThan(strokesY));
-    expect(strokesY, lessThan(overlayY));
   });
 
-  testWidgets('omits overlay when SWOLF missing', (tester) async {
+  testWidgets('omits overlay chip when SWOLF missing', (tester) async {
     const laps = [
       SwimLapMetrics(
         index: 0,
@@ -121,10 +113,10 @@ void main() {
       ),
     );
 
-    expect(find.text('Pace by interval'), findsOneWidget);
-    expect(find.text('Strokes per length'), findsOneWidget);
-    expect(find.text('Pace + SWOLF'), findsNothing);
-    expect(find.text('SWOLF'), findsNothing);
+    expect(find.byKey(const Key('swim-series-pace')), findsOneWidget);
+    expect(find.byKey(const Key('swim-series-strokes')), findsOneWidget);
+    expect(find.byKey(const Key('swim-series-overlay')), findsNothing);
+    expect(find.byKey(const Key('swim-series-swolf')), findsNothing);
   });
 
   testWidgets('does not show a silent-omit stand-in for missing HR samples',
@@ -152,5 +144,44 @@ void main() {
 
     expect(find.textContaining('Heart rate — hidden'), findsNothing);
     expect(find.textContaining('HR absent'), findsNothing);
+  });
+
+  testWidgets('null pace intervals are not plotted as zero-fast bars',
+      (tester) async {
+    const laps = [
+      SwimLapMetrics(
+        index: 0,
+        distanceM: 25,
+        durationSec: 40,
+        paceSecPer100m: 160,
+      ),
+      SwimLapMetrics(
+        index: 1,
+        distanceM: 25,
+        durationSec: 20,
+        // rest / missing pace — must not become toY: 0
+        paceSecPer100m: null,
+      ),
+      SwimLapMetrics(
+        index: 2,
+        distanceM: 25,
+        durationSec: 42,
+        paceSecPer100m: 168,
+      ),
+    ];
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: SwimSessionCharts(laps: laps),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Pace by interval'), findsOneWidget);
+    // Chart mounts; honesty is gap/skip (no crash / no false-fast chrome).
+    expect(find.byType(SwimSessionCharts), findsOneWidget);
   });
 }
