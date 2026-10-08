@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_p0_metrics.dart';
 
 /// Fathom accent tokens — prefer Theme primary when it is already mint-like;
@@ -24,16 +25,18 @@ abstract final class SwimChartColors {
 }
 
 /// Athlete chart series (pace-first progressive disclosure).
-enum SwimChartSeries { pace, swolf, strokes, overlay }
+enum SwimChartSeries { pace, swolf, strokes, overlay, hr }
 
 /// Interval charts for a swim session — pace default, other series via chips.
 ///
 /// Null / non-positive pace is never plotted as 0 (gap/skip). Caller should
 /// pass invent-guard–filtered laps (same set as the intervals table).
+/// Locked in-session HR (when present) is a series chip — not a sibling card.
 class SwimSessionCharts extends StatefulWidget {
   const SwimSessionCharts({
     super.key,
     required this.laps,
+    this.hrPoints = const [],
     this.initialSeries = SwimChartSeries.pace,
     this.onSeriesChanged,
     this.scrollKey,
@@ -42,6 +45,10 @@ class SwimSessionCharts extends StatefulWidget {
   });
 
   final List<SwimLapMetrics> laps;
+
+  /// Locked in-session HR samples (≥2 points → HR chip available).
+  final List<RunStreamPoint> hrPoints;
+
   final SwimChartSeries initialSeries;
   final ValueChanged<SwimChartSeries>? onSeriesChanged;
 
@@ -90,16 +97,19 @@ class _SwimSessionChartsState extends State<SwimSessionCharts> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.laps.isEmpty) return const SizedBox.shrink();
-
     final ordered = [...widget.laps]..sort((a, b) => a.index.compareTo(b.index));
     final paces = ordered.map((l) => l.paceSecPer100m).toList();
     final swolfs = ordered.map((l) => l.swolf).toList();
     final strokes = ordered.map((l) => l.strokes).toList();
+    final hrOnly = [
+      for (final p in widget.hrPoints)
+        if (p.hrBpm != null) p,
+    ];
     final hasPace = paces.any((v) => v != null && v > 0);
     final hasSwolf = swolfs.any((v) => v != null && v > 0);
     final hasStrokes = strokes.any((v) => v != null && v > 0);
-    if (!hasPace && !hasSwolf && !hasStrokes) {
+    final hasHr = hrOnly.length >= 2;
+    if (!hasPace && !hasSwolf && !hasStrokes && !hasHr) {
       return const SizedBox.shrink();
     }
 
@@ -108,6 +118,7 @@ class _SwimSessionChartsState extends State<SwimSessionCharts> {
       if (hasSwolf) SwimChartSeries.swolf,
       if (hasStrokes) SwimChartSeries.strokes,
       if (hasPace && hasSwolf) SwimChartSeries.overlay,
+      if (hasHr) SwimChartSeries.hr,
     ];
     if (!available.contains(_series)) {
       _series = available.first;
@@ -119,8 +130,13 @@ class _SwimSessionChartsState extends State<SwimSessionCharts> {
     final labels = [
       for (var i = 0; i < ordered.length; i++) 'I${i + 1}',
     ];
-    final dense = ordered.length >= 10;
-    final tickStep = dense ? math.max(1, (ordered.length / 6).ceil()) : 1;
+    final dense = ordered.length >= 10 || hrOnly.length >= 40;
+    final tickStep = ordered.isEmpty
+        ? 1
+        : (dense ? math.max(1, (ordered.length / 6).ceil()) : 1);
+    final caption = ordered.isNotEmpty
+        ? '${ordered.length} intervals${hasHr ? ' · HR locked' : ''}'
+        : 'HR · in-session samples';
 
     return Card(
       key: widget.scrollKey,
@@ -159,7 +175,7 @@ class _SwimSessionChartsState extends State<SwimSessionCharts> {
               ],
             ),
             Text(
-              '${ordered.length} intervals',
+              caption,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),
@@ -215,6 +231,7 @@ class _SwimSessionChartsState extends State<SwimSessionCharts> {
                     labels: labels,
                     tickStep: tickStep,
                   ),
+                SwimChartSeries.hr => _HrStreamChart(points: hrOnly),
               },
             ),
           ],
@@ -228,6 +245,7 @@ class _SwimSessionChartsState extends State<SwimSessionCharts> {
         SwimChartSeries.swolf => 'SWOLF',
         SwimChartSeries.strokes => 'Strokes',
         SwimChartSeries.overlay => 'Overlay',
+        SwimChartSeries.hr => 'HR',
       };
 
   static String _seriesTitle(SwimChartSeries s) => switch (s) {
@@ -235,6 +253,7 @@ class _SwimSessionChartsState extends State<SwimSessionCharts> {
         SwimChartSeries.swolf => 'SWOLF',
         SwimChartSeries.strokes => 'Strokes per length',
         SwimChartSeries.overlay => 'Pace + SWOLF',
+        SwimChartSeries.hr => 'Heart rate',
       };
 
   static String _seriesCaption(SwimChartSeries s) => switch (s) {
@@ -242,6 +261,7 @@ class _SwimSessionChartsState extends State<SwimSessionCharts> {
         SwimChartSeries.swolf => 'time + strokes · lower better',
         SwimChartSeries.strokes => 'count · spike = churn',
         SwimChartSeries.overlay => '0–1 normalized · ↑ = worse',
+        SwimChartSeries.hr => 'bpm · in-session samples',
       };
 }
 
@@ -734,6 +754,108 @@ class _LegendDot extends StatelessWidget {
               ),
         ),
       ],
+    );
+  }
+}
+
+/// Locked in-session HR as a time-series line (offsetSec → bpm).
+class _HrStreamChart extends StatelessWidget {
+  const _HrStreamChart({required this.points});
+
+  final List<RunStreamPoint> points;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final spots = <FlSpot>[];
+    for (final p in points) {
+      final hr = p.hrBpm;
+      if (hr == null || hr <= 0) continue;
+      spots.add(FlSpot(p.offsetSec.toDouble(), hr.toDouble()));
+    }
+    if (spots.length < 2) return const SizedBox.shrink();
+
+    final ys = spots.map((s) => s.y).toList();
+    final maxY = ys.reduce(math.max);
+    final minY = ys.reduce(math.min);
+    final pad = math.max(2.0, (maxY - minY) * 0.12);
+    final top = maxY + pad;
+    final bottom = math.max(0.0, minY - pad);
+    final maxX = spots.last.x;
+    final tickEvery = math.max(1.0, maxX / 4);
+
+    return LineChart(
+      LineChartData(
+        minX: spots.first.x,
+        maxX: maxX,
+        minY: bottom == top ? 0 : bottom,
+        maxY: top <= 0 ? 1 : top,
+        lineTouchData: const LineTouchData(enabled: true),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 32,
+              getTitlesWidget: (v, _) => Text(
+                v.round().toString(),
+                style: TextStyle(
+                  fontSize: 9,
+                  color: scheme.onSurfaceVariant,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 18,
+              interval: tickEvery,
+              getTitlesWidget: (v, _) {
+                final m = (v / 60).floor();
+                final s = (v % 60).round();
+                return Text(
+                  '$m:${s.toString().padLeft(2, '0')}',
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: scheme.onSurfaceVariant,
+                    fontFamily: 'monospace',
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (_) => FlLine(
+            color: scheme.outlineVariant.withValues(alpha: 0.5),
+            strokeWidth: 0.6,
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: false,
+            color: SwimChartColors.hot,
+            barWidth: 1.75,
+            isStrokeCapRound: true,
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(
+              show: true,
+              color: SwimChartColors.hot.withValues(alpha: 0.12),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

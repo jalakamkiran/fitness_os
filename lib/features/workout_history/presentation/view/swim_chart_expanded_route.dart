@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fitness_os/app/routing/app_router.dart';
+import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_p0_metrics.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/swim_session_charts.dart';
 
@@ -8,10 +9,12 @@ class SwimChartExpandedArgs {
   const SwimChartExpandedArgs({
     required this.laps,
     required this.series,
+    this.hrPoints = const [],
   });
 
   final List<SwimLapMetrics> laps;
   final SwimChartSeries series;
+  final List<RunStreamPoint> hrPoints;
 }
 
 class SwimChartExpandedRoute {
@@ -37,12 +40,17 @@ class SwimChartExpandedRoute {
     BuildContext context, {
     required List<SwimLapMetrics> laps,
     required SwimChartSeries series,
+    List<RunStreamPoint> hrPoints = const [],
   }) async {
     // Named routes from AppRouter are untyped MaterialPageRoute<dynamic>.
     final result = await Navigator.pushNamed(
       context,
       path,
-      arguments: SwimChartExpandedArgs(laps: laps, series: series),
+      arguments: SwimChartExpandedArgs(
+        laps: laps,
+        series: series,
+        hrPoints: hrPoints,
+      ),
     );
     return result is SwimChartSeries ? result : null;
   }
@@ -72,7 +80,6 @@ class _SwimChartExpandedScreenState extends State<SwimChartExpandedScreen> {
 
   Future<void> _lockLandscape() async {
     _previous = List<DeviceOrientation>.from(
-      // Capture is best-effort; restore to portrait+landscape defaults on exit.
       const [
         DeviceOrientation.portraitUp,
         DeviceOrientation.landscapeLeft,
@@ -103,7 +110,6 @@ class _SwimChartExpandedScreenState extends State<SwimChartExpandedScreen> {
 
   @override
   void dispose() {
-    // Fire-and-forget restore if pop path skipped (system dispose).
     SystemChrome.setPreferredOrientations(const [
       DeviceOrientation.portraitUp,
       DeviceOrientation.landscapeLeft,
@@ -116,7 +122,11 @@ class _SwimChartExpandedScreenState extends State<SwimChartExpandedScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chart analysis'),
+        title: Text(
+          _series == SwimChartSeries.hr
+              ? 'HR · expanded'
+              : 'Chart analysis',
+        ),
         leading: IconButton(
           key: const Key('swim-chart-expanded-close'),
           icon: const Icon(Icons.close),
@@ -129,6 +139,7 @@ class _SwimChartExpandedScreenState extends State<SwimChartExpandedScreen> {
           child: SwimSessionCharts(
             key: const Key('swim-chart-expanded-body'),
             laps: widget.args.laps,
+            hrPoints: widget.args.hrPoints,
             initialSeries: _series,
             showExpand: false,
             onSeriesChanged: (s) => setState(() => _series = s),
