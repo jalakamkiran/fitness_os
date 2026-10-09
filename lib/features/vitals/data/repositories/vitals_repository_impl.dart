@@ -7,6 +7,7 @@ import 'package:fitness_os/core/observability/trusleep_timestamp_observe.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
+import 'package:fitness_os/features/vitals/domain/sleep_day.dart';
 import 'package:fitness_os/features/vitals/domain/sleep_hr_window.dart';
 import 'package:fitness_os/features/vitals/domain/trusleep_sleep_sot.dart';
 import 'package:path_provider/path_provider.dart';
@@ -27,7 +28,8 @@ class VitalsRepositoryImpl implements VitalsRepository {
 
   /// Bumped when activity Sync merge / SoT rules change (forces one wide pull).
   /// v2: SEQUENCE_DATA TruSleep summary+stages productized — one 14d re-pull.
-  static const currentActivitySyncImplVersion = 2;
+  /// v3: SEQUENCE-first overnight main + nocturnal ≤90m coalesce.
+  static const currentActivitySyncImplVersion = 3;
 
   /// Overnight-scale overlap when advancing from [GateAPrefs.lastActivitySyncCursor].
   static const activityCursorOverlapSec = 6 * 3600;
@@ -634,16 +636,11 @@ class VitalsRepositoryImpl implements VitalsRepository {
     required List<SleepEnrichOutcome> enrich,
   }) async {
     if (!_gateStillPassed()) return const _SleepMergeResult();
+    // Micro-merge ≤3m → SEQUENCE scientific mains carve overlaps → nocturnal
+    // coalesce leftovers only (never glue-then-shrink under SEQUENCE bounds).
     final built = intervals.isNotEmpty
-        ? TruSleepSleepSot.buildSessions(intervals)
-        : sequences
-            .map(
-              (s) => SleepSessionSummary(
-                beginUnix: s.beginUnix,
-                endUnix: s.endUnix,
-              ),
-            )
-            .toList();
+        ? _buildFileSessionsWithSequenceCarve(intervals, sequences)
+        : _scientificMainsFromSequences(sequences);
     if (built.isEmpty) return const _SleepMergeResult();
 
     final existing = await _safeLoadSleep();
@@ -718,6 +715,99 @@ class VitalsRepositoryImpl implements VitalsRepository {
       fileSotUpserted: true,
       maxUpsertedEndUnix: maxEnd,
     );
+  }
+
+  /// Micro-merge intervals, emit scientific SEQUENCE mains, coalesce leftovers.
+  List<SleepSessionSummary> _buildFileSessionsWithSequenceCarve(
+    List<SleepStateInterval> intervals,
+    List<TruSleepSequenceSession> sequences,
+  ) {
+    final micro = TruSleepSleepSot.gapMergeChains(intervals)
+        .map(
+          (c) => SleepSessionSummary(
+            beginUnix: c.beginUnix,
+            endUnix: c.endUnix,
+          ),
+        )
+        .toList();
+    final mains = _pickScientificMains(sequences);
+    if (mains.isEmpty) {
+      return SleepDay.coalesceNocturnalSessions(micro);
+    }
+
+    final mainSessions = mains
+        .map(_sessionFromScientificSequence)
+        .where((s) => s.beginUnix > 0 && s.endUnix > s.beginUnix)
+        .toList();
+
+    final leftovers = micro
+        .where(
+          (frag) => !mainSessions.any((main) => _sleepOverlaps(frag, main)),
+        )
+        .toList();
+    final coalescedLeftovers = SleepDay.coalesceNocturnalSessions(leftovers);
+    return [...mainSessions, ...coalescedLeftovers]
+      ..sort((a, b) => a.beginUnix.compareTo(b.beginUnix));
+  }
+
+  /// SEQUENCE-only path: scientific mains at fallAsleep→wakeup (else begin→end).
+  List<SleepSessionSummary> _scientificMainsFromSequences(
+    List<TruSleepSequenceSession> sequences,
+  ) {
+    return _pickScientificMains(sequences)
+        .map(_sessionFromScientificSequence)
+        .where((s) => s.beginUnix > 0 && s.endUnix > s.beginUnix)
+        .toList()
+      ..sort((a, b) => a.beginUnix.compareTo(b.beginUnix));
+  }
+
+  /// One scientific SEQUENCE per sleep-day: higher score, else longer span.
+  List<TruSleepSequenceSession> _pickScientificMains(
+    List<TruSleepSequenceSession> sequences,
+  ) {
+    final scientific = sequences.where((s) => s.isScientific).toList();
+    if (scientific.isEmpty) return const [];
+
+    final byDay = <DateTime, TruSleepSequenceSession>{};
+    for (final s in scientific) {
+      final main = _sessionFromScientificSequence(s);
+      final day = SleepDay.sleepDayIdForSession(main);
+      final prior = byDay[day];
+      if (prior == null || _scientificMainBetter(s, prior)) {
+        byDay[day] = s;
+      }
+    }
+    return byDay.values.toList()
+      ..sort((a, b) => a.beginUnix.compareTo(b.beginUnix));
+  }
+
+  bool _scientificMainBetter(
+    TruSleepSequenceSession a,
+    TruSleepSequenceSession b,
+  ) {
+    final sa = a.sleepScore ?? 0;
+    final sb = b.sleepScore ?? 0;
+    if (sa != sb) return sa > sb;
+    final da = _sequenceMainSpanSec(a);
+    final db = _sequenceMainSpanSec(b);
+    return da > db;
+  }
+
+  int _sequenceMainSpanSec(TruSleepSequenceSession s) {
+    final main = _sessionFromScientificSequence(s);
+    return main.endUnix - main.beginUnix;
+  }
+
+  SleepSessionSummary _sessionFromScientificSequence(
+    TruSleepSequenceSession s,
+  ) {
+    final begin = (s.fallAsleepUnix != null && s.fallAsleepUnix! > 0)
+        ? s.fallAsleepUnix!
+        : s.beginUnix;
+    final end = (s.wakeupUnix != null && s.wakeupUnix! > begin)
+        ? s.wakeupUnix!
+        : s.endUnix;
+    return SleepSessionSummary(beginUnix: begin, endUnix: end);
   }
 
   List<SleepStageSummary> _stagesForFileWindow(
