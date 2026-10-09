@@ -1,6 +1,6 @@
 # SwimSessionInsight contract (R21)
 
-Short non-goals note for a future Programs (or other) consumer. **Not** a dual-consumer API design.
+Short note for Programs (and any future consumer). **Not** a dual-consumer API design.
 
 ## Source of truth today
 
@@ -8,6 +8,15 @@ Short non-goals note for a future Programs (or other) consumer. **Not** a dual-c
 - Builder: `buildSwimSessionInsight(...)`
 - Presentation owns invent-guard filtering, HR lock peel, prefs, and orientation
 - Swim Bible compute (`canonical_swim_session`, P0, invent-guard, diagnoses, allow-listed recs) remains the metric SoT
+
+## Programs read path
+
+Programs may **read** this assembler’s output for:
+
+- Story / tip / diagnosis ids (athlete-facing prose and attribution)
+- Efficiency scorecard **inputs** that already appear on insight (e.g. SWOLF when present) — tippless / thin sessions stay Collecting; never invent
+
+Numeric evidence for baselines, chore/proof matching, distance/duration KPIs, and volume capacity remains **`CanonicalSwimSession`** (and guarded laps). Do not invent a parallel insight pipeline or a second Programs-facing DTO.
 
 ## Athlete fields
 
@@ -22,10 +31,8 @@ Short non-goals note for a future Programs (or other) consumer. **Not** a dual-c
 
 ## Non-goals (this cut)
 
-- No Programs UI, plan chips, or “add to plan” CTAs
+- No Programs UI, plan chips, or “add to plan” CTAs on the insight surface
 - No second Programs-facing DTO or versioned API surface
 - No quality / readiness / 0–100 scores
 - Dig-deeper prefs and landscape orientation never enter the builder
 - Open-water coaching narratives beyond shared-shell omit may defer
-
-Programs may later **read** this assembler’s output; do not invent a parallel insight pipeline.
