@@ -13,6 +13,7 @@ class SleepSessionCard extends StatelessWidget {
     this.stages = const [],
     this.kicker,
     this.sleepScore,
+    this.awakeMinutes,
     this.showDetailsCta = false,
     this.onViewDetails,
     this.compact = false,
@@ -23,6 +24,8 @@ class SleepSessionCard extends StatelessWidget {
   final String? kicker;
   /// TruSleep score when known (scientific overnight only).
   final int? sleepScore;
+  /// Stage awake minutes when known; shown on compact rows only if > 0.
+  final int? awakeMinutes;
   final bool showDetailsCta;
   final VoidCallback? onViewDetails;
   final bool compact;
@@ -109,6 +112,16 @@ class SleepSessionCard extends StatelessWidget {
                 color: colors.inkFaint,
               ),
             ),
+            if (compact && awakeMinutes != null && awakeMinutes! > 0) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Awake ${awakeMinutes}m',
+                style: FathomTextStyles.mono(
+                  fontSize: 12,
+                  color: colors.inkFaint,
+                ),
+              ),
+            ],
             if (stages.isNotEmpty) ...[
               const SizedBox(height: 12),
               SleepStageChips(stages: stages),

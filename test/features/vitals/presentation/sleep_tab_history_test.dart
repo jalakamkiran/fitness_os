@@ -16,10 +16,13 @@ class _FakeRepo implements VitalsRepository {
   _FakeRepo({
     this.sessions = const [],
     Map<String, String>? feelAnswers,
-  }) : feelAnswers = feelAnswers ?? {};
+    Map<String, List<SleepStageSummary>>? stagesByKey,
+  })  : feelAnswers = feelAnswers ?? {},
+        stagesByKey = stagesByKey ?? {};
 
   List<SleepSessionSummary> sessions;
   final Map<String, String> feelAnswers;
+  final Map<String, List<SleepStageSummary>> stagesByKey;
   int saveFeelCalls = 0;
 
   @override
@@ -38,7 +41,7 @@ class _FakeRepo implements VitalsRepository {
   Future<List<SleepStageSummary>> loadSleepStages(
     SleepSessionSummary session,
   ) async =>
-      const [];
+      stagesByKey[session.mergeKey] ?? const [];
 
   @override
   Future<List<DailyHrDaySummary>> loadDailyHr() async => const [];
@@ -256,6 +259,72 @@ void main() {
 
     expect(find.textContaining('1 overnight'), findsOneWidget);
     expect(find.textContaining('nap'), findsNothing);
+  });
+
+  testWidgets('history shows Awake Xm from stages when awake > 0',
+      (tester) async {
+    final night = SleepSessionSummary(
+      beginUnix:
+          DateTime(2026, 10, 9, 0, 45).millisecondsSinceEpoch ~/ 1000,
+      endUnix: DateTime(2026, 10, 9, 7, 15).millisecondsSinceEpoch ~/ 1000,
+    );
+    final repo = _FakeRepo(
+      sessions: [night],
+      stagesByKey: {
+        night.mergeKey: const [
+          SleepStageSummary(
+            timestampUnix: 1,
+            durationMin: 18,
+            wireType: 4,
+          ),
+          SleepStageSummary(
+            timestampUnix: 2,
+            durationMin: 120,
+            wireType: 1,
+          ),
+        ],
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: BpTheme.light(),
+        home: SleepHistoryScreen(
+          repository: repo,
+          initialYear: 2026,
+          initialMonth: 10,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Awake 18m'), findsOneWidget);
+  });
+
+  testWidgets('history omits awake chip when stages absent', (tester) async {
+    final night = SleepSessionSummary(
+      beginUnix:
+          DateTime(2026, 10, 9, 0, 45).millisecondsSinceEpoch ~/ 1000,
+      endUnix: DateTime(2026, 10, 9, 7, 15).millisecondsSinceEpoch ~/ 1000,
+    );
+    final repo = _FakeRepo(sessions: [night]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: BpTheme.light(),
+        home: SleepHistoryScreen(
+          repository: repo,
+          initialYear: 2026,
+          initialMonth: 10,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.textContaining('Awake'), findsNothing);
+    expect(find.textContaining('1 overnight'), findsOneWidget);
   });
 
   testWidgets('sleep list empty honesty copy', (tester) async {
