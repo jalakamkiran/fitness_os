@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fathom — Home redesign (Agon hybrid)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="stage">
+    <div class="phone" id="phone" data-mode="active" data-sessions="some">
+      <header class="app-header">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">F</span>
+          <div>
+            <p class="brand-title">Fathom</p>
+            <p class="brand-sub mono" id="syncLabel">GT5 · synced 2m ago</p>
+          </div>
+        </div>
+        <span class="sync-chip" id="syncChip" title="Sync reliability is out of scope for this cut">Quiet sync</span>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">Dark</button>
+      </header>
+
+      <main class="scroll">
+        <!-- Active Agon hybrid hero -->
+        <section class="hero only-active" aria-label="Today’s Agon">
+          <div class="progress-strip" aria-label="Habit progress">
+            <span class="pill"><span class="dot" aria-hidden="true"></span> Streak · 3 wk</span>
+            <span class="pill">Areté · L4</span>
+            <span class="pill">Depth · 42%</span>
+          </div>
+          <button class="chore-cta" type="button" id="choreCta">
+            <p class="chore-kicker">Today’s course</p>
+            <p class="chore-title">Main set · continuous build</p>
+            <p class="chore-sub">Warm-up · 8×100 progressive · cool-down · ~2.1k</p>
+          </button>
+        </section>
+
+        <!-- Idle: Odyssey snapshot -->
+        <section class="odyssey-card only-idle only-snapshot" aria-label="Odyssey snapshot" style="margin-top: 4px;">
+          <h3>Odyssey · last voyage</h3>
+          <p>Pool endurance · Depth 42% · Streak paused between Agons. Sleep and sessions still lead the day.</p>
+          <button class="ghost-cta" type="button">Open Odyssey</button>
+        </section>
+
+        <!-- Idle: Odyssey upsell -->
+        <section class="odyssey-card only-idle only-upsell" aria-label="Start Odyssey" style="margin-top: 4px;">
+          <h3>Begin an Odyssey</h3>
+          <p>Chart a pool Agon toward a proof swim. Habit rewards stay forgiving; dates stay honest.</p>
+          <button class="ghost-cta" type="button">Create Agon</button>
+        </section>
+
+        <p class="section-label">Last night</p>
+        <section class="sleep-card" aria-label="Sleep">
+          <div class="sleep-top">
+            <p class="sleep-dur">7h 12m</p>
+            <p class="sleep-window">23:18 → 06:30</p>
+          </div>
+          <p class="sleep-note">Solid window · feel-on-wake logged earlier</p>
+        </section>
+
+        <p class="section-label">Today’s sessions</p>
+        <div class="session-list has-sessions">
+          <button class="session-card" type="button">
+            <span class="session-ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></svg>
+            </span>
+            <span>
+              <p class="session-title">Pool swim</p>
+              <p class="session-meta">06:42 · continuous build</p>
+            </span>
+            <span class="session-stat">2,150 m</span>
+          </button>
+          <button class="session-card" type="button">
+            <span class="session-ico" aria-hidden="true" style="background: color-mix(in srgb, var(--hot) 12%, var(--bg)); color: var(--hot);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17v2a2 2 0 0 0 2 2h12"/><path d="M8 21V9"/><path d="M12 21V5"/><path d="M16 21v-7"/></svg>
+            </span>
+            <span>
+              <p class="session-title">Strength</p>
+              <p class="session-meta">18:10 · upper pull</p>
+            </span>
+            <span class="session-stat">41 min</span>
+          </button>
+        </div>
+        <div class="empty-sessions no-sessions">No sessions yet today — rest or not synced.</div>
+
+        <p class="section-label">This week</p>
+        <section class="adherence" aria-label="Week adherence">
+          <div class="adherence-head">
+            <h3>Plan adherence</h3>
+            <span>2 / 3 sessions</span>
+          </div>
+          <div class="dots" role="list">
+            <div class="dot-slot done" role="listitem"><div class="ring">✓</div><div class="lbl">Mon</div></div>
+            <div class="dot-slot done today" role="listitem"><div class="ring">✓</div><div class="lbl">Wed</div></div>
+            <div class="dot-slot" role="listitem"><div class="ring">·</div><div class="lbl">Fri</div></div>
+          </div>
+        </section>
+
+        <p class="section-label">Activity totals</p>
+        <div class="vitals-row" aria-label="Demoted activity totals">
+          <div class="vital"><p class="k">Calories</p><p class="v">1,842</p></div>
+          <div class="vital"><p class="k">Steps</p><p class="v">7,420</p></div>
+          <div class="vital"><p class="k">Workout</p><p class="v">1h 12m</p></div>
+        </div>
+      </main>
+
+      <nav class="tabbar" aria-label="Primary">
+        <button class="tab active" type="button">Home</button>
+        <button class="tab" type="button">Workouts</button>
+        <button class="tab" type="button">Recovery</button>
+        <button class="tab" type="button">More</button>
+      </nav>
+    </div>
+
+    <aside class="rail" aria-label="Prototype controls">
+      <p class="rail-back"><a href="../index.html">← Design review hub</a></p>
+      <h1>Home redesign</h1>
+      <p class="rail-lede">Approach A — <b>Agon hybrid stack</b>. Progress strip + today’s course as primary tap; sleep → sessions → week dots; calories demoted. Sync blanking is out of scope.</p>
+
+      <div class="rail-panel">
+        <h2>Agon state</h2>
+        <div class="mode-seg" role="tablist" aria-label="Agon state">
+          <button type="button" class="active" data-mode="active">Active · chore</button>
+          <button type="button" data-mode="idle-snapshot">No Agon · Odyssey</button>
+          <button type="button" data-mode="idle-upsell">No Agon · upsell</button>
+        </div>
+        <p class="rail-note">Matches R7–R12: hybrid hero when active; day instrument + snapshot/upsell when idle.</p>
+      </div>
+
+      <div class="rail-panel">
+        <h2>Today’s sessions</h2>
+        <div class="mode-seg" role="tablist" aria-label="Sessions">
+          <button type="button" class="active" data-sessions="some">Has sessions</button>
+          <button type="button" data-sessions="empty">Empty day</button>
+        </div>
+      </div>
+
+      <div class="rail-panel">
+        <h2>Probe questions</h2>
+        <ol class="req-list">
+          <li>What did you look at first — progress, chore, or sleep?</li>
+          <li>Can you start today’s course in one tap?</li>
+          <li>Do week dots answer “am I showing up?”</li>
+          <li>Idle upsell: inviting or nagging?</li>
+        </ol>
+      </div>
+
+      <div class="rail-panel">
+        <h2>Docs</h2>
+        <p class="rail-note">
+          <a href="../../brainstorms/2026-10-09-home-redesign-requirements.md">Requirements</a> ·
+          <a href="../../brainstorms/research/2026-10-09-home-reward-dopamine-gamification.md">Reward research</a> ·
+          <a href="../../brainstorms/research/2026-10-09-home-redesign-pol-probes.md">PoL probes</a>
+        </p>
+      </div>
+    </aside>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
