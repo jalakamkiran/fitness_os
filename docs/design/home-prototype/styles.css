@@ -539,3 +539,168 @@ html, body {
   .stage { grid-template-columns: 1fr; justify-items: center; }
   .rail { max-width: 390px; }
 }
+
+/* ───────── Agon dock (own row under header — horizontal) ───────── */
+.agon-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 4px;
+}
+.agon-dock-label {
+  margin: 0;
+  padding: 0 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 700;
+}
+.agon-dock-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: stretch;
+}
+.dock-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  text-decoration: none;
+  color: var(--ink);
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  position: relative;
+  transition: border-color 140ms ease, transform 140ms ease;
+}
+a.dock-btn:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+a.dock-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dock-ico {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  color: var(--accent);
+}
+.dock-ico svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+.dock-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.dock-name {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dock-cap {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* running swim Agon */
+body[data-agon="active"] .dock-btn.swim {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-elev));
+}
+body[data-agon="active"] .dock-btn.swim .dock-ico {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+body[data-agon="active"] .dock-btn.swim .dock-ico::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--up);
+  border: 2px solid var(--bg-elev);
+}
+body[data-agon="active"] .dock-btn.swim .dock-cap { color: color-mix(in srgb, var(--accent) 55%, var(--ink)); font-weight: 600; }
+/* not started */
+body[data-agon="none"] .dock-btn.swim {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+}
+body[data-agon="none"] .dock-btn.swim .dock-ico {
+  background: transparent;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, var(--line));
+  color: var(--ink-dim);
+}
+body[data-agon="none"] .dock-btn.swim .dock-ico::after {
+  content: "+";
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  border: none;
+}
+/* future sports */
+.dock-btn.ghost { opacity: 0.55; cursor: default; }
+.dock-btn.ghost .dock-ico {
+  background: transparent;
+  border: 1px dashed var(--line);
+  color: var(--ink-faint);
+}
+
+/* ───────── Odyssey strip (calm, one row) ───────── */
+.odyssey-strip {
+  display: grid; grid-template-columns: 52px repeat(3, 1fr) 14px; align-items: center; gap: 4px;
+  padding: 11px 12px; text-decoration: none; color: inherit;
+  background: linear-gradient(135deg, color-mix(in srgb, #b8863b 11%, var(--bg-elev)), var(--bg-elev) 75%);
+  border-color: color-mix(in srgb, #b8863b 28%, var(--line));
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+html[data-theme="dark"] .odyssey-strip { background: linear-gradient(135deg, color-mix(in srgb, #e6bd6a 10%, var(--bg-elev)), var(--bg-elev) 75%); border-color: color-mix(in srgb, #e6bd6a 26%, var(--line)); }
+.odyssey-strip:hover { transform: translateY(-1px); }
+.odyssey-strip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.os-label { margin: 0; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.07em; text-transform: uppercase; line-height: 1.25; color: color-mix(in srgb, #a9722b 90%, var(--ink)); font-weight: 500; }
+html[data-theme="dark"] .os-label { color: #e6bd6a; }
+.odyssey-strip > div { min-width: 0; padding-left: 10px; border-left: 1px solid var(--line); }
+.odyssey-strip strong { display: block; font-size: 18px; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.odyssey-strip strong small { font-size: 11px; font-weight: 600; color: var(--ink-dim); letter-spacing: 0; }
+.odyssey-strip span { display: block; margin-top: 2px; font-size: 10.5px; color: var(--ink-faint); font-weight: 600; white-space: nowrap; }
+.os-chev { font-style: normal; color: var(--ink-faint); font-size: 18px; line-height: 1; text-align: right; }
+
+/* ───────── Rail extras ───────── */
+.rail-panel-lite { margin-top: 14px; padding: 12px; border-radius: 14px; background: var(--bg-elev); border: 1px solid var(--line); }
+.rail-h { margin: 0 0 8px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); }
+.rail-seg { width: 100%; }
+.rail-seg .seg-btn { flex: 1; }
+.rail-sub { margin: 8px 0 0; font-size: 12px; line-height: 1.45; color: var(--ink-dim); }
+.rail-sub a { color: inherit; font-weight: 700; }

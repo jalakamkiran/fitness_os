@@ -1,0 +1,10 @@
+{
+  "asOfIso": "2026-10-09T12:00:00.000Z",
+  "note": "AE1 dogfood: ~1000 m continuous capacity from recent pool type-6 history",
+  "sessions": [
+    { "workoutNumber": 1, "type": 6, "distanceM": 1000, "daysAgo": 5 },
+    { "workoutNumber": 2, "type": 6, "distanceM": 800, "daysAgo": 12 },
+    { "workoutNumber": 3, "type": 6, "distanceM": 900, "daysAgo": 20 },
+    { "workoutNumber": 4, "type": 6, "distanceM": 750, "daysAgo": 40 }
+  ]
+}
