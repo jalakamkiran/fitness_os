@@ -102,6 +102,34 @@ void main() {
       final out = SleepDay.coalesceNocturnalSessions([morning, nap]);
       expect(out, hasLength(2));
     });
+
+    test('overnight ending before 10:00 does not glue ≤90m later nap', () {
+      final night = session(
+        DateTime(2026, 10, 8, 23, 0),
+        DateTime(2026, 10, 9, 9, 30),
+      );
+      final nap = session(
+        DateTime(2026, 10, 9, 10, 45),
+        DateTime(2026, 10, 9, 12, 0),
+      );
+      final out = SleepDay.coalesceNocturnalSessions([night, nap]);
+      expect(out, hasLength(2));
+    });
+
+    test('SEQUENCE main + 20m post-wakeup orphan stay separate', () {
+      final main = session(
+        DateTime(2026, 10, 9, 0, 30),
+        DateTime(2026, 10, 9, 7, 0),
+      );
+      final orphan = session(
+        DateTime(2026, 10, 9, 7, 20),
+        DateTime(2026, 10, 9, 7, 50),
+      );
+      final out = SleepDay.coalesceNocturnalSessions([main, orphan]);
+      expect(out, hasLength(2));
+      expect(out[0].endUnix, main.endUnix);
+      expect(out[1].beginUnix, orphan.beginUnix);
+    });
   });
 
   group('SleepDay.resolve', () {

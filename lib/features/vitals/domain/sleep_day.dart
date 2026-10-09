@@ -13,15 +13,7 @@ abstract final class SleepDay {
   /// Calendar date id for the current Huawei sleep-day relative to [now].
   ///
   /// After local 20:00, the current sleep-day flips to tomorrow's date.
-  static DateTime sleepDayId(DateTime now) {
-    final local = DateTime(now.year, now.month, now.day, now.hour, now.minute,
-        now.second, now.millisecond, now.microsecond);
-    if (local.hour >= 20) {
-      final tomorrow = local.add(const Duration(days: 1));
-      return DateTime(tomorrow.year, tomorrow.month, tomorrow.day);
-    }
-    return DateTime(local.year, local.month, local.day);
-  }
+  static DateTime sleepDayId(DateTime now) => sleepDayIdForOnset(now);
 
   /// Sleep-day id that owns a session by **onset** (begin local).
   static DateTime sleepDayIdForOnset(DateTime beginLocal) {
@@ -182,15 +174,9 @@ abstract final class SleepDay {
     if (gap > nocturnalGapSec) return false;
     if (sleepDayIdForSession(a) != sleepDayIdForSession(b)) return false;
 
-    final aEnd = _localFromUnix(a.endUnix);
-    final bBegin = _localFromUnix(b.beginUnix);
-    // Do not glue a clear afternoon nap onto a morning that already ended.
-    if (aEnd.hour >= 10 &&
-        bBegin.hour >= 10 &&
-        b.durationSec < napMaxSec &&
-        isIntentionalNap(b)) {
-      return false;
-    }
+    // Beyond micro-merge: never glue an intentional nap (afternoon, or
+    // post-wakeup orphan after a SEQUENCE main) onto the prior bout.
+    if (isIntentionalNap(b)) return false;
     return true;
   }
 
