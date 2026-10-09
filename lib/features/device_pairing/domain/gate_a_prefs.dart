@@ -76,4 +76,13 @@ abstract final class GateAPrefs {
 
   /// Swim dig-deeper / pipeline chrome on workout detail (default off).
   static const swimDigDeeper = 'swim_dig_deeper';
+
+  /// JSON list of ProgramIndexEntry (Programs feature).
+  static const programsIndexJson = 'programs_index_json';
+  /// Lifetime XP/chore ledger JSON (survives program archive; wiped on Forget).
+  static const programsLedgerJson = 'programs_ledger_json';
+  /// Side-file subdir for full program snapshots: programs/{id}.json
+  static const programsDir = 'programs';
+  /// Hide XP / levels / streaks (milestones + scorecards remain).
+  static const programsHideGameLayer = 'programs_hide_game_layer';
 }

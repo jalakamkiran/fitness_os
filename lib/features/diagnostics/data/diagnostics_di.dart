@@ -13,6 +13,7 @@ import 'package:fitness_os/features/food/data/food_day_export_service.dart';
 import 'package:fitness_os/features/food/data/food_meal_store.dart';
 import 'package:fitness_os/features/food/data/food_notification_scheduler.dart';
 import 'package:fitness_os/features/food/domain/food_capture_intent.dart';
+import 'package:fitness_os/features/programs/data/program_store.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
 import 'package:fitness_os/features/workout_history/data/strength_session_export_service.dart';
@@ -28,11 +29,11 @@ import 'package:fitness_os/features/workout_history/domain/repositories/workout_
 /// [initWorkoutHistoryDependencies] so wipe extras compose rather than overwrite.
 ///
 /// Last-writer composition: vitals clear → app export prune → food clear →
-/// food export prune → workout clearLocal → strength export prune →
-/// workout TCX prune → share_plus prune → cancel notifs → run session store
-/// clear → run export prune.
-/// DO NOT assign onForgetWipeExtras from food_di or workout_history_di;
-/// this is the only site.
+/// food export prune → programs clear → workout clearLocal → strength export
+/// prune → workout TCX prune → share_plus prune → cancel notifs → run session
+/// store clear → run export prune.
+/// DO NOT assign onForgetWipeExtras from food_di, programs_di, or
+/// workout_history_di; this is the only site.
 Future<void> initDiagnosticsDependencies(GetIt sl) async {
   if (sl.isRegistered<AppDataExportService>()) return;
 
@@ -99,6 +100,8 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
     final foodExport = sl.isRegistered<FoodDayExportService>()
         ? sl<FoodDayExportService>()
         : null;
+    final programStore =
+        sl.isRegistered<ProgramStore>() ? sl<ProgramStore>() : null;
     final workouts = sl.isRegistered<WorkoutHistoryRepository>()
         ? sl<WorkoutHistoryRepository>()
         : null;
@@ -122,6 +125,9 @@ Future<void> initDiagnosticsDependencies(GetIt sl) async {
       }
       if (foodExport != null) {
         await foodExport.pruneFoodExportCache();
+      }
+      if (programStore != null) {
+        await programStore.clearLocal();
       }
       if (workouts != null) {
         await workouts.clearLocal();

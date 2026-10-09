@@ -1,6 +1,7 @@
 import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:get_it/get_it.dart';
 
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/features/device_pairing/presentation/view/device_pairing_route.dart';
@@ -9,6 +10,10 @@ import 'package:fitness_os/features/home/domain/home_precedence.dart';
 import 'package:fitness_os/features/home/presentation/bloc/home_bloc.dart';
 import 'package:fitness_os/features/home/presentation/bloc/home_event.dart';
 import 'package:fitness_os/features/home/presentation/bloc/home_state.dart';
+import 'package:fitness_os/features/programs/presentation/controller/programs_controller.dart';
+import 'package:fitness_os/features/programs/presentation/view/programs_format.dart';
+import 'package:fitness_os/features/programs/presentation/view/programs_route.dart';
+import 'package:fitness_os/features/programs/presentation/widgets/agon_chrome.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/hr_sparkline.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_detail_route.dart';
 
@@ -114,6 +119,16 @@ class _HomeBody extends StatelessWidget {
             ),
           ),
         ),
+        // Agon dock sits under period chrome (matches home-prototype HTML).
+        if (snapshot.precedence == HomePrecedence.dataAvailable ||
+            snapshot.precedence == HomePrecedence.syncInProgress ||
+            snapshot.precedence == HomePrecedence.syncFailed)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: _HomeAgonDock(),
+            ),
+          ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
           sliver: SliverToBoxAdapter(
@@ -127,6 +142,12 @@ class _HomeBody extends StatelessWidget {
                     message!,
                     style: TextStyle(color: colors.hot, fontSize: 13),
                   ),
+                ],
+                if (snapshot.precedence == HomePrecedence.dataAvailable ||
+                    snapshot.precedence == HomePrecedence.syncInProgress ||
+                    snapshot.precedence == HomePrecedence.syncFailed) ...[
+                  const SizedBox(height: 12),
+                  const _HomeOdysseyStrip(),
                 ],
                 const SizedBox(height: 12),
                 ..._sectionsFor(
@@ -221,6 +242,449 @@ class _HomeBody extends StatelessWidget {
 
     out.add(_TodaySessionsSection(snapshot: s, muted: muted));
     return out;
+  }
+}
+
+/// Horizontal Agon sport dock — Swim live / Chart, Strength+Run soon.
+class _HomeAgonDock extends StatefulWidget {
+  const _HomeAgonDock();
+
+  @override
+  State<_HomeAgonDock> createState() => _HomeAgonDockState();
+}
+
+class _HomeAgonDockState extends State<_HomeAgonDock> {
+  ProgramsController? _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    if (GetIt.I.isRegistered<ProgramsController>()) {
+      _controller = GetIt.I<ProgramsController>();
+      _controller!.addListener(_onChanged);
+      // Controller defaults to loading=true before any load() — do not wait for
+      // sync/invalidation. Populate Agon from the store as soon as Home mounts.
+      if (_controller!.active == null) {
+        // ignore: discarded_futures
+        _controller!.load();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() {
+    // ProgramsEntry.load() notifies during route mount; never setState mid-build.
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = FathomColors.of(context);
+    final c = _controller;
+    final active = c?.hasActive == true;
+    final cap = active && c!.active != null
+        ? formatWeekChip(c.active!, DateTime.now()).replaceFirst('Week ', 'Wk ')
+        : (active ? 'Live' : 'Chart');
+
+    return Column(
+      key: const Key('home-programs-cta'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'AGONS',
+          style: TextStyle(
+            fontSize: 11,
+            letterSpacing: 0.7,
+            fontWeight: FontWeight.w700,
+            color: colors.inkFaint,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _DockBtn(
+                name: 'Swim',
+                cap: active ? '$cap · live' : 'Tap to start',
+                active: active,
+                dashed: !active,
+                icon: Icons.waves_rounded,
+                onTap: () => ProgramsRoute.go(context),
+                colors: colors,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _DockBtn(
+                name: 'Strength',
+                cap: 'Soon',
+                active: false,
+                ghost: true,
+                icon: Icons.fitness_center_rounded,
+                colors: colors,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _DockBtn(
+                name: 'Run',
+                cap: 'Soon',
+                active: false,
+                ghost: true,
+                icon: Icons.directions_run_rounded,
+                colors: colors,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _DockBtn extends StatelessWidget {
+  const _DockBtn({
+    required this.name,
+    required this.cap,
+    required this.active,
+    required this.icon,
+    required this.colors,
+    this.onTap,
+    this.ghost = false,
+    this.dashed = false,
+  });
+
+  final String name;
+  final String cap;
+  final bool active;
+  final bool ghost;
+  final bool dashed;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final FathomColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final border = active
+        ? Color.lerp(colors.accent, colors.line, 0.45)!
+        : dashed
+            ? Color.lerp(colors.accent, colors.line, 0.5)!
+            : colors.line;
+    final bg = active
+        ? Color.lerp(colors.accent, colors.bgElev, 0.9)!
+        : colors.bgElev;
+    final icoBg = active
+        ? colors.accent
+        : dashed
+            ? colors.bg
+            : colors.bg;
+    final icoColor = active
+        ? colors.accentInk
+        : ghost
+            ? colors.inkFaint
+            : colors.inkDim;
+
+    final child = Container(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: border,
+          style: dashed || ghost ? BorderStyle.solid : BorderStyle.solid,
+        ),
+      ),
+      child: Opacity(
+        opacity: ghost ? 0.55 : 1,
+        child: Row(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: icoBg,
+                    borderRadius: BorderRadius.circular(11),
+                    border: dashed
+                        ? Border.all(
+                            color: Color.lerp(colors.accent, colors.line, 0.45)!,
+                          )
+                        : ghost
+                            ? Border.all(color: colors.line)
+                            : null,
+                  ),
+                  child: Icon(icon, size: 20, color: icoColor),
+                ),
+                if (active)
+                  Positioned(
+                    top: -3,
+                    right: -3,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: colors.up,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: colors.bgElev, width: 2),
+                      ),
+                    ),
+                  ),
+                if (dashed)
+                  Positioned(
+                    top: -6,
+                    right: -6,
+                    child: Container(
+                      width: 16,
+                      height: 16,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: colors.accent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '+',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: colors.accentInk,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.1,
+                      color: colors.ink,
+                    ),
+                  ),
+                  Text(
+                    cap,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                      color: active
+                          ? Color.lerp(colors.accent, colors.ink, 0.35)!
+                          : colors.inkFaint,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (onTap == null) return child;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// Compact Odyssey strip when an Agon is live (hidden if game layer off / none).
+class _HomeOdysseyStrip extends StatefulWidget {
+  const _HomeOdysseyStrip();
+
+  @override
+  State<_HomeOdysseyStrip> createState() => _HomeOdysseyStripState();
+}
+
+class _HomeOdysseyStripState extends State<_HomeOdysseyStrip> {
+  ProgramsController? _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    if (GetIt.I.isRegistered<ProgramsController>()) {
+      _controller = GetIt.I<ProgramsController>();
+      _controller!.addListener(_onChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = _controller;
+    if (c == null || !c.hasActive || c.hideGameLayer) {
+      return const SizedBox.shrink();
+    }
+    final colors = FathomColors.of(context);
+    final bronze = agonBronzeOf(context);
+    final ledger = c.ledger;
+    final line = Color.lerp(bronze, colors.line, 0.68)!;
+
+    return Material(
+      color: Color.lerp(bronze, colors.bgElev, 0.87)!,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        key: const Key('home-odyssey-strip'),
+        onTap: () => ProgramsRoute.go(context),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 11, 10, 11),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: line),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color.lerp(bronze, colors.bgElev, 0.87)!,
+                colors.bgElev,
+              ],
+            ),
+          ),
+          child: Row(
+            children: [
+              Text(
+                'YOUR\nODYSSEY',
+                style: TextStyle(
+                  fontSize: 9.5,
+                  letterSpacing: 0.7,
+                  height: 1.25,
+                  fontWeight: FontWeight.w500,
+                  color: bronze,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+              const SizedBox(width: 10),
+              _HomeOdStat(
+                value: '${ledger.currentStreakWeeks}',
+                unit: ' wk',
+                label: 'Streak',
+                colors: colors,
+                line: line,
+              ),
+              _HomeOdStat(
+                value: formatMeters(ledger.totalXp),
+                label: 'Areté',
+                colors: colors,
+                line: line,
+              ),
+              _HomeOdStat(
+                value: '${ledger.level}',
+                label: 'Depth',
+                colors: colors,
+                line: line,
+              ),
+              Icon(Icons.chevron_right, size: 18, color: colors.inkFaint),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeOdStat extends StatelessWidget {
+  const _HomeOdStat({
+    required this.value,
+    required this.label,
+    required this.colors,
+    required this.line,
+    this.unit,
+  });
+
+  final String value;
+  final String? unit;
+  final String label;
+  final FathomColors colors;
+  final Color line;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.only(left: 10),
+        decoration: BoxDecoration(
+          border: Border(left: BorderSide(color: line)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text.rich(
+              TextSpan(
+                text: value,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
+                  color: colors.ink,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+                children: unit == null
+                    ? null
+                    : [
+                        TextSpan(
+                          text: unit,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: colors.inkDim,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ],
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: colors.inkFaint,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
