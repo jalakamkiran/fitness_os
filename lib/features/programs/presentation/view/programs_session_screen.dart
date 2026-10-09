@@ -244,6 +244,9 @@ class _ProgramsSessionScreenState extends State<ProgramsSessionScreen> {
     final title = formatCourseTitle(chore);
     final sub = formatMainSetSummary(chore);
     final dayTag = formatCourseDayTag(chore.dayIso);
+    final segDone = open ? _segDone : const [true, true, true];
+    final preLandDone = open ? _preLandDone : true;
+    final postLandDone = open ? _postLandDone : true;
 
     return Scaffold(
       backgroundColor: colors.bg,
@@ -342,17 +345,21 @@ class _ProgramsSessionScreenState extends State<ProgramsSessionScreen> {
                     'Hip openers / world’s greatest',
                     'Ankle rocks · easy breathing',
                   ],
-                  done: _preLandDone,
-                  onToggle: () => setState(() => _preLandDone = !_preLandDone),
+                  done: preLandDone,
+                  onToggle: open
+                      ? () => setState(() => _preLandDone = !_preLandDone)
+                      : null,
                   colors: colors,
                 ),
                 const SizedBox(height: 10),
                 ChoreChecklist(
                   chore: chore,
-                  segDone: _segDone,
-                  onToggleSeg: (i) {
-                    setState(() => _segDone[i] = !_segDone[i]);
-                  },
+                  segDone: segDone,
+                  onToggleSeg: open
+                      ? (i) {
+                          setState(() => _segDone[i] = !_segDone[i]);
+                        }
+                      : null,
                 ),
                 _LandBlock(
                   title: 'After you swim',
@@ -362,9 +369,10 @@ class _ProgramsSessionScreenState extends State<ProgramsSessionScreen> {
                     'Hip flexor + calf',
                     'Slow nasal breaths · 1–2 min',
                   ],
-                  done: _postLandDone,
-                  onToggle: () =>
-                      setState(() => _postLandDone = !_postLandDone),
+                  done: postLandDone,
+                  onToggle: open
+                      ? () => setState(() => _postLandDone = !_postLandDone)
+                      : null,
                   colors: colors,
                 ),
                 const SizedBox(height: 10),
@@ -397,11 +405,41 @@ class _ProgramsSessionScreenState extends State<ProgramsSessionScreen> {
                   ),
                   const SizedBox(height: 12),
                 ],
-                if (!open)
-                  Text(
-                    'Status: ${chore.state.name}',
-                    style: TextStyle(color: colors.inkDim, fontSize: 14),
+                if (!open) ...[
+                  AgonCard(
+                    key: const Key('programs-chore-receipt'),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          chore.state == ChoreState.doneSynced
+                              ? 'Course synced'
+                              : chore.state == ChoreState.doneManual ||
+                                      chore.state == ChoreState.adjusted
+                                  ? 'Course marked done'
+                                  : 'Course closed',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: colors.ink,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          chore.matchedWorkoutNumber != null
+                              ? 'Matched pool swim · #${chore.matchedWorkoutNumber}'
+                                  '${chore.judgedDistanceM != null ? ' · ${formatMeters(chore.judgedDistanceM!)} m' : ''}'
+                              : 'This session is complete — no further action needed.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: colors.inkDim,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                ],
                 const SizedBox(height: 72),
               ],
             ),
@@ -526,7 +564,7 @@ class _LandBlock extends StatelessWidget {
   final String subtitle;
   final List<String> lines;
   final bool done;
-  final VoidCallback onToggle;
+  final VoidCallback? onToggle;
   final FathomColors colors;
 
   @override

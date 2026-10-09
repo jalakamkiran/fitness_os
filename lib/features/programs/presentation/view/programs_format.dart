@@ -114,15 +114,20 @@ String formatMainSetSummary(ChoreSession chore) {
   return '${main.length} main sets · ${formatMeters(totalMain)} m · with rests';
 }
 
-/// Day label for layer tag, e.g. `Fri Oct 9 · Training`.
-String formatCourseDayTag(String dayIso, {String role = 'Training'}) {
+DateTime? tryParseIsoDay(String dayIso) {
   final parts = dayIso.split('-');
-  if (parts.length != 3) return role;
+  if (parts.length != 3) return null;
   final y = int.tryParse(parts[0]);
   final mo = int.tryParse(parts[1]);
   final d = int.tryParse(parts[2]);
-  if (y == null || mo == null || d == null) return role;
-  final dt = DateTime(y, mo, d);
+  if (y == null || mo == null || d == null) return null;
+  return DateTime(y, mo, d);
+}
+
+/// Short calendar label, e.g. `Sat Oct 31`.
+String formatShortDate(String dayIso) {
+  final dt = tryParseIsoDay(dayIso);
+  if (dt == null) return dayIso;
   const dow = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const mon = [
     'Jan',
@@ -138,8 +143,14 @@ String formatCourseDayTag(String dayIso, {String role = 'Training'}) {
     'Nov',
     'Dec',
   ];
-  // DateTime.weekday: Mon=1 … Sun=7
-  return '${dow[dt.weekday - 1]} ${mon[dt.month - 1]} ${dt.day} · $role';
+  return '${dow[dt.weekday - 1]} ${mon[dt.month - 1]} ${dt.day}';
+}
+
+/// Day label for layer tag, e.g. `Fri Oct 9 · Training`.
+String formatCourseDayTag(String dayIso, {String role = 'Training'}) {
+  final short = formatShortDate(dayIso);
+  if (short == dayIso) return role;
+  return '$short · $role';
 }
 
 int sumPartMeters(List<ChoreBlock> blocks, String part) => blocks

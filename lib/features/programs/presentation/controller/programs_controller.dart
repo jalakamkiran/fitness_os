@@ -104,7 +104,34 @@ class ProgramsController extends ChangeNotifier {
     return p.milestones.isEmpty ? null : p.milestones.last;
   }
 
+  /// Open course to surface on the Agon hub.
+  ///
+  /// Prefers today's chore while it is still open. Once today's session is
+  /// complete (or there is no today chore), advances to the next open course
+  /// so the hub never keeps a finished session as "Due today".
   ChoreSession? get todaysChore {
+    final p = _active;
+    if (p == null) return null;
+    final today = _isoDay(_now());
+    for (final c in p.chores) {
+      if (c.dayIso == today &&
+          c.state != ChoreState.superseded &&
+          _isOpenChoreState(c.state)) {
+        return c;
+      }
+    }
+    ChoreSession? nextOpen;
+    for (final c in p.chores) {
+      if (!_isOpenChoreState(c.state)) continue;
+      if (nextOpen == null || c.dayIso.compareTo(nextOpen.dayIso) < 0) {
+        nextOpen = c;
+      }
+    }
+    return nextOpen;
+  }
+
+  /// Today's chore including completed — for receipts / Home classification.
+  ChoreSession? get todaysChoreIncludingDone {
     final p = _active;
     if (p == null) return null;
     final today = _isoDay(_now());
@@ -113,15 +140,44 @@ class ProgramsController extends ChangeNotifier {
         return c;
       }
     }
-    // Fall back to next open chore.
+    return null;
+  }
+
+  static bool _isOpenChoreState(ChoreState state) {
+    return state == ChoreState.scheduled ||
+        state == ChoreState.due ||
+        state == ChoreState.lapsed;
+  }
+
+  /// Manual trial CTA only when a proof session is due/overdue and not synced.
+  ///
+  /// Everyday training never needs "Record trial" — proof swims auto-apply on
+  /// rematch; this is a fallback if sync missed the continuous swim.
+  bool get trialNeedsManualRecord {
+    final p = _active;
+    final ms = nextMilestone;
+    if (p == null || ms == null) return false;
+    if (ms.status == MilestoneStatus.passed) return false;
+    final today = _isoDay(_now());
     for (final c in p.chores) {
-      if (c.state == ChoreState.scheduled ||
-          c.state == ChoreState.due ||
-          c.state == ChoreState.lapsed) {
-        return c;
+      if (c.milestoneId != ms.id || c.role != ChoreRole.proof) continue;
+      if (c.state == ChoreState.doneSynced ||
+          c.state == ChoreState.doneManual ||
+          c.state == ChoreState.adjusted) {
+        return false;
+      }
+      if (_isOpenChoreState(c.state) && c.dayIso.compareTo(today) <= 0) {
+        return true;
       }
     }
-    return null;
+    // No dedicated open proof chore yet — only offer fallback if forecast day
+    // is today or past.
+    return ms.forecastDateIso.compareTo(today) <= 0 &&
+        (ms.status == MilestoneStatus.due ||
+            ms.status == MilestoneStatus.upcoming ||
+            ms.status == MilestoneStatus.nearPass ||
+            ms.status == MilestoneStatus.failed ||
+            ms.status == MilestoneStatus.delayed);
   }
 
   /// Resolve store from GetIt when registered; optional history for soft-warn.
@@ -218,6 +274,7 @@ class ProgramsController extends ChangeNotifier {
 
     final chores = List<ChoreSession>.from(program.chores);
     var ledger = _ledger;
+    final proofMatches = <ChoreMatchResult>[];
     for (final match in matches) {
       final idx = chores.indexWhere((c) => c.id == match.chore.id);
       if (idx < 0) continue;
@@ -229,9 +286,58 @@ class ProgramsController extends ChangeNotifier {
         asOf: _now(),
         structureMatched: match.chore.hasWuMainCd,
       );
+      if (match.chore.role == ChoreRole.proof &&
+          match.chore.milestoneId != null) {
+        proofMatches.add(match);
+      }
     }
 
-    final next = program.copyWith(chores: chores);
+    var next = program.copyWith(chores: chores);
+
+    // Auto-record trials when a proof-day swim syncs — no manual "Record trial".
+    for (final match in proofMatches) {
+      final milestoneId = match.chore.milestoneId!;
+      Milestone? milestone;
+      for (final m in next.milestones) {
+        if (m.id == milestoneId) {
+          milestone = m;
+          break;
+        }
+      }
+      if (milestone == null || milestone.status == MilestoneStatus.passed) {
+        continue;
+      }
+      final proof = _matcher.matchProof(
+        milestone: milestone,
+        swim: match.swim,
+        continuousConfirmed: true,
+      );
+      next = _planner.applyProofOutcome(
+        next,
+        milestoneId: milestoneId,
+        outcome: proof.outcome,
+        asOf: _now(),
+      );
+      if (proof.judgedDistanceM != null) {
+        next = next.copyWith(
+          milestones: [
+            for (final m in next.milestones)
+              if (m.id == milestoneId)
+                m.copyWith(notes: 'Judged ${proof.judgedDistanceM} m · auto')
+              else
+                m,
+          ],
+        );
+      }
+      ledger = ProgressEngine.recordProofAttempt(
+        ledger,
+        passed: proof.outcome == ProofOutcome.pass,
+        programId: next.id,
+        milestoneId: milestoneId,
+        asOf: _now(),
+      );
+    }
+
     await _store.save(next);
     await _store.saveLedger(ledger);
     _active = next;
