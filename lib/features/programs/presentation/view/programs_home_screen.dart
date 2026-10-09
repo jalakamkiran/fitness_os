@@ -62,6 +62,14 @@ class ProgramsHomeScreen extends StatelessWidget {
             ],
             SoftWarnBanner(result: controller.softWarn),
             if (controller.softWarn.warn) const SizedBox(height: 14),
+            if (controller.asOfLastSyncLabel != null) ...[
+              Text(
+                controller.asOfLastSyncLabel!,
+                key: const Key('programs-as-of-sync'),
+                style: TextStyle(fontSize: 12, color: colors.inkDim),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (ms != null) _MilestoneCard(milestone: ms, colors: colors),
             const SizedBox(height: 14),
             _ForecastCard(program: program, colors: colors),

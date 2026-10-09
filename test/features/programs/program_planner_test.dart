@@ -223,6 +223,66 @@ void main() {
       expect(after.milestones.first.status.name, 'passed');
       expect(after.milestones.first.passedAtIso, isNotNull);
     });
+
+    test('fail rebuild preserves doneSynced chore history', () {
+      final program = planner.plan(
+        intake: _intake(),
+        baseline: _baseline(),
+        startDate: _start,
+        id: 'fail_keep',
+      );
+      final first = program.chores.first;
+      final locked = first.copyWith(
+        state: ChoreState.doneSynced,
+        judgedDistanceM: first.targetDistanceM,
+        matchedWorkoutNumber: 7,
+        matchedStartTime: 1700000000,
+      );
+      final withHistory = program.copyWith(
+        chores: [locked, ...program.chores.skip(1)],
+      );
+      final ms = withHistory.milestones.first;
+
+      final after = planner.applyProofOutcome(
+        withHistory,
+        milestoneId: ms.id,
+        outcome: ProofOutcome.fail,
+        asOf: _start.add(const Duration(days: 14)),
+      );
+
+      final kept = after.chores.where((c) => c.id == locked.id).toList();
+      expect(kept, hasLength(1));
+      expect(kept.first.state, ChoreState.doneSynced);
+      expect(kept.first.dayIso, locked.dayIso);
+      expect(kept.first.matchedWorkoutNumber, 7);
+    });
+
+    test('nearPass does not move completed chore days', () {
+      final program = planner.plan(
+        intake: _intake(),
+        baseline: _baseline(),
+        startDate: _start,
+        id: 'near_keep',
+      );
+      final first = program.chores.first;
+      final locked = first.copyWith(state: ChoreState.doneManual);
+      final withHistory = program.copyWith(
+        chores: [locked, ...program.chores.skip(1)],
+      );
+      final ms = withHistory.milestones.first;
+      final beforeDay = locked.dayIso;
+
+      final after = planner.applyProofOutcome(
+        withHistory,
+        milestoneId: ms.id,
+        outcome: ProofOutcome.nearPass,
+        asOf: _start.add(const Duration(days: 14)),
+      );
+
+      final kept = after.chores.firstWhere((c) => c.id == locked.id);
+      expect(kept.dayIso, beforeDay);
+      expect(kept.state, ChoreState.doneManual);
+    });
   });
 
   group('rolesForSessionsPerWeek', () {

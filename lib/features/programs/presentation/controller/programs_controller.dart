@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fitness_os/core/huawei/huawei_link.dart' show WorkoutSummary;
+import 'package:fitness_os/core/storage/store_invalidation.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/programs/data/program_store.dart';
 import 'package:fitness_os/features/programs/domain/baseline.dart';
@@ -16,6 +19,7 @@ import 'package:fitness_os/features/programs/domain/progress_ledger.dart';
 import 'package:fitness_os/features/programs/domain/scorecards.dart';
 import 'package:fitness_os/features/programs/domain/soft_load_warn.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
+import 'package:fitness_os/features/workout_history/domain/in_session_hr_lock.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 
 /// Athlete-facing Programs state: active program, ledger, soft-warn, scorecards.
@@ -29,6 +33,7 @@ class ProgramsController extends ChangeNotifier {
     ChoreMatcher? matcher,
     SharedPreferences? prefs,
     WorkoutHistoryRepository? workoutHistory,
+    StoreInvalidation? invalidation,
     DateTime Function()? now,
   })  : _store = store,
         _planner = planner ?? ProgramPlanner(),
@@ -36,7 +41,11 @@ class ProgramsController extends ChangeNotifier {
         _matcher = matcher ?? ChoreMatcher(),
         _prefs = prefs,
         _workoutHistory = workoutHistory,
-        _now = now ?? DateTime.now;
+        _now = now ?? DateTime.now {
+    _invalidationSub = invalidation?.stream.listen((_) {
+      unawaited(rematchAfterSync());
+    });
+  }
 
   final ProgramStore _store;
   final ProgramPlanner _planner;
@@ -45,6 +54,7 @@ class ProgramsController extends ChangeNotifier {
   final SharedPreferences? _prefs;
   final WorkoutHistoryRepository? _workoutHistory;
   final DateTime Function() _now;
+  StreamSubscription<void>? _invalidationSub;
 
   Program? _active;
   ProgressLedger _ledger = const ProgressLedger();
@@ -57,6 +67,7 @@ class ProgramsController extends ChangeNotifier {
   bool _loading = true;
   String? _error;
   String? _createHint;
+  String? _asOfLastSyncLabel;
 
   Program? get active => _active;
   ProgressLedger get ledger => _ledger;
@@ -65,6 +76,9 @@ class ProgramsController extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
   String? get createHint => _createHint;
+
+  /// Calm "as of last sync" cue so chores aren't marked missed pre-sync.
+  String? get asOfLastSyncLabel => _asOfLastSyncLabel;
   bool get hasActive =>
       _active != null && _active!.status == ProgramStatus.active;
 
@@ -120,7 +134,17 @@ class ProgramsController extends ChangeNotifier {
       workoutHistory: sl.isRegistered<WorkoutHistoryRepository>()
           ? sl<WorkoutHistoryRepository>()
           : null,
+      invalidation: sl.isRegistered<StoreInvalidation>()
+          ? sl<StoreInvalidation>()
+          : null,
     );
+  }
+
+  @override
+  void dispose() {
+    _invalidationSub?.cancel();
+    _invalidationSub = null;
+    super.dispose();
   }
 
   Future<void> load() async {
@@ -130,6 +154,8 @@ class ProgramsController extends ChangeNotifier {
     try {
       _active = await _store.loadActive();
       _ledger = await _store.loadLedger();
+      _refreshAsOfLabel();
+      await rematchAfterSync(reloadIfIdle: false);
       await _refreshSoftWarn();
       _recomputeScorecards();
     } catch (e) {
@@ -138,6 +164,82 @@ class ProgramsController extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  /// Rematch pool chores after workout sync ([StoreInvalidation] or load).
+  Future<void> rematchAfterSync({bool reloadIfIdle = true}) async {
+    var program = _active;
+    if (program == null && reloadIfIdle) {
+      program = await _store.loadActive();
+      _active = program;
+      _ledger = await _store.loadLedger();
+    }
+    if (program == null || program.status != ProgramStatus.active) {
+      await _refreshSoftWarn();
+      _refreshAsOfLabel();
+      notifyListeners();
+      return;
+    }
+
+    final swims = await _loadSwimsSafe();
+    if (swims == null || swims.isEmpty) {
+      await _refreshSoftWarn();
+      _refreshAsOfLabel();
+      _recomputeScorecards();
+      notifyListeners();
+      return;
+    }
+
+    final candidates = swims
+        .where((s) => s.type == poolSwimWorkoutType)
+        .map(
+          (s) => PoolSwimCandidate(
+            workoutNumber: s.workoutNumber,
+            startTime: s.startTime,
+            type: s.type,
+            durationSec: s.durationSec,
+            distanceM: s.distanceM,
+          ),
+        )
+        .toList(growable: false);
+
+    final matches = _matcher.matchChores(
+      program: program,
+      swims: candidates,
+      asOf: _now(),
+    );
+    if (matches.isEmpty) {
+      await _refreshSoftWarn();
+      _refreshAsOfLabel();
+      _recomputeScorecards();
+      notifyListeners();
+      return;
+    }
+
+    final chores = List<ChoreSession>.from(program.chores);
+    var ledger = _ledger;
+    for (final match in matches) {
+      final idx = chores.indexWhere((c) => c.id == match.chore.id);
+      if (idx < 0) continue;
+      chores[idx] = match.chore;
+      ledger = ProgressEngine.recordChoreCompletion(
+        ledger,
+        chore: match.chore,
+        sessionsPerWeek: program.intake.sessionsPerWeek,
+        asOf: _now(),
+        structureMatched: match.chore.hasWuMainCd,
+      );
+    }
+
+    final next = program.copyWith(chores: chores);
+    await _store.save(next);
+    await _store.saveLedger(ledger);
+    _active = next;
+    _ledger = ledger;
+    await _refreshSoftWarn();
+    _refreshAsOfLabel();
+    _recomputeScorecards();
+    notifyListeners();
   }
 
   /// Create + activate from intake. Uses history baseline when available;
@@ -170,7 +272,7 @@ class ProgramsController extends ChangeNotifier {
                   ? baseline.capacityDistanceM
                   : intake.goalDistanceM ~/ 2);
           baseline = BaselineResolver.selfReport(
-            capacityDistanceM: capacity.clamp(200, intake.goalDistanceM),
+            capacityDistanceM: _clampCapacity(capacity, intake.goalDistanceM),
             cssPaceSecPer100:
                 selfReportCssPaceSecPer100 ?? baseline.cssPaceSecPer100,
           );
@@ -181,7 +283,7 @@ class ProgramsController extends ChangeNotifier {
         final capacity =
             selfReportCapacityM ?? (intake.goalDistanceM * 0.8).round();
         baseline = BaselineResolver.selfReport(
-          capacityDistanceM: capacity.clamp(200, intake.goalDistanceM),
+          capacityDistanceM: _clampCapacity(capacity, intake.goalDistanceM),
           cssPaceSecPer100: selfReportCssPaceSecPer100,
         );
         _createHint =
@@ -299,12 +401,23 @@ class ProgramsController extends ChangeNotifier {
     final program = _active;
     if (program == null) return null;
 
-    final slipped = _planner.applyProofOutcome(
+    var slipped = _planner.applyProofOutcome(
       program,
       milestoneId: milestoneId,
       outcome: outcome,
       asOf: _now(),
     );
+    if (judgedDistanceM != null) {
+      slipped = slipped.copyWith(
+        milestones: [
+          for (final m in slipped.milestones)
+            if (m.id == milestoneId)
+              m.copyWith(notes: 'Judged $judgedDistanceM m')
+            else
+              m,
+        ],
+      );
+    }
     await _store.save(slipped);
 
     var ledger = ProgressEngine.recordProofAttempt(
@@ -377,6 +490,31 @@ class ProgramsController extends ChangeNotifier {
       return;
     }
     _scorecards = Scorecards.compute(program: p, ledger: _ledger);
+  }
+
+  void _refreshAsOfLabel() {
+    final prefs = _prefs;
+    if (prefs == null) {
+      _asOfLastSyncLabel = null;
+      return;
+    }
+    final ms = prefs.getInt(GateAPrefs.homeLastSyncAtMs);
+    if (ms == null || ms <= 0) {
+      _asOfLastSyncLabel = null;
+      return;
+    }
+    final t = DateTime.fromMillisecondsSinceEpoch(ms);
+    final hh = t.hour.toString().padLeft(2, '0');
+    final mm = t.minute.toString().padLeft(2, '0');
+    _asOfLastSyncLabel = 'as of last sync · $hh:$mm';
+  }
+
+  /// Capacity clamp safe when [goalM] &lt; 200 (non-UI callers).
+  static int _clampCapacity(int capacity, int goalM) {
+    final upper = goalM < 200 ? 200 : goalM;
+    if (capacity < 200) return 200;
+    if (capacity > upper) return upper;
+    return capacity;
   }
 
   Future<List<CanonicalSwimSession>?> _loadSwimsSafe() async {

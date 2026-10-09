@@ -3,6 +3,7 @@
 /// Sources distilled in
 /// `docs/brainstorms/research/2026-10-09-swim-training-algorithms-datasets.md` §6–7.
 /// Numbers are planning heuristics, not physiology truth.
+library;
 
 // --- Capacity ladder -------------------------------------------------------
 
@@ -99,7 +100,7 @@ const double nearPassDistanceFraction = 0.90;
 /// Round [metres] to nearest [distanceRoundM] (minimum one step when > 0).
 int roundToPoolStep(int metres) {
   if (metres <= 0) return 0;
-  final step = distanceRoundM;
+  const step = distanceRoundM;
   final rounded = ((metres + step ~/ 2) ~/ step) * step;
   return rounded < step ? step : rounded;
 }

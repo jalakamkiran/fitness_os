@@ -4,8 +4,6 @@ import 'package:fitness_os/features/programs/domain/baseline.dart';
 import 'package:fitness_os/features/programs/domain/chore_session.dart';
 import 'package:fitness_os/features/programs/domain/milestone.dart';
 import 'package:fitness_os/features/programs/domain/program.dart';
-import 'package:fitness_os/features/programs/domain/rules_pack/formulas.dart';
-import 'package:fitness_os/features/programs/domain/rules_pack/patterns.dart';
 import 'package:fitness_os/features/programs/domain/rules_pack/rules_pack.dart';
 
 /// Proof attempt outcome used to slip or advance the milestone ladder.
@@ -189,7 +187,7 @@ class ProgramPlanner {
       if (outcome == ProofOutcome.fail) {
         final capacity = program.baseline?.capacityDistanceM ??
             program.intake.goalDistanceM;
-        chores = _buildChores(
+        final rebuilt = _buildChores(
           programId: program.id,
           start: start,
           horizonWeeks: program.intake.horizonWeeks,
@@ -206,11 +204,27 @@ class ProgramPlanner {
           // After fail, seed slightly flatter growth and smaller key sessions.
           afterFail: true,
         );
+        // Keep completed / skipped history; replace only open days.
+        final locked = [
+          for (final c in program.chores)
+            if (_isLockedHistory(c)) c,
+        ];
+        if (locked.isEmpty) {
+          chores = rebuilt;
+        } else {
+          final lockedDays = {for (final c in locked) c.dayIso};
+          chores = [
+            ...locked,
+            for (final c in rebuilt)
+              if (!lockedDays.contains(c.dayIso)) c,
+          ]..sort((a, b) => a.dayIso.compareTo(b.dayIso));
+        }
       } else {
         chores = [
           for (final c in program.chores)
             if (_parseIso(c.dayIso) != null &&
-                !_isBeforeMilestoneDay(c.dayIso, target.plannedDateIso))
+                !_isBeforeMilestoneDay(c.dayIso, target.plannedDateIso) &&
+                !_isLockedHistory(c))
               c.copyWith(
                 dayIso: _iso(
                   _parseIso(c.dayIso)!.add(Duration(days: slipDays)),
@@ -473,7 +487,7 @@ class ProgramPlanner {
       var cd = coolDownDistanceM(sessionTotalM);
       if (cd < 200) cd = 200;
       final pre = patternById('PRE1');
-      final preDist = 4 * 50 + 2 * 25; // 250
+      const preDist = 4 * 50 + 2 * 25; // 250
       final wuCore = wu > preDist + warmUpFloorM
           ? wu - preDist
           : warmUpFloorM;
@@ -496,7 +510,7 @@ class ProgramPlanner {
         ),
         ChoreBlock(
           part: 'main',
-          label: 'Continuous ${proofDistanceM} m proof',
+          label: 'Continuous $proofDistanceM m proof',
           distanceM: proofDistanceM,
           restGuidanceSec: 0,
           patternId: 'PRF1',
@@ -706,6 +720,24 @@ class ProgramPlanner {
 
   bool _isBeforeMilestoneDay(String dayIso, String milestonePlannedIso) {
     return dayIso.compareTo(milestonePlannedIso) < 0;
+  }
+
+  /// Habit outcomes that must not be rewritten by proof slip / fail rebuild.
+  bool _isLockedHistory(ChoreSession chore) {
+    switch (chore.state) {
+      case ChoreState.doneSynced:
+      case ChoreState.doneManual:
+      case ChoreState.adjusted:
+      case ChoreState.skippedExcused:
+      case ChoreState.skippedOther:
+      case ChoreState.moved:
+      case ChoreState.superseded:
+        return true;
+      case ChoreState.scheduled:
+      case ChoreState.due:
+      case ChoreState.lapsed:
+        return false;
+    }
   }
 
   // --- Dates / ids ---------------------------------------------------------
