@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
+import 'package:fitness_os/features/vitals/domain/sleep_day.dart';
 import 'package:fitness_os/features/vitals/presentation/view/sleep_detail_route.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/sleep_formatters.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/sleep_session_card.dart';
@@ -45,14 +46,30 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final sessions = await _repo.loadSleepSessionsForMonth(
+    final raw = await _repo.loadSleepSessionsForMonth(
       year: _year,
       month: _month,
     );
+    // Idempotent presentation coalesce for stale pre-Sync fragment prefs.
+    final sessions = List<SleepSessionSummary>.from(
+      SleepDay.coalesceNocturnalSessions(raw),
+    )..sort((a, b) => b.endUnix.compareTo(a.endUnix));
     final scores = <String, int>{};
     await Future.wait(sessions.map((s) async {
       final summary = await _repo.loadTruSleepSummary(s);
-      final score = summary?.sleepScore;
+      var score = summary?.sleepScore;
+      // Coalesced bounds may miss enrich until Sync; try overlapping raw keys.
+      if (score == null || score <= 0) {
+        for (final r in raw) {
+          if (r.beginUnix >= s.endUnix || r.endUnix <= s.beginUnix) continue;
+          final alt = await _repo.loadTruSleepSummary(r);
+          final altScore = alt?.sleepScore;
+          if (altScore != null && altScore > 0) {
+            score = altScore;
+            break;
+          }
+        }
+      }
       if (score != null && score > 0) {
         scores[s.mergeKey] = score;
       }
@@ -88,8 +105,8 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
     final colors = FathomColors.of(context);
     final theme = Theme.of(context);
     final overnightCount =
-        _sessions.where(sleepCrossesLocalMidnight).length;
-    final napCount = _sessions.length - overnightCount;
+        _sessions.where((s) => sleepIsMainOvernight(s)).length;
+    final napCount = _sessions.where(sleepIsIntentionalNap).length;
 
     return Scaffold(
       backgroundColor: colors.bg,

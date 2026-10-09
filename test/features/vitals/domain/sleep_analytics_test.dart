@@ -34,6 +34,39 @@ void main() {
       expect(got, [overnight]);
     });
 
+    test('recentOvernightSessions includes same-calendar-day overnight', () {
+      final now = DateTime(2026, 10, 7, 18);
+      final sameDay = SleepSessionSummary(
+        beginUnix:
+            DateTime(2026, 10, 7, 1, 36).millisecondsSinceEpoch ~/ 1000,
+        endUnix: DateTime(2026, 10, 7, 8, 11).millisecondsSinceEpoch ~/ 1000,
+      );
+      final got = recentOvernightSessions(
+        [sameDay],
+        now: now,
+        dayCount: 7,
+      );
+      expect(got, [sameDay]);
+    });
+
+    test('recentOvernightSessions coalesces fragmented prefs', () {
+      final now = DateTime(2026, 10, 8, 12);
+      final a = SleepSessionSummary(
+        beginUnix:
+            DateTime(2026, 10, 8, 0, 30).millisecondsSinceEpoch ~/ 1000,
+        endUnix: DateTime(2026, 10, 8, 3, 10).millisecondsSinceEpoch ~/ 1000,
+      );
+      final b = SleepSessionSummary(
+        beginUnix:
+            DateTime(2026, 10, 8, 3, 19).millisecondsSinceEpoch ~/ 1000,
+        endUnix: DateTime(2026, 10, 8, 7, 0).millisecondsSinceEpoch ~/ 1000,
+      );
+      final got = recentOvernightSessions([a, b], now: now, dayCount: 7);
+      expect(got, hasLength(1));
+      expect(got.single.beginUnix, a.beginUnix);
+      expect(got.single.endUnix, b.endUnix);
+    });
+
     test('stageMinutesOf aggregates wire types', () {
       final mins = stageMinutesOf([
         const SleepStageSummary(timestampUnix: 1, durationMin: 10, wireType: 1),

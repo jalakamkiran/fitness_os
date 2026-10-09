@@ -69,7 +69,10 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     final colors = FathomColors.of(context);
     final theme = Theme.of(context);
     final session = widget.session;
-    final overnight = sleepCrossesLocalMidnight(session);
+    final overnight = sleepIsMainOvernight(
+      session,
+      scientificMain: _summary?.isScientific == true,
+    );
     final end = sleepLocalFromUnix(session.endUnix);
     final arch = sleepArchitectureNote(_stages);
 
