@@ -22,7 +22,8 @@ void main() {
     final today = todaysSleepSession(sessions, now: now);
     expect(today, isNotNull);
     expect(today!.beginUnix, overnightBegin);
-    expect(sleepCrossesLocalMidnight(today), isTrue);
+    expect(sleepIsMainOvernight(today), isTrue);
+    expect(sleepSessionKindLabel(today), 'overnight');
   });
 
   test('todaysSleepSession picks longest when no overnight', () {
@@ -43,5 +44,42 @@ void main() {
       now: now,
     );
     expect(today!.beginUnix, longBegin);
+  });
+
+  test('Oct 7-shaped same-calendar-day night is overnight, not nap', () {
+    final night = SleepSessionSummary(
+      beginUnix:
+          DateTime(2026, 10, 7, 1, 36).millisecondsSinceEpoch ~/ 1000,
+      endUnix: DateTime(2026, 10, 7, 8, 11).millisecondsSinceEpoch ~/ 1000,
+    );
+    expect(sleepCrossesLocalMidnight(night), isFalse);
+    expect(sleepIsMainOvernight(night), isTrue);
+    expect(sleepSessionKindLabel(night), 'overnight');
+    expect(sleepIsIntentionalNap(night), isFalse);
+
+    final today = todaysSleepSession(
+      [night],
+      now: DateTime(2026, 10, 7, 17),
+    );
+    expect(today?.beginUnix, night.beginUnix);
+  });
+
+  test('afternoon nap does not replace overnight primary', () {
+    final night = SleepSessionSummary(
+      beginUnix:
+          DateTime(2026, 10, 9, 0, 45).millisecondsSinceEpoch ~/ 1000,
+      endUnix: DateTime(2026, 10, 9, 7, 15).millisecondsSinceEpoch ~/ 1000,
+    );
+    final nap = SleepSessionSummary(
+      beginUnix:
+          DateTime(2026, 10, 9, 14, 0).millisecondsSinceEpoch ~/ 1000,
+      endUnix: DateTime(2026, 10, 9, 15, 0).millisecondsSinceEpoch ~/ 1000,
+    );
+    final today = todaysSleepSession(
+      [nap, night],
+      now: DateTime(2026, 10, 9, 17),
+    );
+    expect(today?.beginUnix, night.beginUnix);
+    expect(sleepSessionKindLabel(nap), 'nap');
   });
 }

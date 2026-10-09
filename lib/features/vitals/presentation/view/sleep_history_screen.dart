@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
+import 'package:fitness_os/features/vitals/domain/sleep_analytics.dart';
+import 'package:fitness_os/features/vitals/domain/sleep_day.dart';
 import 'package:fitness_os/features/vitals/presentation/view/sleep_detail_route.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/sleep_formatters.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/sleep_session_card.dart';
@@ -31,6 +33,7 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
   bool _loading = true;
   List<SleepSessionSummary> _sessions = const [];
   Map<String, int> _scores = const {};
+  Map<String, int> _awakeMinutes = const {};
 
   VitalsRepository get _repo => widget.repository ?? sl<VitalsRepository>();
 
@@ -45,22 +48,56 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final sessions = await _repo.loadSleepSessionsForMonth(
+    final raw = await _repo.loadSleepSessionsForMonth(
       year: _year,
       month: _month,
     );
+    // Idempotent presentation coalesce for stale pre-Sync fragment prefs.
+    final sessions = List<SleepSessionSummary>.from(
+      SleepDay.coalesceNocturnalSessions(raw),
+    )..sort((a, b) => b.endUnix.compareTo(a.endUnix));
     final scores = <String, int>{};
+    final awakeByKey = <String, int>{};
     await Future.wait(sessions.map((s) async {
       final summary = await _repo.loadTruSleepSummary(s);
-      final score = summary?.sleepScore;
+      var score = summary?.sleepScore;
+      // Coalesced bounds may miss enrich until Sync; try overlapping raw keys.
+      if (score == null || score <= 0) {
+        for (final r in raw) {
+          if (r.beginUnix >= s.endUnix || r.endUnix <= s.beginUnix) continue;
+          final alt = await _repo.loadTruSleepSummary(r);
+          final altScore = alt?.sleepScore;
+          if (altScore != null && altScore > 0) {
+            score = altScore;
+            break;
+          }
+        }
+      }
       if (score != null && score > 0) {
         scores[s.mergeKey] = score;
+      }
+
+      var stages = await _repo.loadSleepStages(s);
+      if (stages.isEmpty) {
+        for (final r in raw) {
+          if (r.beginUnix >= s.endUnix || r.endUnix <= s.beginUnix) continue;
+          final alt = await _repo.loadSleepStages(r);
+          if (alt.isNotEmpty) {
+            stages = alt;
+            break;
+          }
+        }
+      }
+      final awake = stageMinutesOf(stages).awake;
+      if (awake > 0) {
+        awakeByKey[s.mergeKey] = awake;
       }
     }));
     if (!mounted) return;
     setState(() {
       _sessions = sessions;
       _scores = scores;
+      _awakeMinutes = awakeByKey;
       _loading = false;
     });
   }
@@ -87,9 +124,22 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
   Widget build(BuildContext context) {
     final colors = FathomColors.of(context);
     final theme = Theme.of(context);
-    final overnightCount =
-        _sessions.where(sleepCrossesLocalMidnight).length;
-    final napCount = _sessions.length - overnightCount;
+    final overnightCount = _sessions
+        .where(
+          (s) => sleepIsMainOvernight(
+            s,
+            scientificMain: (_scores[s.mergeKey] ?? 0) > 0,
+          ),
+        )
+        .length;
+    final napCount = _sessions
+        .where(
+          (s) => sleepIsIntentionalNap(
+            s,
+            scientificMain: (_scores[s.mergeKey] ?? 0) > 0,
+          ),
+        )
+        .length;
 
     return Scaffold(
       backgroundColor: colors.bg,
@@ -210,6 +260,7 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
                               session: s,
                               compact: true,
                               sleepScore: _scores[s.mergeKey],
+                              awakeMinutes: _awakeMinutes[s.mergeKey],
                             ),
                           );
                         },
