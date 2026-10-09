@@ -124,9 +124,22 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
   Widget build(BuildContext context) {
     final colors = FathomColors.of(context);
     final theme = Theme.of(context);
-    final overnightCount =
-        _sessions.where((s) => sleepIsMainOvernight(s)).length;
-    final napCount = _sessions.where(sleepIsIntentionalNap).length;
+    final overnightCount = _sessions
+        .where(
+          (s) => sleepIsMainOvernight(
+            s,
+            scientificMain: (_scores[s.mergeKey] ?? 0) > 0,
+          ),
+        )
+        .length;
+    final napCount = _sessions
+        .where(
+          (s) => sleepIsIntentionalNap(
+            s,
+            scientificMain: (_scores[s.mergeKey] ?? 0) > 0,
+          ),
+        )
+        .length;
 
     return Scaffold(
       backgroundColor: colors.bg,
