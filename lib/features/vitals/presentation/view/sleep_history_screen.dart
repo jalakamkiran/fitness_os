@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
+import 'package:fitness_os/features/vitals/domain/sleep_analytics.dart';
 import 'package:fitness_os/features/vitals/domain/sleep_day.dart';
 import 'package:fitness_os/features/vitals/presentation/view/sleep_detail_route.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/sleep_formatters.dart';
@@ -32,6 +33,7 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
   bool _loading = true;
   List<SleepSessionSummary> _sessions = const [];
   Map<String, int> _scores = const {};
+  Map<String, int> _awakeMinutes = const {};
 
   VitalsRepository get _repo => widget.repository ?? sl<VitalsRepository>();
 
@@ -55,6 +57,7 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
       SleepDay.coalesceNocturnalSessions(raw),
     )..sort((a, b) => b.endUnix.compareTo(a.endUnix));
     final scores = <String, int>{};
+    final awakeByKey = <String, int>{};
     await Future.wait(sessions.map((s) async {
       final summary = await _repo.loadTruSleepSummary(s);
       var score = summary?.sleepScore;
@@ -73,11 +76,28 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
       if (score != null && score > 0) {
         scores[s.mergeKey] = score;
       }
+
+      var stages = await _repo.loadSleepStages(s);
+      if (stages.isEmpty) {
+        for (final r in raw) {
+          if (r.beginUnix >= s.endUnix || r.endUnix <= s.beginUnix) continue;
+          final alt = await _repo.loadSleepStages(r);
+          if (alt.isNotEmpty) {
+            stages = alt;
+            break;
+          }
+        }
+      }
+      final awake = stageMinutesOf(stages).awake;
+      if (awake > 0) {
+        awakeByKey[s.mergeKey] = awake;
+      }
     }));
     if (!mounted) return;
     setState(() {
       _sessions = sessions;
       _scores = scores;
+      _awakeMinutes = awakeByKey;
       _loading = false;
     });
   }
@@ -227,6 +247,7 @@ class _SleepHistoryScreenState extends State<SleepHistoryScreen> {
                               session: s,
                               compact: true,
                               sleepScore: _scores[s.mergeKey],
+                              awakeMinutes: _awakeMinutes[s.mergeKey],
                             ),
                           );
                         },
