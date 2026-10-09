@@ -4,9 +4,10 @@ import 'package:flutter/services.dart';
 
 import 'package:fitness_os/features/programs/domain/program.dart';
 import 'package:fitness_os/features/programs/presentation/controller/programs_controller.dart';
+import 'package:fitness_os/features/programs/presentation/view/programs_format.dart';
+import 'package:fitness_os/features/programs/presentation/widgets/agon_chrome.dart';
 
-/// Intake: goal distance, optional target time, horizon, sessions/week +
-/// required pool-only disclosure.
+/// Create Agon · Pool swim — distance, time, horizon, sessions/week + disclosure.
 class ProgramsCreateScreen extends StatefulWidget {
   const ProgramsCreateScreen({super.key, required this.controller});
 
@@ -17,31 +18,29 @@ class ProgramsCreateScreen extends StatefulWidget {
 }
 
 class _ProgramsCreateScreenState extends State<ProgramsCreateScreen> {
-  final _goalCtrl = TextEditingController(text: '1200');
-  final _timeCtrl = TextEditingController();
-  final _weeksCtrl = TextEditingController(text: '3');
-  final _spwCtrl = TextEditingController(text: '3');
+  static const _distChips = [800, 1000, 1200, 1500];
+  static const _weekOpts = [2, 3, 4, 6, 8];
+  static const _spwOpts = [2, 3, 4, 5];
+
+  int _goalM = 1200;
+  int? _targetSec = 24 * 60;
+  bool _timeEnabled = true;
+  int _weeks = 3;
+  int _spw = 3;
   final _selfCapCtrl = TextEditingController(text: '1000');
   bool _poolOnly = false;
   bool _submitting = false;
 
   @override
   void dispose() {
-    _goalCtrl.dispose();
-    _timeCtrl.dispose();
-    _weeksCtrl.dispose();
-    _spwCtrl.dispose();
     _selfCapCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    final goal = int.tryParse(_goalCtrl.text.trim());
-    final weeks = int.tryParse(_weeksCtrl.text.trim());
-    final spw = int.tryParse(_spwCtrl.text.trim());
-    if (goal == null || goal < 200 || weeks == null || weeks < 1 || spw == null) {
+    if (_goalM < 200) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Check goal distance, weeks, and sessions.')),
+        const SnackBar(content: Text('Check goal distance.')),
       );
       return;
     }
@@ -52,27 +51,15 @@ class _ProgramsCreateScreenState extends State<ProgramsCreateScreen> {
       return;
     }
 
-    int? targetSec;
-    final timeRaw = _timeCtrl.text.trim();
-    if (timeRaw.isNotEmpty) {
-      targetSec = _parseMmSs(timeRaw);
-      if (targetSec == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Target time as mm:ss (e.g. 24:00).')),
-        );
-        return;
-      }
-    }
-
     final selfCap = int.tryParse(_selfCapCtrl.text.trim()) ?? 1000;
 
     setState(() => _submitting = true);
     final ok = await widget.controller.createAndActivate(
       intake: ProgramIntake(
-        goalDistanceM: goal,
-        targetTimeSec: targetSec,
-        horizonWeeks: weeks,
-        sessionsPerWeek: spw.clamp(2, 5),
+        goalDistanceM: _goalM,
+        targetTimeSec: _timeEnabled ? _targetSec : null,
+        horizonWeeks: _weeks,
+        sessionsPerWeek: _spw.clamp(2, 5),
         poolOnlyAcknowledged: true,
       ),
       selfReportCapacityM: selfCap,
@@ -80,22 +67,15 @@ class _ProgramsCreateScreenState extends State<ProgramsCreateScreen> {
     if (!mounted) return;
     setState(() => _submitting = false);
     if (!ok) {
-      final err = widget.controller.error ?? 'Couldn’t start program.';
+      final err = widget.controller.error ?? 'Couldn’t start Agon.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
     }
   }
 
-  int? _parseMmSs(String raw) {
-    final parts = raw.split(':');
-    if (parts.length == 1) {
-      final m = int.tryParse(parts[0]);
-      return m == null ? null : m * 60;
-    }
-    if (parts.length != 2) return null;
-    final m = int.tryParse(parts[0]);
-    final s = int.tryParse(parts[1]);
-    if (m == null || s == null) return null;
-    return m * 60 + s;
+  String? get _paceHint {
+    final t = _targetSec;
+    if (!_timeEnabled || t == null || t <= 0 || _goalM < 50) return null;
+    return formatPacePer100(_goalM, t);
   }
 
   @override
@@ -103,90 +83,423 @@ class _ProgramsCreateScreenState extends State<ProgramsCreateScreen> {
     final colors = FathomColors.of(context);
     return Scaffold(
       backgroundColor: colors.bg,
-      appBar: AppBar(
-        title: const Text('New program'),
-        backgroundColor: colors.bg,
-        foregroundColor: colors.ink,
-        elevation: 0,
+      appBar: AgonAppHeader(
+        title: 'Agon · Pool',
+        subtitle: 'Create',
+        onBack: Navigator.of(context).canPop()
+            ? () => Navigator.of(context).pop()
+            : null,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-          Text(
-            'Set a continuous pool distance and a horizon. Fathom builds '
-            'milestones and sessions from your recent swims when available.',
-            style: TextStyle(fontSize: 14, color: colors.inkDim, height: 1.4),
-          ),
-          const SizedBox(height: 20),
-          _field(
-            label: 'Goal distance (m)',
-            controller: _goalCtrl,
-            keyName: 'programs-goal-distance',
-          ),
-          _field(
-            label: 'Target time (optional, mm:ss)',
-            controller: _timeCtrl,
-            keyName: 'programs-target-time',
-            optional: true,
-          ),
-          _field(
-            label: 'Horizon (weeks)',
-            controller: _weeksCtrl,
-            keyName: 'programs-horizon-weeks',
-          ),
-          _field(
-            label: 'Sessions per week (2–5)',
-            controller: _spwCtrl,
-            keyName: 'programs-sessions-week',
-          ),
-          _field(
-            label: 'Starting continuous distance (m)',
-            controller: _selfCapCtrl,
-            keyName: 'programs-self-capacity',
-            helper: 'Used when pool history is thin or missing.',
-          ),
-          const SizedBox(height: 12),
-          Container(
-            key: const Key('programs-pool-only-disclosure'),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: colors.bgElev,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: colors.line),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const AgonStepBar(active: 1),
+                  const SizedBox(height: 12),
+                  _DiscloseCard(
+                    poolOnly: _poolOnly,
+                    onToggle: (v) => setState(() => _poolOnly = v),
+                    colors: colors,
+                  ),
+                  const SizedBox(height: 12),
+                  _StepperField(
+                    label: 'Goal distance',
+                    hint: 'non-stop · pool',
+                    valueKey: const Key('programs-goal-distance'),
+                    valueChild: Text.rich(
+                      TextSpan(
+                        text: formatMeters(_goalM),
+                        style: TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -1.2,
+                          color: colors.ink,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                        children: [
+                          TextSpan(
+                            text: ' m',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              color: colors.inkDim,
+                              letterSpacing: 0,
+                            ),
+                          ),
+                        ],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    onMinus: () => setState(
+                      () => _goalM = (_goalM - 50).clamp(200, 10000),
+                    ),
+                    onPlus: () => setState(
+                      () => _goalM = (_goalM + 50).clamp(200, 10000),
+                    ),
+                    colors: colors,
+                    footer: Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final d in _distChips)
+                          _SegChip(
+                            label: formatMeters(d),
+                            selected: _goalM == d,
+                            onTap: () => setState(() => _goalM = d),
+                            colors: colors,
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _StepperField(
+                    label: 'Target time',
+                    hint: _paceHint ?? 'optional',
+                    valueKey: const Key('programs-target-time'),
+                    valueChild: Text(
+                      _timeEnabled && _targetSec != null
+                          ? formatMmSs(_targetSec!)
+                          : '—',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -1.2,
+                        color: colors.ink,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    onMinus: !_timeEnabled
+                        ? null
+                        : () => setState(() {
+                              _targetSec =
+                                  ((_targetSec ?? 1440) - 15).clamp(60, 7200);
+                            }),
+                    onPlus: !_timeEnabled
+                        ? null
+                        : () => setState(() {
+                              _targetSec =
+                                  ((_targetSec ?? 1440) + 15).clamp(60, 7200);
+                            }),
+                    colors: colors,
+                    footer: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _timeEnabled
+                                ? 'Optional pace target for the goal swim'
+                                : 'No time target — distance only',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: colors.inkFaint,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => setState(() {
+                            _timeEnabled = !_timeEnabled;
+                            _targetSec ??= 24 * 60;
+                          }),
+                          child: Text(
+                            _timeEnabled ? 'Clear' : 'Add time',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: colors.accent,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _SegmentedField(
+                    label: 'Horizon',
+                    hint: '$_weeks weeks',
+                    colors: colors,
+                    children: [
+                      for (final w in _weekOpts)
+                        _SegChip(
+                          key: w == _weeks
+                              ? const Key('programs-horizon-weeks')
+                              : null,
+                          label: '$w',
+                          sub: 'wk',
+                          selected: _weeks == w,
+                          onTap: () => setState(() => _weeks = w),
+                          colors: colors,
+                          expanded: true,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _SegmentedField(
+                    label: 'Sessions per week',
+                    hint: formatStreakFloorHint(_spw),
+                    colors: colors,
+                    children: [
+                      for (final n in _spwOpts)
+                        _SegChip(
+                          key: n == _spw
+                              ? const Key('programs-sessions-week')
+                              : null,
+                          label: '$n',
+                          sub: '× / wk',
+                          selected: _spw == n,
+                          onTap: () => setState(() => _spw = n),
+                          colors: colors,
+                          expanded: true,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  AgonCard(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              'Starting continuous distance',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: colors.inkDim,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              'Sounding',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: colors.inkFaint,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          key: const Key('programs-self-capacity'),
+                          controller: _selfCapCtrl,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: colors.ink,
+                            letterSpacing: -0.5,
+                          ),
+                          decoration: InputDecoration(
+                            suffixText: 'm',
+                            filled: true,
+                            fillColor: colors.bg,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: colors.line),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: colors.line),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Your best recent non-stop pool swim. Used when history is thin.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colors.inkFaint,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (widget.controller.createHint != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      widget.controller.createHint!,
+                      style: TextStyle(fontSize: 13, color: colors.amber),
+                    ),
+                  ],
+                  if (widget.controller.active?.feasibilityWarning != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      widget.controller.active!.feasibilityWarning!,
+                      key: const Key('programs-feasibility-warning'),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colors.amber,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 80),
+                ],
+              ),
             ),
+          ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  colors.bg.withValues(alpha: 0),
+                  colors.bg,
+                ],
+              ),
+            ),
+            child: SafeArea(
+              top: false,
+              child: FilledButton(
+                key: const Key('programs-create-submit'),
+                onPressed: _submitting ? null : _submit,
+                style: FilledButton.styleFrom(
+                  backgroundColor: colors.accent,
+                  foregroundColor: colors.accentInk,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: _submitting
+                    ? SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: colors.accentInk,
+                        ),
+                      )
+                    : const Text(
+                        'Chart my Agon',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiscloseCard extends StatelessWidget {
+  const _DiscloseCard({
+    required this.poolOnly,
+    required this.onToggle,
+    required this.colors,
+  });
+
+  final bool poolOnly;
+  final ValueChanged<bool> onToggle;
+  final FathomColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('programs-pool-only-disclosure'),
+      decoration: BoxDecoration(
+        color: Color.lerp(colors.pool, colors.bgElev, 0.3),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Color.lerp(colors.accent, colors.line, 0.62)!,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            height: 22,
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: colors.poolLine)),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Pool only',
+                  'Agon · Pool swim',
                   style: TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 0.8,
                     fontWeight: FontWeight.w700,
-                    fontSize: 15,
+                    color: colors.inkFaint,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Pool swims only',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.6,
                     color: colors.ink,
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'This program is for continuous pool swimming. Open-water '
-                  'and mixed sessions are not used for milestones or proofs.',
+                  'This Agon plans pool sessions and nothing else. Open-water isn’t included yet.',
                   style: TextStyle(
                     fontSize: 13,
                     color: colors.inkDim,
-                    height: 1.35,
+                    height: 1.45,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
+                Divider(height: 1, color: colors.poolLine),
+                const SizedBox(height: 10),
+                _Bullet(
+                  lead: 'Plans',
+                  body: 'a warm-up, main set and cool-down for each pool day',
+                  colors: colors,
+                ),
+                const SizedBox(height: 7),
+                _Bullet(
+                  lead: 'Reads',
+                  body: 'badminton, strength and runs only to flag a heavy day',
+                  colors: colors,
+                ),
+                const SizedBox(height: 7),
+                _Bullet(
+                  lead: 'Runs on your device',
+                  body: 'from rules and templates. No Coach, no cloud',
+                  colors: colors,
+                ),
+                const SizedBox(height: 10),
                 InkWell(
                   key: const Key('programs-pool-only-checkbox'),
-                  onTap: () => setState(() => _poolOnly = !_poolOnly),
+                  onTap: () => onToggle(!poolOnly),
+                  borderRadius: BorderRadius.circular(10),
                   child: Row(
                     children: [
                       Checkbox(
-                        value: _poolOnly,
-                        onChanged: (v) =>
-                            setState(() => _poolOnly = v ?? false),
+                        value: poolOnly,
+                        onChanged: (v) => onToggle(v ?? false),
+                        activeColor: colors.accent,
                       ),
                       Expanded(
                         child: Text(
@@ -204,97 +517,295 @@ class _ProgramsCreateScreenState extends State<ProgramsCreateScreen> {
               ],
             ),
           ),
-          if (widget.controller.createHint != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              widget.controller.createHint!,
-              style: TextStyle(fontSize: 13, color: colors.amber),
-            ),
-          ],
-          if (widget.controller.active?.feasibilityWarning != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              widget.controller.active!.feasibilityWarning!,
-              key: const Key('programs-feasibility-warning'),
-              style: TextStyle(fontSize: 13, color: colors.amber, height: 1.35),
-            ),
-          ],
-          const SizedBox(height: 24),
-          FilledButton(
-            key: const Key('programs-create-submit'),
-            onPressed: _submitting ? null : _submit,
-            style: FilledButton.styleFrom(
-              backgroundColor: colors.accent,
-              foregroundColor: colors.accentInk,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-            child: _submitting
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Start program'),
-          ),
-          ],
-        ),
+        ],
       ),
     );
   }
+}
 
-  Widget _field({
-    required String label,
-    required TextEditingController controller,
-    required String keyName,
-    bool optional = false,
-    String? helper,
-  }) {
-    final colors = FathomColors.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+class _Bullet extends StatelessWidget {
+  const _Bullet({
+    required this.lead,
+    required this.body,
+    required this.colors,
+  });
+
+  final String lead;
+  final String body;
+  final FathomColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: colors.accent,
+              borderRadius: BorderRadius.circular(1),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: lead,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: colors.ink,
+                    height: 1.4,
+                  ),
+                ),
+                TextSpan(
+                  text: ' $body',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: colors.inkDim,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StepperField extends StatelessWidget {
+  const _StepperField({
+    required this.label,
+    required this.hint,
+    required this.valueChild,
+    required this.onMinus,
+    required this.onPlus,
+    required this.colors,
+    this.valueKey,
+    this.footer,
+  });
+
+  final String label;
+  final String hint;
+  final Widget valueChild;
+  final VoidCallback? onMinus;
+  final VoidCallback? onPlus;
+  final FathomColors colors;
+  final Key? valueKey;
+  final Widget? footer;
+
+  @override
+  Widget build(BuildContext context) {
+    return AgonCard(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: colors.inkDim,
-            ),
-          ),
-          const SizedBox(height: 6),
-          TextField(
-            key: Key(keyName),
-            controller: controller,
-            keyboardType: optional
-                ? TextInputType.text
-                : TextInputType.number,
-            inputFormatters: optional
-                ? null
-                : [FilteringTextInputFormatter.digitsOnly],
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: colors.bgElev,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(color: colors.line),
+          Row(
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: colors.inkDim,
+                ),
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(color: colors.line),
+              const Spacer(),
+              Text(
+                hint,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: colors.inkFaint,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
               ),
-            ),
+            ],
           ),
-          if (helper != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              helper,
-              style: TextStyle(fontSize: 12, color: colors.inkFaint),
-            ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _StepBtn(label: '−', onTap: onMinus, colors: colors),
+              Expanded(
+                child: KeyedSubtree(key: valueKey, child: valueChild),
+              ),
+              _StepBtn(label: '+', onTap: onPlus, colors: colors),
+            ],
+          ),
+          if (footer != null) ...[
+            const SizedBox(height: 10),
+            footer!,
           ],
         ],
       ),
     );
+  }
+}
+
+class _StepBtn extends StatelessWidget {
+  const _StepBtn({
+    required this.label,
+    required this.onTap,
+    required this.colors,
+  });
+
+  final String label;
+  final VoidCallback? onTap;
+  final FathomColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          padding: EdgeInsets.zero,
+          side: BorderSide(color: colors.line),
+          backgroundColor: colors.bg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w500,
+            color: colors.ink,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SegmentedField extends StatelessWidget {
+  const _SegmentedField({
+    required this.label,
+    required this.hint,
+    required this.children,
+    required this.colors,
+  });
+
+  final String label;
+  final String hint;
+  final List<Widget> children;
+  final FathomColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return AgonCard(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: colors.inkDim,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                hint,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: colors.inkFaint,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(children: [
+            for (var i = 0; i < children.length; i++) ...[
+              if (i > 0) const SizedBox(width: 6),
+              Expanded(child: children[i]),
+            ],
+          ]),
+        ],
+      ),
+    );
+  }
+}
+
+class _SegChip extends StatelessWidget {
+  const _SegChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    required this.colors,
+    this.sub,
+    this.expanded = false,
+  });
+
+  final String label;
+  final String? sub;
+  final bool selected;
+  final VoidCallback onTap;
+  final FathomColors colors;
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = Material(
+      color: selected ? colors.ink : colors.bg,
+      borderRadius: BorderRadius.circular(expanded ? 12 : 999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(expanded ? 12 : 999),
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: expanded ? 6 : 12,
+            vertical: expanded ? 11 : 7,
+          ),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(expanded ? 12 : 999),
+            border: Border.all(
+              color: selected ? Colors.transparent : colors.line,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: expanded ? 14 : 12,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? colors.bg : colors.inkDim,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+              if (sub != null)
+                Text(
+                  sub!,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: (selected ? colors.bg : colors.inkDim)
+                        .withValues(alpha: 0.7),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return expanded ? child : child;
   }
 }

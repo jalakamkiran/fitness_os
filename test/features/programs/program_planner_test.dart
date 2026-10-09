@@ -135,6 +135,27 @@ void main() {
         1200,
       );
     });
+
+    test('900 capacity → 1250 goal: early session scaled, main not continuous ask',
+        () {
+      final program = planner.plan(
+        intake: _intake(goalM: 1250, horizonWeeks: 3),
+        baseline: _baseline(capacityM: 900),
+        startDate: _start,
+        id: 'cap_scale',
+      );
+
+      final first = program.chores.firstWhere(
+        (c) => c.role == ChoreRole.endurance,
+      );
+      // Must not jump to the old hard 1500 m / 1300 floor for thin capacity.
+      expect(first.targetDistanceM, lessThanOrEqualTo(1300));
+      expect(first.targetDistanceM, greaterThanOrEqualTo(1000));
+      final main = first.blocks.firstWhere((b) => b.part == 'main');
+      expect(main.distanceM, lessThanOrEqualTo(900));
+      expect(main.label.toLowerCase(), contains('rest'));
+      expect(first.focusLine!.toLowerCase(), contains('broken'));
+    });
   });
 
   group('ProgramPlanner.applyProofOutcome', () {

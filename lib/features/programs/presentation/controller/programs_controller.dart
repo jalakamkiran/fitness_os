@@ -324,6 +324,28 @@ class ProgramsController extends ChangeNotifier {
     }
   }
 
+  /// Archive the active program so create can run again with a fresh plan.
+  Future<void> archiveActiveAndReset() async {
+    final program = _active;
+    if (program == null) return;
+    final now = _now().millisecondsSinceEpoch;
+    final archived = program.copyWith(
+      status: ProgramStatus.archived,
+      archivedAtMs: now,
+    );
+    await _store.save(archived);
+    _active = null;
+    _scorecards = null;
+    _softWarn = const SoftLoadWarnResult(
+      warn: false,
+      level: SoftLoadWarnLevel.none,
+      copy: '',
+    );
+    _error = null;
+    _createHint = null;
+    notifyListeners();
+  }
+
   Future<void> markChoreDone(String choreId) async {
     final program = _active;
     if (program == null) return;

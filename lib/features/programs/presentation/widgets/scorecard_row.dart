@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 
 import 'package:fitness_os/features/programs/domain/scorecards.dart';
 import 'package:fitness_os/features/programs/presentation/view/programs_format.dart';
+import 'package:fitness_os/features/programs/presentation/widgets/agon_chrome.dart';
 
-/// Compact Habit / Volume / Efficiency scorecard row.
+/// Habit / Volume / Efficiency scorecards (capability layer).
 class ScorecardRow extends StatelessWidget {
   const ScorecardRow({super.key, required this.bundle});
 
@@ -29,7 +30,7 @@ class ScorecardRow extends StatelessWidget {
           body: bundle.volume.capacityGapM <= 0
               ? '${formatMeters(bundle.volume.longestContinuousM)} m continuous'
               : '${formatMeters(bundle.volume.longestContinuousM)} m · '
-                  '${formatMeters(bundle.volume.capacityGapM)} m to next proof',
+                  '${formatMeters(bundle.volume.capacityGapM)} m to next trial',
           focus: bundle.volume.focusLine,
           colors: colors,
         ),
@@ -38,7 +39,7 @@ class ScorecardRow extends StatelessWidget {
           title: 'Efficiency',
           body: bundle.efficiency.status == EfficiencyStatus.collecting
               ? 'Collecting'
-              : (bundle.efficiency.focusLine),
+              : bundle.efficiency.focusLine,
           focus: bundle.efficiency.focusLine,
           colors: colors,
         ),
@@ -62,32 +63,21 @@ class _Card extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: colors.bgElev,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.line),
-      ),
+    return AgonCard(
+      radius: 16,
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: colors.inkFaint,
-              letterSpacing: 0.3,
-            ),
-          ),
-          const SizedBox(height: 4),
+          LayerTag(title),
+          const SizedBox(height: 8),
           Text(
             body,
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
               color: colors.ink,
+              letterSpacing: -0.2,
             ),
           ),
           const SizedBox(height: 4),
