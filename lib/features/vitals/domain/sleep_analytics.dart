@@ -1,17 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/features/vitals/domain/sleep_day.dart';
 
 DateTime _localFromUnix(int unix) =>
     DateTime.fromMillisecondsSinceEpoch(unix * 1000).toLocal();
-
-bool _crossesMidnight(SleepSessionSummary session) {
-  final begin = _localFromUnix(session.beginUnix);
-  final end = _localFromUnix(session.endUnix);
-  return begin.year != end.year ||
-      begin.month != end.month ||
-      begin.day != end.day;
-}
 
 /// Midpoint of asleep window (fallAsleep→wakeup, else session begin→end).
 DateTime? sleepMidSleepLocal(
@@ -25,7 +18,7 @@ DateTime? sleepMidSleepLocal(
   return _localFromUnix(mid);
 }
 
-/// Scientific overnights ending within the last [dayCount] local calendar days.
+/// Main overnights ending within the last [dayCount] local calendar days.
 List<SleepSessionSummary> recentOvernightSessions(
   List<SleepSessionSummary> sessions, {
   DateTime? now,
@@ -34,9 +27,10 @@ List<SleepSessionSummary> recentOvernightSessions(
   final n = now ?? DateTime.now();
   final today = DateTime(n.year, n.month, n.day);
   final oldest = today.subtract(Duration(days: dayCount - 1));
+  final coalesced = SleepDay.coalesceNocturnalSessions(sessions);
   final out = <SleepSessionSummary>[];
-  for (final s in sessions) {
-    if (!_crossesMidnight(s)) continue;
+  for (final s in coalesced) {
+    if (!SleepDay.isMainNightSleep(s)) continue;
     if (s.beginUnix <= 0 || s.endUnix <= s.beginUnix) continue;
     final end = _localFromUnix(s.endUnix);
     final endDay = DateTime(end.year, end.month, end.day);

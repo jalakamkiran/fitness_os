@@ -985,9 +985,13 @@ void main() {
       test('file intervals → gap-merged prefs; cursor advances on ok', () async {
         SharedPreferences.setMockInitialValues(_gateOpen(implVersion: _implV1));
         final prefs = await SharedPreferences.getInstance();
+        // Micro-merge i1+i2 (100s); i3 is >90m later so nocturnal coalesce leaves it.
         const i1 = SleepStateInterval(beginUnix: 1000, endUnix: 2000);
         const i2 = SleepStateInterval(beginUnix: 2100, endUnix: 3000);
-        const i3 = SleepStateInterval(beginUnix: 5000, endUnix: 6000);
+        const i3 = SleepStateInterval(
+          beginUnix: 3000 + 91 * 60,
+          endUnix: 3000 + 91 * 60 + 1000,
+        );
         final link = _StubLink(
           result: _fileSync(intervals: const [i1, i2, i3]),
         );
@@ -997,8 +1001,11 @@ void main() {
         final sleep = await repo.loadSleepSessions();
         expect(sleep, hasLength(2));
         expect(sleep.any((s) => s.beginUnix == 1000 && s.endUnix == 3000), isTrue);
-        expect(sleep.any((s) => s.beginUnix == 5000 && s.endUnix == 6000), isTrue);
-        expect(prefs.getInt(GateAPrefs.lastActivitySyncCursor), 6001);
+        expect(
+          sleep.any((s) => s.beginUnix == i3.beginUnix && s.endUnix == i3.endUnix),
+          isTrue,
+        );
+        expect(prefs.getInt(GateAPrefs.lastActivitySyncCursor), i3.endUnix + 1);
         expect(prefs.getBool(GateAPrefs.fileSleepSotActive), isTrue);
         expect(link.lastStartUnix, isNotNull);
         expect(link.lastEndUnix, isNotNull);
@@ -1501,6 +1508,210 @@ void main() {
         ) as Map<String, dynamic>;
         expect(feelMap['100:500:'], 'ok_nap');
         expect(feelMap.containsKey('9000:19000:'), isFalse);
+      });
+
+      test('scientific SEQUENCE spanning two fragments → one main with SEQUENCE bounds',
+          () async {
+        final tempRoot =
+            Directory.systemTemp.createTempSync('fos_seq_carve_');
+        addTearDown(() {
+          if (tempRoot.existsSync()) {
+            tempRoot.deleteSync(recursive: true);
+          }
+        });
+
+        SharedPreferences.setMockInitialValues(_gateOpen(implVersion: _implV1));
+        final prefs = await SharedPreferences.getInstance();
+        const frag1Begin = 10_000;
+        const frag1End = 14_000;
+        const frag2Begin = 14_000 + 15 * 60; // 15m gap
+        const frag2End = 20_000;
+        const fallAsleep = 10_100;
+        const wakeup = 19_900;
+        final link = _StubLink(
+          result: _fileSync(
+            intervals: const [
+              SleepStateInterval(beginUnix: frag1Begin, endUnix: frag1End),
+              SleepStateInterval(beginUnix: frag2Begin, endUnix: frag2End),
+            ],
+            sequenceSessions: [
+              TruSleepSequenceSession(
+                beginUnix: frag1Begin,
+                endUnix: frag2End,
+                fallAsleepUnix: fallAsleep,
+                wakeupUnix: wakeup,
+                sleepScore: 74,
+                productStages: const [
+                  SleepStageSummary(
+                    timestampUnix: fallAsleep + 60,
+                    durationMin: 30,
+                    wireType: 2,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+        final repo = VitalsRepositoryImpl(
+          link: link,
+          prefs: prefs,
+          sideFileRootOverride: () => tempRoot,
+        );
+
+        await repo.syncFromWatch();
+        final sleep = await repo.loadSleepSessions();
+        expect(sleep, hasLength(1));
+        expect(sleep.single.beginUnix, fallAsleep);
+        expect(sleep.single.endUnix, wakeup);
+        final summary = await repo.loadTruSleepSummary(sleep.single);
+        expect(summary?.sleepScore, 74);
+        final stages = await repo.loadSleepStages(sleep.single);
+        expect(stages, isNotEmpty);
+      });
+
+      test('intervals only (no SEQUENCE) → nocturnal coalesce overnight',
+          () async {
+        SharedPreferences.setMockInitialValues(_gateOpen(implVersion: _implV1));
+        final prefs = await SharedPreferences.getInstance();
+        int u(DateTime d) => d.millisecondsSinceEpoch ~/ 1000;
+        final a = SleepStateInterval(
+          beginUnix: u(DateTime(2026, 10, 8, 0, 30)),
+          endUnix: u(DateTime(2026, 10, 8, 3, 10)),
+        );
+        final b = SleepStateInterval(
+          beginUnix: u(DateTime(2026, 10, 8, 3, 19)),
+          endUnix: u(DateTime(2026, 10, 8, 7, 0)),
+        );
+        final link = _StubLink(
+          result: _fileSync(intervals: [a, b]),
+        );
+        final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+        await repo.syncFromWatch();
+        final sleep = await repo.loadSleepSessions();
+        expect(sleep, hasLength(1));
+        expect(sleep.single.beginUnix, a.beginUnix);
+        expect(sleep.single.endUnix, b.endUnix);
+      });
+
+      test('post-wakeup orphan fragment stays separate from SEQUENCE main',
+          () async {
+        SharedPreferences.setMockInitialValues(_gateOpen(implVersion: _implV1));
+        final prefs = await SharedPreferences.getInstance();
+        const fallAsleep = 10_000;
+        const wakeup = 18_000;
+        const orphanBegin = 18_000 + 20 * 60; // 20m after wakeup, no overlap
+        const orphanEnd = orphanBegin + 30 * 60;
+        final link = _StubLink(
+          result: _fileSync(
+            intervals: const [
+              SleepStateInterval(beginUnix: fallAsleep, endUnix: wakeup),
+              SleepStateInterval(beginUnix: orphanBegin, endUnix: orphanEnd),
+            ],
+            sequenceSessions: [
+              const TruSleepSequenceSession(
+                beginUnix: fallAsleep,
+                endUnix: wakeup,
+                fallAsleepUnix: fallAsleep,
+                wakeupUnix: wakeup,
+                sleepScore: 80,
+              ),
+            ],
+          ),
+        );
+        final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+        await repo.syncFromWatch();
+        final sleep = await repo.loadSleepSessions();
+        expect(sleep, hasLength(2));
+        expect(
+          sleep.any((s) => s.beginUnix == fallAsleep && s.endUnix == wakeup),
+          isTrue,
+        );
+        expect(
+          sleep.any(
+            (s) => s.beginUnix == orphanBegin && s.endUnix == orphanEnd,
+          ),
+          isTrue,
+        );
+      });
+
+      test('nap outside SEQUENCE window remains separate session', () async {
+        SharedPreferences.setMockInitialValues(_gateOpen(implVersion: _implV1));
+        final prefs = await SharedPreferences.getInstance();
+        int u(DateTime d) => d.millisecondsSinceEpoch ~/ 1000;
+        final nightBegin = u(DateTime(2026, 10, 8, 23, 0));
+        final nightEnd = u(DateTime(2026, 10, 9, 7, 0));
+        final napBegin = u(DateTime(2026, 10, 9, 14, 0));
+        final napEnd = u(DateTime(2026, 10, 9, 15, 0));
+        final link = _StubLink(
+          result: _fileSync(
+            intervals: [
+              SleepStateInterval(beginUnix: nightBegin, endUnix: nightEnd),
+              SleepStateInterval(beginUnix: napBegin, endUnix: napEnd),
+            ],
+            sequenceSessions: [
+              TruSleepSequenceSession(
+                beginUnix: nightBegin,
+                endUnix: nightEnd,
+                fallAsleepUnix: nightBegin,
+                wakeupUnix: nightEnd,
+                sleepScore: 82,
+              ),
+            ],
+          ),
+        );
+        final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+        await repo.syncFromWatch();
+        final sleep = await repo.loadSleepSessions();
+        expect(sleep, hasLength(2));
+        expect(
+          sleep.any((s) => s.beginUnix == nightBegin && s.endUnix == nightEnd),
+          isTrue,
+        );
+        expect(
+          sleep.any((s) => s.beginUnix == napBegin && s.endUnix == napEnd),
+          isTrue,
+        );
+      });
+
+      test('feel migrates when mergeKey expands N→1 under SEQUENCE carve',
+          () async {
+        SharedPreferences.setMockInitialValues({
+          ..._gateOpen(implVersion: _implV1),
+          GateAPrefs.sleepSessionsJson: jsonEncode([
+            {'beginUnix': 10_000, 'endUnix': 14_000},
+            {'beginUnix': 14_900, 'endUnix': 20_000},
+          ]),
+          GateAPrefs.sleepFeelOnWakeJson: jsonEncode({
+            '10000:14000:': 'rested',
+          }),
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final link = _StubLink(
+          result: _fileSync(
+            intervals: const [
+              SleepStateInterval(beginUnix: 10_000, endUnix: 14_000),
+              SleepStateInterval(beginUnix: 14_900, endUnix: 20_000),
+            ],
+            sequenceSessions: [
+              const TruSleepSequenceSession(
+                beginUnix: 10_000,
+                endUnix: 20_000,
+                fallAsleepUnix: 10_050,
+                wakeupUnix: 19_950,
+                sleepScore: 70,
+              ),
+            ],
+          ),
+        );
+        final repo = VitalsRepositoryImpl(link: link, prefs: prefs);
+
+        await repo.syncFromWatch();
+        final sleep = await repo.loadSleepSessions();
+        expect(sleep, hasLength(1));
+        expect(await repo.loadFeelOnWake(sleep.single), 'rested');
       });
 
       test('pickHeroSession prefers recent overnight (builder smoke)',
