@@ -109,7 +109,8 @@ void main() {
     expect(find.byKey(const Key('home-session-0')), findsOneWidget);
     expect(find.byKey(const Key('home-session-1')), findsOneWidget);
     expect(find.byKey(const Key('home-programs-cta')), findsOneWidget);
-    expect(find.textContaining('Programs'), findsOneWidget);
+    expect(find.text('Swim'), findsOneWidget);
+    expect(find.textContaining('AGONS'), findsOneWidget);
     expectForbiddenSectionsAbsent();
   });
 

@@ -87,12 +87,15 @@ class _SegmentCard extends StatelessWidget {
     final headBg = isMain
         ? Color.lerp(colors.accent, colors.bgElev, 0.91)!
         : colors.bgElev;
+    const radius = 16.0;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.bgElev,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: border),
+    // Material+shape owns the stroke and clip so the main accent border
+    // follows the same radius as the header fill (no square Material corners).
+    return Material(
+      color: colors.bgElev,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(radius),
+        side: BorderSide(color: border),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(

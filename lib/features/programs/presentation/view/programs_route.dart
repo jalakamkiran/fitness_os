@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 
@@ -41,7 +43,7 @@ class _ProgramsEntryState extends State<ProgramsEntry> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onChanged);
-    widget.controller.load();
+    unawaited(widget.controller.load());
   }
 
   @override
@@ -51,7 +53,10 @@ class _ProgramsEntryState extends State<ProgramsEntry> {
   }
 
   void _onChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
