@@ -140,6 +140,8 @@ void main() {
     await pump(tester, ProgramsHomeScreen(controller: controller));
 
     expect(find.byKey(const Key('programs-next-milestone')), findsOneWidget);
+    expect(find.byKey(const Key('programs-forecast')), findsOneWidget);
+    expect(find.byKey(const Key('programs-forecast-timeline')), findsOneWidget);
     expect(find.textContaining('1,200 m'), findsWidgets);
     expect(find.byKey(const Key('programs-today-chore')), findsOneWidget);
     expect(find.byKey(const Key('programs-chore-structure')), findsOneWidget);
