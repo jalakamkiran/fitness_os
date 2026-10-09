@@ -25,6 +25,10 @@ class SleepTonightHero extends StatelessWidget {
     final colors = FathomColors.of(context);
     final theme = Theme.of(context);
     final score = summary?.isScientific == true ? summary!.sleepScore : null;
+    final kind = sleepSessionKindLabel(
+      session,
+      scientificMain: summary?.isScientific == true,
+    );
     final mid = sleepMidSleepLocal(summary, session);
     final latency = summary?.usableLatencySec;
     final glance = <(String, String)>[
@@ -51,7 +55,7 @@ class SleepTonightHero extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Today · overnight',
+              'Today · $kind',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: colors.inkFaint,
                 fontWeight: FontWeight.w700,

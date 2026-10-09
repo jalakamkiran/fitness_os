@@ -1,4 +1,5 @@
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/features/vitals/domain/sleep_day.dart';
 
 /// Wire timestamps are UTC unix seconds; display uses device local.
 DateTime sleepLocalFromUnix(int unixSec) {
@@ -71,6 +72,8 @@ String sleepFormatRange(int beginUnix, int endUnix) {
 }
 
 /// True when local begin/end fall on different calendar days (midnight crossing).
+///
+/// Prefer [sleepIsMainOvernight] / [sleepSessionKindLabel] for product kind.
 bool sleepCrossesLocalMidnight(SleepSessionSummary session) {
   final begin = sleepLocalFromUnix(session.beginUnix);
   final end = sleepLocalFromUnix(session.endUnix);
@@ -79,25 +82,52 @@ bool sleepCrossesLocalMidnight(SleepSessionSummary session) {
       begin.day != end.day;
 }
 
-/// Today's primary sleep session for the Sleep list hero card.
+/// True for intentional daytime / short naps (not overnight fragments).
+bool sleepIsIntentionalNap(
+  SleepSessionSummary session, {
+  bool scientificMain = false,
+}) =>
+    SleepDay.isIntentionalNap(session, scientificMain: scientificMain);
+
+/// True for main overnight / scientific-main sessions.
+bool sleepIsMainOvernight(
+  SleepSessionSummary session, {
+  bool scientificMain = false,
+}) =>
+    SleepDay.isMainNightSleep(session, scientificMain: scientificMain);
+
+/// Display kind: `nap` or `overnight`.
+String sleepSessionKindLabel(
+  SleepSessionSummary session, {
+  bool scientificMain = false,
+}) =>
+    SleepDay.kindLabel(session, scientificMain: scientificMain);
+
+/// Today's primary sleep for Home / Sleep hero.
 ///
-/// Prefers an overnight (midnight-crossing) session ending today; otherwise the
-/// longest session ending today. Naps must not beat overnight when both end today.
+/// Prefers the current Huawei sleep-day aggregate primary. Falls back to
+/// longest coalesced session ending on the local calendar day.
 SleepSessionSummary? todaysSleepSession(
   List<SleepSessionSummary> sessions, {
   DateTime? now,
 }) {
+  final aggregate = SleepDay.resolve(sessions, now: now);
+  if (aggregate.primary != null) return aggregate.primary;
+
+  // Legacy fallback when sleep-day empty (e.g. tests / edge clocks).
   final n = now ?? DateTime.now();
   final today = DateTime(n.year, n.month, n.day);
+  final coalesced = SleepDay.coalesceNocturnalSessions(sessions);
   final endingToday = <SleepSessionSummary>[];
-  for (final s in sessions) {
+  for (final s in coalesced) {
     if (s.beginUnix <= 0 || s.endUnix <= s.beginUnix) continue;
     final end = sleepLocalFromUnix(s.endUnix);
     final endDay = DateTime(end.year, end.month, end.day);
     if (endDay == today) endingToday.add(s);
   }
   if (endingToday.isEmpty) return null;
-  final overnight = endingToday.where(sleepCrossesLocalMidnight).toList();
+  final overnight =
+      endingToday.where((s) => sleepIsMainOvernight(s)).toList();
   if (overnight.isNotEmpty) {
     overnight.sort((a, b) => b.durationSec.compareTo(a.durationSec));
     return overnight.first;

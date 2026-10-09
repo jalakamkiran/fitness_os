@@ -207,6 +207,7 @@ void main() {
 
     expect(find.text('Aug 2026'), findsOneWidget);
     expect(find.textContaining('tap a row for TruSleep detail'), findsOneWidget);
+    expect(find.textContaining('1 overnight'), findsOneWidget);
     // One session card for August.
     expect(find.byType(Card), findsWidgets);
 
@@ -225,6 +226,36 @@ void main() {
       find.textContaining('No nights this month'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('history coalesces fragmented overnight prefs', (tester) async {
+    final f1 = SleepSessionSummary(
+      beginUnix:
+          DateTime(2026, 10, 8, 0, 30).millisecondsSinceEpoch ~/ 1000,
+      endUnix: DateTime(2026, 10, 8, 3, 10).millisecondsSinceEpoch ~/ 1000,
+    );
+    final f2 = SleepSessionSummary(
+      beginUnix:
+          DateTime(2026, 10, 8, 3, 19).millisecondsSinceEpoch ~/ 1000,
+      endUnix: DateTime(2026, 10, 8, 7, 0).millisecondsSinceEpoch ~/ 1000,
+    );
+    final repo = _FakeRepo(sessions: [f1, f2]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: BpTheme.light(),
+        home: SleepHistoryScreen(
+          repository: repo,
+          initialYear: 2026,
+          initialMonth: 10,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.textContaining('1 overnight'), findsOneWidget);
+    expect(find.textContaining('nap'), findsNothing);
   });
 
   testWidgets('sleep list empty honesty copy', (tester) async {

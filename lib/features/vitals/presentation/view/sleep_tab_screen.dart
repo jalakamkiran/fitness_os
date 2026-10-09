@@ -6,6 +6,7 @@ import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/vitals/domain/sleep_analytics.dart';
+import 'package:fitness_os/features/vitals/domain/sleep_day.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_bloc.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_event.dart';
 import 'package:fitness_os/features/vitals/presentation/bloc/vitals_state.dart';
@@ -53,7 +54,8 @@ class _SleepTabScreenState extends State<SleepTabScreen> {
   }
 
   Future<void> _loadExtras(List<SleepSessionSummary> sessions) async {
-    final today = todaysSleepSession(sessions);
+    final day = SleepDay.resolve(sessions);
+    final today = day.primary;
     List<SleepStageSummary> stages = const [];
     TruSleepSequenceSession? summary;
     String? feel;
@@ -62,15 +64,17 @@ class _SleepTabScreenState extends State<SleepTabScreen> {
     if (today != null) {
       stages = await _repo.loadSleepStages(today);
       summary = await _repo.loadTruSleepSummary(today);
-      if (sleepCrossesLocalMidnight(today)) {
+      final scientific = summary?.isScientific == true;
+      if (sleepIsMainOvernight(today, scientificMain: scientific)) {
         feel = await _repo.loadFeelOnWake(today);
         surveySession = today;
       }
     }
 
     if (surveySession == null) {
-      for (final s in sessions) {
-        if (!sleepCrossesLocalMidnight(s)) continue;
+      final coalesced = SleepDay.coalesceNocturnalSessions(sessions);
+      for (final s in coalesced) {
+        if (!sleepIsMainOvernight(s)) continue;
         final existing = await _repo.loadFeelOnWake(s);
         if (existing == null) {
           surveySession = s;
@@ -103,10 +107,10 @@ class _SleepTabScreenState extends State<SleepTabScreen> {
       summaries: weekSummaries,
     );
 
-    // Recent list: last ~5 sessions ending most recently (naps + overnights).
-    final recent = [...sessions]
-      ..removeWhere((s) => s.beginUnix <= 0 || s.endUnix <= s.beginUnix)
-      ..sort((a, b) => b.endUnix.compareTo(a.endUnix));
+    // Recent list: last ~5 coalesced sessions ending most recently.
+    final recent = List<SleepSessionSummary>.from(
+      SleepDay.coalesceNocturnalSessions(sessions),
+    )..sort((a, b) => b.endUnix.compareTo(a.endUnix));
     final recentRows = recent.take(5).toList();
     final recentScores = <String, int>{};
     for (final s in recentRows) {
@@ -160,7 +164,11 @@ class _SleepTabScreenState extends State<SleepTabScreen> {
           final showSurvey = !_surveyLoading &&
               _surveySession != null &&
               _feelAnswer == null &&
-              sleepCrossesLocalMidnight(_surveySession!);
+              sleepIsMainOvernight(
+                _surveySession!,
+                scientificMain: _todaySummary?.isScientific == true &&
+                    _surveySession!.mergeKey == today?.mergeKey,
+              );
           final weekAvg = _trendBand?.scoreMean;
 
           return ListView(
@@ -183,8 +191,8 @@ class _SleepTabScreenState extends State<SleepTabScreen> {
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Text(
-                      'No sleep ending today yet. Earlier nights are under '
-                      'Sleep history.',
+                      'No sleep for this sleep-day yet. Earlier nights are '
+                      'under Sleep history.',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: colors.inkDim,
                       ),
@@ -304,7 +312,7 @@ class _RecentNightsCard extends StatelessWidget {
                             ),
                             Text(
                               '${sleepFormatWindow(s.beginUnix, s.endUnix)} · '
-                              '${sleepCrossesLocalMidnight(s) ? 'overnight' : 'nap'}',
+                              '${sleepSessionKindLabel(s)}',
                               style: FathomTextStyles.mono(
                                 fontSize: 10,
                                 color: colors.inkFaint,
@@ -325,7 +333,7 @@ class _RecentNightsCard extends StatelessWidget {
                         width: 36,
                         child: Text(
                           scores[s.mergeKey]?.toString() ??
-                              (sleepCrossesLocalMidnight(s) ? '—' : 'nap'),
+                              (sleepIsIntentionalNap(s) ? 'nap' : '—'),
                           textAlign: TextAlign.right,
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w800,

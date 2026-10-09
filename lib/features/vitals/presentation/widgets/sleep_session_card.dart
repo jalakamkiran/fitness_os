@@ -32,11 +32,14 @@ class SleepSessionCard extends StatelessWidget {
     final colors = FathomColors.of(context);
     final theme = Theme.of(context);
     final end = sleepLocalFromUnix(session.endUnix);
-    final overnight = sleepCrossesLocalMidnight(session);
+    final scientificMain = sleepScore != null && sleepScore! > 0;
+    final overnight =
+        sleepIsMainOvernight(session, scientificMain: scientificMain);
     final window = sleepFormatWindow(session.beginUnix, session.endUnix);
     final duration = sleepFormatDuration(session.durationSec);
-    final kind = overnight ? 'overnight' : 'nap';
-    final showScore = sleepScore != null && sleepScore! > 0;
+    final kind =
+        sleepSessionKindLabel(session, scientificMain: scientificMain);
+    final showScore = scientificMain;
 
     return Card(
       child: Padding(
