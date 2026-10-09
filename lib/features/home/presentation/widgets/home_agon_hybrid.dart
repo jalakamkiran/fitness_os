@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 
 import 'package:fitness_os/features/programs/domain/chore_session.dart';
+import 'package:fitness_os/features/programs/domain/program.dart';
 import 'package:fitness_os/features/programs/domain/week_adherence.dart';
 import 'package:fitness_os/features/programs/presentation/controller/programs_controller.dart';
 import 'package:fitness_os/features/programs/presentation/view/programs_format.dart';
 import 'package:fitness_os/features/programs/presentation/view/programs_navigation.dart';
+import 'package:fitness_os/features/programs/presentation/view/programs_route.dart';
 import 'package:fitness_os/features/programs/presentation/widgets/agon_chrome.dart';
 
 /// Where Agon content sits in the Home stack.
@@ -84,7 +86,13 @@ class _HomeAgonSlotViewState extends State<HomeAgonSlotView> {
           if (slots.isEmpty) return const SizedBox.shrink();
           return Padding(
             padding: const EdgeInsets.only(top: 12),
-            child: _WeekAdherenceCard(slots: slots),
+            child: _WeekAdherenceCard(
+              slots: slots,
+              onOpenProgress: () => ProgramsNavigation.openOdyssey(
+                context,
+                controller: c,
+              ),
+            ),
           );
         }
         if (HomeAgonDay.hasOdysseySnapshot(c.ledger)) {
@@ -146,26 +154,41 @@ class _HybridHero extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (!hideGame) ...[
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _ProgressPill(
-                  label: 'Streak · ${ledger.currentStreakWeeks} wk',
-                  bronze: bronze,
-                  colors: colors,
+            // Progress strip → full Odyssey; primary CTA below stays session/proof.
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                key: const Key('home-progress-strip'),
+                onTap: () => ProgramsNavigation.openOdyssey(
+                  context,
+                  controller: controller,
                 ),
-                _ProgressPill(
-                  label: 'Areté · ${formatMeters(ledger.totalXp)}',
-                  bronze: bronze,
-                  colors: colors,
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _ProgressPill(
+                        label: 'Streak · ${ledger.currentStreakWeeks} wk',
+                        bronze: bronze,
+                        colors: colors,
+                      ),
+                      _ProgressPill(
+                        label: 'Areté · ${formatMeters(ledger.totalXp)}',
+                        bronze: bronze,
+                        colors: colors,
+                      ),
+                      _ProgressPill(
+                        label: 'Depth · L${ledger.level}',
+                        bronze: bronze,
+                        colors: colors,
+                      ),
+                    ],
+                  ),
                 ),
-                _ProgressPill(
-                  label: 'Depth · L${ledger.level}',
-                  bronze: bronze,
-                  colors: colors,
-                ),
-              ],
+              ),
             ),
             const SizedBox(height: 12),
           ],
@@ -198,8 +221,86 @@ class _HybridHero extends StatelessWidget {
                 choreId: today.chore!.id,
               ),
             ),
-          // Rest: strip only (no primary CTA).
+          // Rest: strip + hub CTA (no session primary).
+          if (today.kind == HomeTodayKind.choreOpen ||
+              today.kind == HomeTodayKind.proofOpen ||
+              today.kind == HomeTodayKind.done)
+            const SizedBox(height: 10),
+          _AgonHubCta(program: program, now: now),
         ],
+      ),
+    );
+  }
+}
+
+/// Secondary entry to the Agon hub (milestones, forecast) — not a shell tab.
+class _AgonHubCta extends StatelessWidget {
+  const _AgonHubCta({required this.program, required this.now});
+
+  final Program program;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = FathomColors.of(context);
+    final bronze = agonBronzeOf(context);
+    final goal = formatGoalLine(program.intake);
+    final week = formatWeekChip(program, now);
+
+    return Material(
+      color: Color.lerp(bronze, colors.bg, 0.88),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        key: const Key('home-programs-cta'),
+        onTap: () => ProgramsRoute.go(context),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Color.lerp(bronze, colors.line, 0.5)!,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Agon plan',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: colors.ink,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$week · $goal',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: colors.inkDim,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                'Open',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: bronze,
+                ),
+              ),
+              const SizedBox(width: 2),
+              Icon(Icons.chevron_right, color: bronze, size: 18),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -465,57 +566,68 @@ class _OdysseyIdleCard extends StatelessWidget {
 }
 
 class _WeekAdherenceCard extends StatelessWidget {
-  const _WeekAdherenceCard({required this.slots});
+  const _WeekAdherenceCard({
+    required this.slots,
+    required this.onOpenProgress,
+  });
 
   final List<WeekAdherenceSlot> slots;
+  final VoidCallback onOpenProgress;
 
   @override
   Widget build(BuildContext context) {
     final colors = FathomColors.of(context);
     final done = slots.where((s) => s.done).length;
 
-    return Container(
-      key: const Key('home-week-adherence'),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: colors.bgElev,
+    return Material(
+      color: colors.bgElev,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        key: const Key('home-week-adherence'),
+        onTap: onOpenProgress,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: colors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: colors.line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Plan adherence',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: colors.ink,
-                ),
+              Row(
+                children: [
+                  Text(
+                    'Plan adherence',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: colors.ink,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$done / ${slots.length} sessions',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: colors.inkDim,
+                    ),
+                  ),
+                ],
               ),
-              const Spacer(),
-              Text(
-                '$done / ${slots.length} sessions',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                  color: colors.inkDim,
-                ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  for (final slot in slots)
+                    Expanded(
+                      child: _AdherenceDot(slot: slot, colors: colors),
+                    ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              for (final slot in slots)
-                Expanded(
-                  child: _AdherenceDot(slot: slot, colors: colors),
-                ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
