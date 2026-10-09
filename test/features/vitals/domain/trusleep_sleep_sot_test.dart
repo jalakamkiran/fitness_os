@@ -72,6 +72,29 @@ void main() {
       expect(sessions.single.beginUnix, i1.beginUnix);
       expect(sessions.single.endUnix, i3.endUnix);
     });
+
+    test('Oct 8-shaped three fragments with 9–18m gaps → one overnight', () {
+      // Local wall times → unix via DateTime (device TZ).
+      int u(DateTime d) => d.millisecondsSinceEpoch ~/ 1000;
+      final f1 = SleepStateInterval(
+        beginUnix: u(DateTime(2026, 10, 8, 0, 30)),
+        endUnix: u(DateTime(2026, 10, 8, 3, 10)),
+      );
+      final f2 = SleepStateInterval(
+        beginUnix: u(DateTime(2026, 10, 8, 3, 19)),
+        endUnix: u(DateTime(2026, 10, 8, 4, 40)),
+      );
+      final f3 = SleepStateInterval(
+        beginUnix: u(DateTime(2026, 10, 8, 4, 58)),
+        endUnix: u(DateTime(2026, 10, 8, 7, 5)),
+      );
+      // Micro-merge alone would keep three chains (gaps > 3m); nocturnal coalesce joins.
+      expect(TruSleepSleepSot.gapMergeChains([f1, f2, f3]), hasLength(3));
+      final sessions = TruSleepSleepSot.buildSessions([f1, f2, f3]);
+      expect(sessions, hasLength(1));
+      expect(sessions.single.beginUnix, f1.beginUnix);
+      expect(sessions.single.endUnix, f3.endUnix);
+    });
   });
 
   group('pickHeroSession', () {

@@ -1,11 +1,14 @@
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/features/vitals/domain/sleep_day.dart';
 
 /// TruSleep file `stateIntervals` → display sleep sessions (primary SoT).
 ///
-/// Gap-merge ≤ [mergeGapSec] (3m). Does not invent stages — message-path
-/// stages attach later by overlap.
+/// Micro gap-merge ≤ [mergeGapSec] (3m) for adjacent file fragments, then
+/// nocturnal coalesce (≤90m mid-night wakes) via [SleepDay.coalesceNocturnalSessions].
+/// Does not invent stages — message-path stages attach later by overlap.
 abstract final class TruSleepSleepSot {
-  static const mergeGapSec = 180;
+  /// Micro fragment glue (file-adjacent). Prefer [SleepDay.microMergeGapSec].
+  static const mergeGapSec = SleepDay.microMergeGapSec;
   static const heroLookbackSec = 36 * 3600;
 
   /// Contiguous chains where consecutive intervals are within [gapSec].
@@ -37,12 +40,12 @@ abstract final class TruSleepSleepSot {
     return chains;
   }
 
-  /// One [SleepSessionSummary] per gap-merged chain (no stages, no wireType).
+  /// One [SleepSessionSummary] per nocturnal bout (micro-merge + overnight coalesce).
   static List<SleepSessionSummary> buildSessions(
     List<SleepStateInterval> intervals, {
     int gapSec = mergeGapSec,
   }) {
-    return gapMergeChains(intervals, gapSec: gapSec)
+    final micro = gapMergeChains(intervals, gapSec: gapSec)
         .map(
           (c) => SleepSessionSummary(
             beginUnix: c.beginUnix,
@@ -50,6 +53,7 @@ abstract final class TruSleepSleepSot {
           ),
         )
         .toList();
+    return SleepDay.coalesceNocturnalSessions(micro);
   }
 
   /// Prefer longest session ending within the last 36h; else longest overall.
