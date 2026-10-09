@@ -10,7 +10,7 @@ enum HabitBand {
   steady,
 }
 
-/// Efficiency readiness: honest "Collecting" until enough matched-pace data.
+/// Efficiency data status: honest "Collecting" until enough matched-pace data.
 enum EfficiencyStatus {
   collecting,
   ready,

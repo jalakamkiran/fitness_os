@@ -2,6 +2,7 @@
 ///
 /// Factual stacking of owned durations / load — never a recovery score,
 /// never auto-cancels a swim chore.
+library;
 
 /// Severity of a soft other-load signal.
 enum SoftLoadWarnLevel {
