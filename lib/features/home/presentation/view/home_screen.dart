@@ -9,6 +9,7 @@ import 'package:fitness_os/features/home/domain/home_precedence.dart';
 import 'package:fitness_os/features/home/presentation/bloc/home_bloc.dart';
 import 'package:fitness_os/features/home/presentation/bloc/home_event.dart';
 import 'package:fitness_os/features/home/presentation/bloc/home_state.dart';
+import 'package:fitness_os/features/programs/presentation/view/programs_route.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/hr_sparkline.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_detail_route.dart';
 
@@ -219,8 +220,52 @@ class _HomeBody extends StatelessWidget {
       out.add(const SizedBox(height: 12));
     }
 
+    out.add(const _ProgramsCta());
+    out.add(const SizedBox(height: 12));
+
     out.add(_TodaySessionsSection(snapshot: s, muted: muted));
     return out;
+  }
+}
+
+/// One-line Home entry to Programs — not a shell tab.
+class _ProgramsCta extends StatelessWidget {
+  const _ProgramsCta();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = FathomColors.of(context);
+    return Material(
+      color: colors.bgElev,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        key: const Key('home-programs-cta'),
+        onTap: () => ProgramsRoute.go(context),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: colors.line),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Programs — pool swim plan',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: colors.ink,
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right, color: colors.inkFaint, size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
