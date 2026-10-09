@@ -24,6 +24,8 @@ class ProgramsSessionScreen extends StatefulWidget {
 
 class _ProgramsSessionScreenState extends State<ProgramsSessionScreen> {
   final List<bool> _segDone = [false, false, false];
+  bool _preLandDone = false;
+  bool _postLandDone = false;
   bool _busy = false;
 
   ChoreSession? get _chore => widget.controller.choreById(widget.choreId);
@@ -332,6 +334,19 @@ class _ProgramsSessionScreenState extends State<ProgramsSessionScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                _LandBlock(
+                  title: 'Before you swim',
+                  subtitle: 'Land · 3–5 min',
+                  lines: const [
+                    'Arm circles + scap squeezes',
+                    'Hip openers / world’s greatest',
+                    'Ankle rocks · easy breathing',
+                  ],
+                  done: _preLandDone,
+                  onToggle: () => setState(() => _preLandDone = !_preLandDone),
+                  colors: colors,
+                ),
+                const SizedBox(height: 10),
                 ChoreChecklist(
                   chore: chore,
                   segDone: _segDone,
@@ -339,6 +354,20 @@ class _ProgramsSessionScreenState extends State<ProgramsSessionScreen> {
                     setState(() => _segDone[i] = !_segDone[i]);
                   },
                 ),
+                _LandBlock(
+                  title: 'After you swim',
+                  subtitle: 'Land · stretch as needed',
+                  lines: const [
+                    'Easy pec / lat stretch',
+                    'Hip flexor + calf',
+                    'Slow nasal breaths · 1–2 min',
+                  ],
+                  done: _postLandDone,
+                  onToggle: () =>
+                      setState(() => _postLandDone = !_postLandDone),
+                  colors: colors,
+                ),
+                const SizedBox(height: 10),
                 if (chore.focusLine != null &&
                     chore.focusLine!.trim().isNotEmpty) ...[
                   AgonCard(
@@ -479,6 +508,117 @@ class _ProgramsSessionScreenState extends State<ProgramsSessionScreen> {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _LandBlock extends StatelessWidget {
+  const _LandBlock({
+    required this.title,
+    required this.subtitle,
+    required this.lines,
+    required this.done,
+    required this.onToggle,
+    required this.colors,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<String> lines;
+  final bool done;
+  final VoidCallback onToggle;
+  final FathomColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: colors.bgElev,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: colors.line,
+          style: BorderStyle.solid,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onToggle,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _LandCheck(done: done, colors: colors),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.2,
+                        color: colors.ink,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: colors.inkFaint,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              for (final line in lines)
+                Padding(
+                  padding: const EdgeInsets.only(left: 36, bottom: 4),
+                  child: Text(
+                    '· $line',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.35,
+                      color: colors.inkDim,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LandCheck extends StatelessWidget {
+  const _LandCheck({required this.done, required this.colors});
+
+  final bool done;
+  final FathomColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 140),
+      width: 26,
+      height: 26,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: done ? colors.accent : colors.bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: done ? colors.accent : colors.ink.withValues(alpha: 0.14),
+          width: 1.8,
+        ),
+      ),
+      child: done
+          ? Icon(Icons.check, size: 14, color: colors.accentInk)
+          : const SizedBox.shrink(),
     );
   }
 }

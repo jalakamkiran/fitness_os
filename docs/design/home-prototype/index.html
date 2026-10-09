@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../tokens.css" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=agon3" />
   <link rel="stylesheet" href="../home-today.css" />
 </head>
 <body>
@@ -27,6 +27,58 @@
       </header>
 
       <main class="scroll">
+        <!-- Agon sport dock: horizontal, clear sport icons -->
+        <nav class="agon-dock" id="agonDock" aria-label="Your Agons">
+          <p class="agon-dock-label">Agons</p>
+          <div class="agon-dock-row">
+            <a class="dock-btn swim" id="dockSwim" href="../programs-prototype/#home" aria-label="Agon · Pool swim, running. Open">
+              <span class="dock-ico" aria-hidden="true">
+                <!-- Lucide Waves — unmistakable swim/water -->
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>
+                  <path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>
+                  <path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>
+                </svg>
+              </span>
+              <span class="dock-meta">
+                <span class="dock-name">Swim</span>
+                <span class="dock-cap" id="dockCap">Wk 3 · live</span>
+              </span>
+            </a>
+            <span class="dock-btn ghost" role="img" aria-label="Strength Agon, coming soon">
+              <span class="dock-ico" aria-hidden="true">
+                <!-- Lucide Dumbbell -->
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14.4 14.4 9.6 9.6"/>
+                  <path d="M18.657 21.485a2 2 0 1 1-2.829-2.828l-1.767 1.768a2 2 0 1 1-2.829-2.829l6.364-6.364a2 2 0 1 1 2.829 2.829l-1.768 1.767a2 2 0 1 1 2.828 2.829z"/>
+                  <path d="m21.5 21.5-1.4-1.4"/>
+                  <path d="M3.9 3.9 2.5 2.5"/>
+                  <path d="M6.404 12.768a2 2 0 1 1-2.829-2.829l1.768-1.767a2 2 0 1 1-2.828-2.829l2.828-2.828a2 2 0 1 1 2.829 2.828l1.767-1.768a2 2 0 1 1 2.829 2.829z"/>
+                </svg>
+              </span>
+              <span class="dock-meta">
+                <span class="dock-name">Strength</span>
+                <span class="dock-cap">Soon</span>
+              </span>
+            </span>
+            <span class="dock-btn ghost" role="img" aria-label="Run Agon, coming soon">
+              <span class="dock-ico" aria-hidden="true">
+                <!-- Lucide PersonStanding / run-ready figure -->
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="5" r="1"/>
+                  <path d="m9 20 3-6 3 6"/>
+                  <path d="m6 8 6 2 6-2"/>
+                  <path d="M12 10v4"/>
+                </svg>
+              </span>
+              <span class="dock-meta">
+                <span class="dock-name">Run</span>
+                <span class="dock-cap">Soon</span>
+              </span>
+            </span>
+          </div>
+        </nav>
+
         <div class="period-row">
           <div class="seg" role="tablist" aria-label="Period">
             <button class="seg-btn active" type="button">Today</button>
@@ -47,6 +99,15 @@
             <span class="status-dot ok" title="Healthy"></span>
           </div>
         </section>
+
+        <!-- Odyssey strip (calm; one row, no charts) -->
+        <a class="card odyssey-strip" id="odysseyStrip" href="../programs-prototype/#odyssey" aria-label="Your Odyssey: 2 week Streak, 1,090 Areté, Depth 5">
+          <p class="os-label">Your<br>Odyssey</p>
+          <div><strong>2<small> wk</small></strong><span>Streak</span></div>
+          <div><strong>1,090</strong><span>Areté</span></div>
+          <div><strong>5</strong><span>Depth</span></div>
+          <i class="os-chev" aria-hidden="true">›</i>
+        </a>
 
         <!-- 1. Sleep strip (display-only) -->
         <section class="card sleep-strip" aria-label="Last night sleep">
@@ -148,13 +209,23 @@
       <h3>Fathom · Home Today</h3>
       <ol>
         <li><strong>Stack</strong> — sleep → totals → body HR (≤1 spark) → session cards.</li>
-        <li><strong>Never</strong> — hypnogram, workout charts, calendars, diagnoses, reasoner, food, composites.</li>
-        <li><strong>Chrome</strong> — pairing/sync supports the day picture; does not replace it.</li>
+        <li><strong>Top of Home</strong> — sync chrome, then a calm <strong>Odyssey strip</strong> (Streak · Areté · Depth). One row, no charts.</li>
+        <li><strong>Agon dock</strong> — own row under header. Waves / dumbbell / figure icons in a horizontal strip. Swim live when an Agon runs; Strength and Run ghosted “Soon”.</li>
+        <li><strong>Never</strong> — hypnogram, workout charts, calendars, diagnoses, SWOLF dumps, reasoner, food, composites.</li>
       </ol>
+      <div class="rail-panel-lite">
+        <p class="rail-h">Swim Agon</p>
+        <div class="seg rail-seg" role="tablist" aria-label="Swim Agon state">
+          <button class="seg-btn active" type="button" data-agon-btn="active">Running</button>
+          <button class="seg-btn" type="button" data-agon-btn="none">Not started</button>
+        </div>
+        <p class="rail-sub" id="agonNote">Tap the swim icon → <a href="../programs-prototype/#home">programs-prototype/#home</a>. The Odyssey strip opens <a href="../programs-prototype/#odyssey">#odyssey</a>.</p>
+      </div>
       <p class="rail-note">2026-09-12 instrument supersedes swim-only takeaway and absolute no-graphs. Review the <a href="../home-states.html" style="color:inherit;font-weight:700">state gallery</a> for chrome × stack and rest-day variants.</p>
       <div class="rail-actions">
         <button type="button" id="themeToggleRail">Toggle theme</button>
-        <a class="btn primary" href="../home-states.html" style="display:inline-block;margin-top:10px;text-align:center">Home states →</a>
+        <a class="btn primary" href="../programs-prototype/" style="display:inline-block;margin-top:10px;text-align:center">Agon · Pool swim →</a>
+        <a class="btn ghost" href="../home-states.html" style="display:inline-block;margin-top:8px;text-align:center">Home states →</a>
         <a class="btn ghost" href="charts.html" style="display:inline-block;margin-top:8px;text-align:center">Swim charts (off Home) →</a>
       </div>
     </aside>

@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fathom — Agon · Pool swim prototype</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-game="on">
+  <div class="stage">
+
+    <!-- ───────────── Rail ───────────── -->
+    <aside class="rail" aria-label="Prototype controls">
+      <p class="rail-back"><a href="../index.html">← Design review hub</a></p>
+      <h1>Agon · Pool swim</h1>
+      <p class="rail-lede">A structured challenge toward one goal swim, inside your <b class="t-game">Odyssey</b>. Two layers on purpose: <b class="t-cap">dates that follow your trials</b> and <b class="t-game">rewards that never take progress away</b> (Areté, Streak, Depth, Kleos). No Coach required.</p>
+
+      <div class="rail-panel">
+        <h2>Demo athlete</h2>
+        <div class="metric-chip">
+          <span>~1,000 m non-stop</span>
+          <span>2:03 /100 m</span>
+          <span>goal 1,200 m ≤ 24:00</span>
+          <span>3 weeks · 3×/wk</span>
+        </div>
+      </div>
+
+      <div class="rail-panel">
+        <h2>Theme</h2>
+        <div class="theme-row">
+          <button type="button" class="active" data-theme-btn="light">Light</button>
+          <button type="button" data-theme-btn="dark">Dark</button>
+        </div>
+      </div>
+
+      <div class="rail-panel">
+        <h2>Screens</h2>
+        <ol class="flow-list" id="flowList">
+          <li><button type="button" data-go="create"><span class="flow-id">1</span><span class="flow-title">Create Agon</span><span class="flow-sub">Agon · Pool swim · distance, time, horizon, ×/week</span></button></li>
+          <li><button type="button" data-go="sounding"><span class="flow-id">2</span><span class="flow-title">Sounding · building</span><span class="flow-sub">“Charting your Agon…” · auto-resolves to the demo route</span></button></li>
+          <li><button type="button" data-go="sounding-history"><span class="flow-id">2a</span><span class="flow-title">Sounding · from history</span><span class="flow-sub">Strong start found → reading + course → Activate</span></button></li>
+          <li><button type="button" data-go="sounding-test"><span class="flow-id">2b</span><span class="flow-title">Sounding · guided test</span><span class="flow-sub">One non-stop test swim → simulate sync</span></button></li>
+          <li><button type="button" data-go="sounding-self"><span class="flow-id">2c</span><span class="flow-title">Sounding · self-entry</span><span class="flow-sub">Best recent continuous swim, entered by you</span></button></li>
+          <li><button type="button" data-go="home"><span class="flow-id">3</span><span class="flow-title">Agon home</span><span class="flow-sub">Next milestone · forecast · soft warn · today’s course</span></button></li>
+          <li><button type="button" data-go="session"><span class="flow-id">4</span><span class="flow-title">Today · Session | Course</span><span class="flow-sub">Course = warm-up / main / cool-down · Session = watch data</span></button></li>
+          <li><button type="button" data-go="kleos"><span class="flow-id">5</span><span class="flow-title">Kleos · Trial cleared</span><span class="flow-sub">Full-screen moment · Areté, Streak, Depth · skippable</span></button></li>
+          <li><button type="button" class="hold" data-go="fail"><span class="flow-id">6</span><span class="flow-title">Trial not cleared</span><span class="flow-sub">Facts · dates move · retry or smaller step</span></button></li>
+          <li><button type="button" data-go="odyssey"><span class="flow-id">7</span><span class="flow-title">Odyssey</span><span class="flow-sub">Depth · Areté · Streak · Kleos · scorecards</span></button></li>
+          <li><button type="button" data-go="forecast"><span class="flow-id">8</span><span class="flow-title">Forecast detail</span><span class="flow-sub">Window, calendar, what moves the date</span></button></li>
+        </ol>
+      </div>
+
+      <div class="rail-panel">
+        <h2>Agon clock</h2>
+        <div class="mode-seg" role="tablist" aria-label="Agon clock">
+          <button type="button" class="active" data-clock="plan">On plan · Oct 26</button>
+          <button type="button" data-clock="slipped">After retry · Nov 2</button>
+        </div>
+        <p class="rail-note">Affects screens 3, 4, 7, 8. “Retry” on screen 6 lands here too.</p>
+      </div>
+
+      <div class="rail-panel">
+        <h2>Sounding route (screen 2)</h2>
+        <div class="mode-seg" role="tablist" aria-label="Sounding route">
+          <button type="button" class="active" data-route="history">History</button>
+          <button type="button" data-route="test">Guided test</button>
+          <button type="button" data-route="self">Self-entry</button>
+        </div>
+        <p class="rail-note">Decided behind the scenes in the product. The athlete only sees the resulting state.</p>
+      </div>
+
+      <div class="rail-panel">
+        <h2>Today opens on</h2>
+        <div class="mode-seg" role="tablist" aria-label="Today opens on">
+          <button type="button" class="active" data-synced="off">Course · from Agon</button>
+          <button type="button" data-synced="on">Session · post-sync</button>
+        </div>
+        <p class="rail-note">Default tab is Course from Agon, Session when you open a synced swim to review it.</p>
+      </div>
+
+      <div class="rail-panel">
+        <h2>Other load today</h2>
+        <div class="mode-seg" role="tablist" aria-label="Other load">
+          <button type="button" class="active" data-load="heavy">Heavy</button>
+          <button type="button" data-load="clear">Clear</button>
+        </div>
+        <p class="rail-note">Soft warning only. Your swim stays on the course.</p>
+      </div>
+
+      <div class="rail-panel">
+        <h2>Odyssey layer</h2>
+        <div class="mode-seg" role="tablist" aria-label="Odyssey layer">
+          <button type="button" class="active" data-game-btn="on">Shown</button>
+          <button type="button" data-game-btn="off">Hidden</button>
+        </div>
+        <p class="rail-note">Hidden: no Areté, Depth, Streak or Kleos. Milestones and scorecards stay.</p>
+      </div>
+
+      <div class="rail-panel">
+        <h2>Home link</h2>
+        <p class="rail-note" style="margin-top:0">On <a href="../home-prototype/">Home</a>, the swim icon in the Agon dock opens <span class="mono">#create</span> when no Agon is running and <span class="mono">#home</span> when one is. The Odyssey strip opens <span class="mono">#odyssey</span>.</p>
+      </div>
+
+      <details class="rail-panel vocab">
+        <summary>Vocabulary</summary>
+        <ul>
+          <li><b>The Odyssey</b> your overall journey</li>
+          <li><b>Agon</b> a challenge · “Agon · Pool swim”</li>
+          <li><b>Sounding</b> finding your starting depth</li>
+          <li><b>Areté</b> progress points (lifetime)</li>
+          <li><b>Depth</b> your progression tier</li>
+          <li><b>Kleos</b> major achievements</li>
+          <li><b>Streak</b> plain, as before</li>
+        </ul>
+      </details>
+
+      <div class="rail-panel">
+        <h2>Demo actions</h2>
+        <div class="rail-actions">
+          <button type="button" class="primary" id="btnNext">Next screen →</button>
+          <button type="button" id="btnReset">Reset demo</button>
+        </div>
+        <p class="rail-note" id="railStatus">Use ← / → keys to flip screens. Deep link: <span class="mono">#kleos</span>, <span class="mono">#odyssey</span>…</p>
+      </div>
+    </aside>
+
+    <!-- ───────────── Phone ───────────── -->
+    <div class="device-stage">
+      <div class="phone" id="phone" data-chrome="header" aria-label="Fathom Agon phone prototype">
+
+        <header class="app-header" id="appHeader">
+          <button class="icon-round" type="button" id="btnBack" aria-label="Back">‹</button>
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true">F</span>
+            <div>
+              <p class="brand-title" id="hdrTitle">Agon · Pool</p>
+              <p class="brand-sub mono" id="hdrSub">1,200 m</p>
+            </div>
+          </div>
+          <span class="pool-pill"><i></i>Pool only</span>
+        </header>
+
+        <main class="scroll" id="scroll">
+
+          <!-- 1 · Create -->
+          <section class="screen" id="s-create" aria-label="Create Agon">
+            <div class="step-bar" aria-hidden="true"><span class="on"></span><span></span><span></span></div>
+
+            <section class="disclose" aria-label="Pool only disclosure">
+              <div class="disclose-inner">
+                <p class="kicker">Agon · Pool swim</p>
+                <h2>Pool swims only</h2>
+                <p class="dim">This Agon plans <b>pool sessions</b> and nothing else. Open water isn’t included yet.</p>
+                <ul class="disclose-list">
+                  <li><b>Plans</b> a warm-up, main set and cool-down for each pool day</li>
+                  <li><b>Reads</b> badminton, strength and runs only to flag a heavy day</li>
+                  <li><b>Runs on your device</b> from rules and templates. No Coach, no cloud</li>
+                </ul>
+              </div>
+            </section>
+
+            <section class="card field" aria-label="Goal distance">
+              <div class="field-head">
+                <label class="field-label" for="inDist">Goal distance</label>
+                <span class="field-hint mono">non-stop · pool</span>
+              </div>
+              <div class="stepper">
+                <button type="button" class="step-btn" data-step="dist" data-dir="-1" aria-label="Decrease distance">−</button>
+                <output class="stepper-value" id="inDist">1,200<span class="unit"> m</span></output>
+                <button type="button" class="step-btn" data-step="dist" data-dir="1" aria-label="Increase distance">+</button>
+              </div>
+              <div class="chips" id="chipsDist"></div>
+            </section>
+
+            <section class="card field" aria-label="Target time">
+              <div class="field-head">
+                <label class="field-label" for="inTime">Target time</label>
+                <span class="field-hint mono" id="paceHint">2:00 /100 m</span>
+              </div>
+              <div class="stepper">
+                <button type="button" class="step-btn" data-step="time" data-dir="-1" aria-label="Faster target">−</button>
+                <output class="stepper-value" id="inTime">24:00</output>
+                <button type="button" class="step-btn" data-step="time" data-dir="1" aria-label="Slower target">+</button>
+              </div>
+              <p class="field-foot mono" id="timeFoot">Your pace now · 2:03 /100 m</p>
+            </section>
+
+            <section class="card field" aria-label="Horizon">
+              <div class="field-head">
+                <span class="field-label">Horizon</span>
+                <span class="field-hint mono" id="horizonHint">ends Sun Nov 1</span>
+              </div>
+              <div class="seg-row" id="segWeeks" role="radiogroup" aria-label="Weeks"></div>
+            </section>
+
+            <section class="card field" aria-label="Sessions per week">
+              <div class="field-head">
+                <span class="field-label">Sessions per week</span>
+                <span class="field-hint mono" id="spwHint">Streak holds at 2</span>
+              </div>
+              <div class="seg-row" id="segSpw" role="radiogroup" aria-label="Sessions per week"></div>
+            </section>
+
+            <section class="read-card" id="createRead" aria-live="polite"></section>
+          </section>
+
+          <!-- 2 · Sounding · building -->
+          <section class="screen" id="s-sounding" aria-label="Sounding in progress">
+            <div class="step-bar" aria-hidden="true"><span class="on"></span><span class="on"></span><span></span></div>
+            <div class="sound-stage" aria-live="polite">
+              <div class="sound-viz" aria-hidden="true">
+                <svg viewBox="0 0 300 250">
+                  <defs>
+                    <linearGradient id="sg-water" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="var(--accent)" stop-opacity="0.22"/>
+                      <stop offset="1" stop-color="var(--accent)" stop-opacity="0.02"/>
+                    </linearGradient>
+                  </defs>
+                  <rect class="sv-water" x="0" y="46" width="300" height="196" fill="url(#sg-water)"/>
+                  <g class="sv-ticks">
+                    <line x1="214" y1="86" x2="228" y2="86"/><text x="234" y="89">1</text>
+                    <line x1="214" y1="126" x2="228" y2="126"/><text x="234" y="129">2</text>
+                    <line x1="214" y1="166" x2="228" y2="166"/><text x="234" y="169">3</text>
+                    <line x1="214" y1="206" x2="228" y2="206"/><text x="234" y="209">4</text>
+                    <text class="sv-unit" x="252" y="62">fathoms</text>
+                  </g>
+                  <path class="sv-seabed" d="M0 224 C40 214, 70 232, 110 222 S190 212, 230 224 S280 230, 300 220 L300 250 L0 250 Z"/>
+                  <g class="sv-rings">
+                    <ellipse cx="150" cy="212" rx="14" ry="4"/>
+                    <ellipse cx="150" cy="212" rx="14" ry="4"/>
+                    <ellipse cx="150" cy="212" rx="14" ry="4"/>
+                  </g>
+                  <line class="sv-line" x1="150" y1="46" x2="150" y2="206"/>
+                  <g class="sv-weight"><circle cx="150" cy="46" r="7"/><circle class="core" cx="150" cy="46" r="2.6"/></g>
+                  <path class="sv-surface" d="M-20 46 q15 -8 30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0"/>
+                  <path class="sv-surface b" d="M-20 52 q15 -6 30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0"/>
+                </svg>
+              </div>
+              <p class="kicker k-cap center">Taking a sounding</p>
+              <h2 class="sound-title center">Charting your Agon…</h2>
+              <p class="dim center sound-line" id="soundLine">Reading your recent pool swims</p>
+              <div class="sound-dots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+            </div>
+          </section>
+
+          <!-- 2a / 2b / 2c · Sounding result -->
+          <section class="screen" id="s-result" aria-label="Sounding result"></section>
+
+          <!-- 3 · Agon home -->
+          <section class="screen" id="s-home" aria-label="Agon home"></section>
+
+          <!-- 4 · Today -->
+          <section class="screen" id="s-session" aria-label="Today"></section>
+
+          <!-- 6 · Trial not cleared -->
+          <section class="screen moment fail" id="s-fail" aria-label="Trial not cleared">
+            <div class="moment-top">
+              <p class="kicker k-cap">Trial 2 · Sat Oct 31</p>
+            </div>
+
+            <div class="fail-hero">
+              <p class="kicker">Not passed yet</p>
+              <p class="fail-big"><span>1,120</span><small> of 1,200 m</small></p>
+              <p class="fail-sub mono">non-stop · 23:05 at 1,120 m · avg 2:04 /100 m</p>
+              <div class="chips">
+                <span class="chip solid">Longest continuous swim yet · +20 m</span>
+              </div>
+              <div class="dist-track" aria-label="Distance reached against trial">
+                <div class="dist-fill" style="width:60%"></div>
+                <span class="tick" style="left:0"><b>1,000</b><em>start</em></span>
+                <span class="tick" style="left:50%"><b>1,100</b><em>Trial 1</em></span>
+                <span class="tick tgt" style="left:100%"><b>1,200</b><em>target</em></span>
+              </div>
+            </div>
+
+            <section class="card" aria-label="What the swim showed">
+              <p class="kicker">What the swim showed</p>
+              <div id="splitChart" class="split-chart"></div>
+              <p class="dim small" style="margin-top:6px">Pace held <b>2:01 /100 m</b> through 800 m, then eased to about <b>2:10</b> over the last 320 m. The next block builds on exactly that.</p>
+            </section>
+
+            <section class="card cap-card" aria-label="Dates">
+              <p class="kicker k-cap">Your dates</p>
+              <ul class="date-moves">
+                <li><span>Trial 2</span><s class="mono">Sat Oct 31</s><b class="mono">Wed Nov 4</b><em>+4 d</em></li>
+                <li><span>Goal forecast</span><s class="mono">Sat Oct 31</s><b class="mono">Wed Nov 4</b><em>+4 d</em></li>
+              </ul>
+              <p class="dim small">The next attempt is at least 48 h out. One reshaped session on Mon Nov 2 goes in between.</p>
+            </section>
+
+            <section class="card" aria-label="What stays the same">
+              <p class="kicker">Unchanged</p>
+              <ul class="kept">
+                <li><i class="ok"></i><span>Trial 1 passed Oct 24</span></li>
+                <li class="game-only"><i class="ok"></i><span>Streak · 2 weeks</span></li>
+                <li class="game-only"><i class="ok"></i><span>Depth 5</span></li>
+                <li class="game-only"><i class="plus"></i><span><b>+100 Areté</b> for the attempt</span></li>
+              </ul>
+            </section>
+
+            <div class="choice-stack">
+              <button type="button" class="btn primary block" id="btnRetry">Retry Wed Nov 4<small>after 1 reshaped session</small></button>
+              <button type="button" class="btn block" id="btnStepDown">Try 1,150 m first<small>smaller step · goal moves to Nov 11</small></button>
+              <button type="button" class="link-btn center" id="btnLater">Decide later</button>
+            </div>
+            <p class="tiny dim center">We won’t send a notification about this result.</p>
+          </section>
+
+          <!-- 7 · Odyssey -->
+          <section class="screen" id="s-odyssey" aria-label="Odyssey"></section>
+
+          <!-- 8 · Forecast detail -->
+          <section class="screen" id="s-forecast" aria-label="Forecast detail"></section>
+
+        </main>
+
+        <!-- 5 · Kleos celebration (full screen) -->
+        <section class="kleos" id="s-kleos" aria-label="Kleos unlocked" aria-hidden="true">
+          <div class="k-sea" aria-hidden="true">
+            <svg class="k-surface" viewBox="0 0 768 60" width="768" height="60">
+              <path d="M0 30 q24 -14 48 0 t48 0 t48 0 t48 0 t48 0 t48 0 t48 0 t48 0 t48 0 t48 0 t48 0 t48 0 t48 0 t48 0 t48 0 t48 0 V60 H0Z"/>
+            </svg>
+            <div class="k-glow"></div>
+            <div class="k-ripples"><i></i><i></i><i></i><i></i></div>
+            <div class="k-bubbles" id="kBubbles"></div>
+            <div class="k-depth"><i></i><i></i><i></i><i></i><i></i><b>5</b></div>
+          </div>
+
+          <button class="k-skip" type="button" data-go="home">Skip</button>
+
+          <div class="k-body">
+            <div class="medal" aria-hidden="true">
+              <svg viewBox="0 0 220 220" id="kMedalSvg">
+                <defs>
+                  <linearGradient id="kg-medal" x1="0.15" y1="0" x2="0.85" y2="1">
+                    <stop offset="0" stop-color="#f6dfa4"/>
+                    <stop offset="0.5" stop-color="#cf9a43"/>
+                    <stop offset="1" stop-color="#8d5b1e"/>
+                  </linearGradient>
+                  <linearGradient id="kg-leaf" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#e9c880"/>
+                    <stop offset="1" stop-color="#b8802f"/>
+                  </linearGradient>
+                  <clipPath id="kg-clip"><circle cx="110" cy="112" r="54"/></clipPath>
+                </defs>
+                <g id="kLaurel"></g>
+                <g class="k-medal-core">
+                  <circle cx="110" cy="112" r="56" fill="url(#kg-medal)"/>
+                  <circle cx="110" cy="112" r="47" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1.2"/>
+                  <path d="M80 86 q7.5 -7 15 0 t15 0 t15 0 t15 0" fill="none" stroke="#5b3a0f" stroke-width="2.2" stroke-linecap="round" opacity="0.55"/>
+                  <path d="M86 94 q6 -5 12 0 t12 0 t12 0 t12 0" fill="none" stroke="#5b3a0f" stroke-width="1.6" stroke-linecap="round" opacity="0.35"/>
+                  <text x="110" y="124" text-anchor="middle" class="k-num">1,100</text>
+                  <text x="110" y="142" text-anchor="middle" class="k-unit">m · non-stop</text>
+                  <g clip-path="url(#kg-clip)"><g transform="rotate(20 110 110)"><rect class="k-shine" x="20" y="20" width="26" height="170"/></g></g>
+                </g>
+              </svg>
+            </div>
+
+            <p class="k-kicker" id="kKicker">Kleos unlocked</p>
+            <h1 class="k-title" id="kTitle">First Mark</h1>
+            <p class="k-sub" id="kSub">You swam 1,100 m non-stop, your longest continuous swim yet.</p>
+
+            <div class="k-cards">
+              <div class="k-card game-only k-arete">
+                <p class="k-label">Areté earned <span class="k-hint">progress points</span></p>
+                <p class="k-big"><span id="kArete">+400</span></p>
+                <ul class="k-lines mono">
+                  <li><span>Trial attempted</span><b>+100</b></li>
+                  <li><span>Trial cleared</span><b>+200</b></li>
+                  <li><span>Longest swim yet</span><b>+100</b></li>
+                </ul>
+              </div>
+              <div class="k-row game-only">
+                <div class="k-card k-streak">
+                  <p class="k-label">Streak</p>
+                  <p class="k-mid">2 weeks</p>
+                  <p class="k-note">maintained</p>
+                </div>
+                <div class="k-card k-depth-card">
+                  <p class="k-label">Depth</p>
+                  <p class="k-mid">Depth 5</p>
+                  <div class="k-bar"><i></i></div>
+                  <p class="k-note">8% to Depth 6</p>
+                </div>
+              </div>
+              <div class="k-card k-ladder">
+                <p class="k-label">Your Odyssey continues</p>
+                <p class="k-note" style="margin:2px 0 0">Next · <b>Trial 2</b> · 1,200 m ≤ 24:00 · Sat Oct 31 · forecast on plan.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="k-cta">
+            <button type="button" class="btn primary block" data-go="home">Continue</button>
+            <button type="button" class="link-btn center game-only" data-go="odyssey">See it in your Odyssey</button>
+          </div>
+        </section>
+
+        <nav class="tabbar" id="tabbar" aria-label="Agon">
+          <button class="tab" type="button" data-go="home">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18M3 12h18M3 17h18"/><circle cx="8" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>Agon</button>
+          <button class="tab" type="button" data-go="session">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.2"/></svg>Today</button>
+          <button class="tab" type="button" data-go="odyssey">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 18c3-1 3.5-9 8-9s3.5 6 8.5-5"/><circle cx="20" cy="4.5" r="1.8" fill="currentColor" stroke="none"/></svg>Odyssey</button>
+        </nav>
+
+        <div class="cta-bar" id="ctaBar"></div>
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+        <div class="sheet-backdrop" id="sheetBackdrop"></div>
+
+        <!-- How dates work -->
+        <div class="sheet" id="sheetRules" role="dialog" aria-labelledby="rulesTitle" aria-hidden="true">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <div><p class="kicker">Agon · Pool swim</p><h2 id="rulesTitle">How your dates work</h2></div>
+            <button class="sheet-close" type="button" data-close-sheet aria-label="Close">×</button>
+          </div>
+          <div class="sheet-body">
+            <div class="rule-pair cap"><b>Dates follow your trials.</b><span>They move only when a trial isn’t passed, is delayed, or you pause the Agon. Skipping or shortening a session never moves them.</span></div>
+            <div class="rule-pair habit game-only"><b>Areté and Streak stay steady.</b><span>Streak counts a week when you complete at least half your sessions, and Rest passes apply on their own. Areté is a lifetime total and never goes down, so a trial that isn’t passed moves dates, not points.</span></div>
+            <div class="sheet-actions single"><button type="button" class="primary" data-close-sheet>Got it</button></div>
+          </div>
+        </div>
+
+        <!-- What is Areté -->
+        <div class="sheet" id="sheetArete" role="dialog" aria-labelledby="areteTitle" aria-hidden="true">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <div><p class="kicker">The Odyssey</p><h2 id="areteTitle">Areté · progress points</h2></div>
+            <button class="sheet-close" type="button" data-close-sheet aria-label="Close">×</button>
+          </div>
+          <div class="sheet-body">
+            <div class="rule-pair habit"><b>Areté is how Fathom counts your progress.</b><span>You earn it for sessions, trials and Agon milestones. It is a lifetime total that only goes up.</span></div>
+            <div class="rule-pair cap"><b>Depth and Kleos build on it.</b><span>Depth is how far along your Odyssey you are. Kleos marks the major milestones you reach on the way. Streak counts consistent weeks.</span></div>
+            <div class="sheet-actions single"><button type="button" class="primary" data-close-sheet>Got it</button></div>
+          </div>
+        </div>
+
+        <!-- Skip -->
+        <div class="sheet" id="sheetSkip" role="dialog" aria-labelledby="skipTitle" aria-hidden="true">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <div><p class="kicker">Skip today</p><h2 id="skipTitle">What’s getting in the way?</h2></div>
+            <button class="sheet-close" type="button" data-close-sheet aria-label="Close">×</button>
+          </div>
+          <div class="sheet-body">
+            <div class="reason-grid" id="skipReasons">
+              <button type="button" data-reason="Listening to recovery"><b>Recovery / other load</b><span>Counts as rest</span></button>
+              <button type="button" data-reason="Ill"><b>Ill</b><span>Counts as rest</span></button>
+              <button type="button" data-reason="Travel"><b>Travel</b><span>Counts as rest</span></button>
+              <button type="button" data-reason="Pool closed"><b>Pool closed</b><span>Counts as rest</span></button>
+              <button type="button" data-reason="Other"><b>Something else</b><span>No effect on your dates</span></button>
+            </div>
+            <p class="guard"><b>Skipping never moves your dates.</b> <span class="game-only">Streak and Areté stay as they are; a week with 2 of 3 sessions still counts.</span></p>
+          </div>
+        </div>
+
+        <!-- Adjust -->
+        <div class="sheet" id="sheetAdjust" role="dialog" aria-labelledby="adjTitle" aria-hidden="true">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <div><p class="kicker">Adjust today</p><h2 id="adjTitle">Make it fit</h2></div>
+            <button class="sheet-close" type="button" data-close-sheet aria-label="Close">×</button>
+          </div>
+          <div class="sheet-body">
+            <div class="reason-grid" id="adjustOpts">
+              <button type="button" data-adjust="Shorter · main set 2 × 400"><b>Shorter</b><span>Main set 2 × 400 · ~1,400 m</span></button>
+              <button type="button" data-adjust="Easier · main set at 2:08 /100"><b>Easier pace</b><span>Same distance · RPE 5</span></button>
+              <button type="button" data-adjust="Moved to Tue"><b>Move to Tuesday</b><span>Same week · no date change</span></button>
+            </div>
+            <p class="guard">Adjusted swims still count as done<span class="game-only"> (60 Areté)</span>.</p>
+          </div>
+        </div>
+
+        <!-- Delay trial -->
+        <div class="sheet" id="sheetDelay" role="dialog" aria-labelledby="delayTitle" aria-hidden="true">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <div><p class="kicker k-cap">Trial 2 · Sat Oct 31</p><h2 id="delayTitle">Delay this trial?</h2></div>
+            <button class="sheet-close" type="button" data-close-sheet aria-label="Close">×</button>
+          </div>
+          <div class="sheet-body">
+            <div class="rule-pair cap"><b>Dates would move.</b><span>Trial 2 → Wed Nov 4 and the goal forecast → Nov 4 (+4 d). <span class="game-only">Areté, Streak and Depth stay as they are.</span></span></div>
+            <div class="sheet-actions">
+              <button type="button" class="primary" data-close-sheet>Keep Oct 31</button>
+              <button type="button" id="btnConfirmDelay">Delay to Nov 4</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

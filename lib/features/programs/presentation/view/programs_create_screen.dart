@@ -1,4 +1,5 @@
 import 'package:blueprint_ui/blueprint_ui.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -76,6 +77,84 @@ class _ProgramsCreateScreenState extends State<ProgramsCreateScreen> {
     final t = _targetSec;
     if (!_timeEnabled || t == null || t <= 0 || _goalM < 50) return null;
     return formatPacePer100(_goalM, t);
+  }
+
+  Future<void> _pickTargetTime() async {
+    var draft = Duration(seconds: (_targetSec ?? 24 * 60).clamp(60, 7200));
+    final colors = FathomColors.of(context);
+    final picked = await showModalBottomSheet<Duration>(
+      context: context,
+      backgroundColor: colors.bgElev,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Target time',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: colors.ink,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Scroll to set goal swim duration',
+                  style: TextStyle(fontSize: 12.5, color: colors.inkDim),
+                ),
+                SizedBox(
+                  height: 180,
+                  child: CupertinoTheme(
+                    data: CupertinoThemeData(
+                      brightness: Theme.of(ctx).brightness,
+                      textTheme: CupertinoTextThemeData(
+                        pickerTextStyle: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          color: colors.ink,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                    child: CupertinoTimerPicker(
+                      key: const Key('programs-target-time-picker'),
+                      mode: CupertinoTimerPickerMode.hm,
+                      initialTimerDuration: draft,
+                      minuteInterval: 1,
+                      onTimerDurationChanged: (d) => draft = d,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(ctx).pop(draft),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: colors.accent,
+                      foregroundColor: colors.accentInk,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
+                    child: const Text('Use this time'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || picked == null) return;
+    setState(() {
+      _timeEnabled = true;
+      _targetSec = picked.inSeconds.clamp(60, 7200);
+    });
   }
 
   @override
@@ -157,68 +236,16 @@ class _ProgramsCreateScreenState extends State<ProgramsCreateScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _StepperField(
-                    label: 'Target time',
-                    hint: _paceHint ?? 'optional',
-                    valueKey: const Key('programs-target-time'),
-                    valueChild: Text(
-                      _timeEnabled && _targetSec != null
-                          ? formatMmSs(_targetSec!)
-                          : '—',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 34,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -1.2,
-                        color: colors.ink,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                    onMinus: !_timeEnabled
-                        ? null
-                        : () => setState(() {
-                              _targetSec =
-                                  ((_targetSec ?? 1440) - 15).clamp(60, 7200);
-                            }),
-                    onPlus: !_timeEnabled
-                        ? null
-                        : () => setState(() {
-                              _targetSec =
-                                  ((_targetSec ?? 1440) + 15).clamp(60, 7200);
-                            }),
+                  _TargetTimeField(
+                    enabled: _timeEnabled,
+                    targetSec: _targetSec,
+                    paceHint: _paceHint,
                     colors: colors,
-                    footer: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _timeEnabled
-                                ? 'Optional pace target for the goal swim'
-                                : 'No time target — distance only',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: colors.inkFaint,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => setState(() {
-                            _timeEnabled = !_timeEnabled;
-                            _targetSec ??= 24 * 60;
-                          }),
-                          child: Text(
-                            _timeEnabled ? 'Clear' : 'Add time',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: colors.accent,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                    onPick: _pickTargetTime,
+                    onClearOrAdd: () => setState(() {
+                      _timeEnabled = !_timeEnabled;
+                      _targetSec ??= 24 * 60;
+                    }),
                   ),
                   const SizedBox(height: 12),
                   _SegmentedField(
@@ -348,7 +375,8 @@ class _ProgramsCreateScreenState extends State<ProgramsCreateScreen> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 80),
+                  // Clear of sticky CTA + safe area so the last card isn’t clipped.
+                  const SizedBox(height: 120),
                 ],
               ),
             ),
@@ -357,13 +385,16 @@ class _ProgramsCreateScreenState extends State<ProgramsCreateScreen> {
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             decoration: BoxDecoration(
+              color: colors.bg,
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
                   colors.bg.withValues(alpha: 0),
                   colors.bg,
+                  colors.bg,
                 ],
+                stops: const [0, 0.35, 1],
               ),
             ),
             child: SafeArea(
@@ -577,6 +608,127 @@ class _Bullet extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _TargetTimeField extends StatelessWidget {
+  const _TargetTimeField({
+    required this.enabled,
+    required this.targetSec,
+    required this.paceHint,
+    required this.colors,
+    required this.onPick,
+    required this.onClearOrAdd,
+  });
+
+  final bool enabled;
+  final int? targetSec;
+  final String? paceHint;
+  final FathomColors colors;
+  final VoidCallback onPick;
+  final VoidCallback onClearOrAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return AgonCard(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Text(
+                'Target time',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: colors.inkDim,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                paceHint ?? (enabled ? 'optional' : 'off'),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: colors.inkFaint,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Material(
+            color: colors.bg,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              key: const Key('programs-target-time'),
+              onTap: onPick,
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: colors.line),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      enabled && targetSec != null
+                          ? formatMmSs(targetSec!)
+                          : 'Tap to set',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -1.2,
+                        color: colors.ink,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Scroll picker · easier than ±15s',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: colors.inkFaint,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  enabled
+                      ? 'Optional pace target for the goal swim'
+                      : 'No time target — distance only',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colors.inkFaint,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: onClearOrAdd,
+                child: Text(
+                  enabled ? 'Clear' : 'Add time',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: colors.accent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
