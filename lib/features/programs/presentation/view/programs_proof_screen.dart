@@ -6,8 +6,9 @@ import 'package:fitness_os/features/programs/domain/milestone.dart';
 import 'package:fitness_os/features/programs/domain/program_planner.dart';
 import 'package:fitness_os/features/programs/presentation/controller/programs_controller.dart';
 import 'package:fitness_os/features/programs/presentation/view/programs_format.dart';
+import 'package:fitness_os/features/programs/presentation/widgets/agon_chrome.dart';
 
-/// Proof moment: calm pass celebration or factual not-passed + slipped date.
+/// Trial proof: calm pass celebration or factual not-passed + slipped date.
 ///
 /// No shame copy — never "you failed", sad emoji, or red-shame language.
 class ProgramsProofScreen extends StatefulWidget {
@@ -129,6 +130,7 @@ class _ProgramsProofScreenState extends State<ProgramsProofScreen> {
         targetM: m?.targetDistanceM ?? 0,
         judgedM: _judgedM,
         slippedDate: _slippedDate,
+        trialName: m != null ? formatTrialName(m) : 'Trial',
         onDone: () => Navigator.of(context).pop(),
       );
     }
@@ -136,27 +138,33 @@ class _ProgramsProofScreenState extends State<ProgramsProofScreen> {
     if (m == null) {
       return Scaffold(
         backgroundColor: colors.bg,
-        appBar: AppBar(title: const Text('Proof')),
-        body: const Center(child: Text('Milestone not found.')),
+        appBar: AgonAppHeader(
+          title: 'Agon · Pool',
+          subtitle: 'Trial',
+          onBack: () => Navigator.of(context).pop(),
+        ),
+        body: const Center(child: Text('Trial not found.')),
       );
     }
 
     return Scaffold(
       backgroundColor: colors.bg,
-      appBar: AppBar(
-        title: const Text('Proof'),
-        backgroundColor: colors.bg,
-        foregroundColor: colors.ink,
-        elevation: 0,
+      appBar: AgonAppHeader(
+        title: 'Agon · Pool',
+        subtitle: formatTrialName(m),
+        onBack: () => Navigator.of(context).pop(),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          LayerTag('${formatTrialName(m)} · ${m.forecastDateIso}'),
+          const SizedBox(height: 6),
           Text(
-            '${formatMeters(m.targetDistanceM)} m continuous',
+            '${formatMeters(m.targetDistanceM)} m non-stop',
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
               color: colors.ink,
             ),
           ),
@@ -173,8 +181,14 @@ class _ProgramsProofScreenState extends State<ProgramsProofScreen> {
               backgroundColor: colors.accent,
               foregroundColor: colors.accentInk,
               padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
             ),
-            child: const Text('Passed'),
+            child: const Text(
+              'Passed',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
           ),
           const SizedBox(height: 20),
           Text(
@@ -195,7 +209,7 @@ class _ProgramsProofScreenState extends State<ProgramsProofScreen> {
               filled: true,
               fillColor: colors.bgElev,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
           ),
@@ -203,7 +217,20 @@ class _ProgramsProofScreenState extends State<ProgramsProofScreen> {
           OutlinedButton(
             key: const Key('programs-proof-not-passed'),
             onPressed: _busy ? null : _submitNotPassed,
-            child: const Text('Not passed'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              side: BorderSide(color: colors.line),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: Text(
+              'Not passed yet',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: colors.ink,
+              ),
+            ),
           ),
         ],
       ),
@@ -218,6 +245,7 @@ class _ResultScaffold extends StatelessWidget {
     required this.targetM,
     required this.judgedM,
     required this.slippedDate,
+    required this.trialName,
     required this.onDone,
   });
 
@@ -226,69 +254,131 @@ class _ResultScaffold extends StatelessWidget {
   final int targetM;
   final int? judgedM;
   final String? slippedDate;
+  final String trialName;
   final VoidCallback onDone;
 
   @override
   Widget build(BuildContext context) {
     final passed = outcome == ProofOutcome.pass;
     return Scaffold(
-      key: Key(passed ? 'programs-proof-pass-result' : 'programs-proof-fail-result'),
+      key: Key(
+        passed ? 'programs-proof-pass-result' : 'programs-proof-fail-result',
+      ),
       backgroundColor: colors.bg,
-      appBar: AppBar(
-        title: Text(passed ? 'Passed' : 'Not passed'),
-        backgroundColor: colors.bg,
-        foregroundColor: colors.ink,
-        elevation: 0,
+      appBar: AgonAppHeader(
+        title: 'Agon · Pool',
+        subtitle: trialName,
+        onBack: onDone,
       ),
       body: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              passed
-                  ? 'Milestone cleared.'
-                  : 'Not passed — distance short of target.',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: colors.ink,
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (judgedM != null)
+            if (!passed) ...[
               Text(
-                key: const Key('programs-proof-distance-fact'),
-                '${formatMeters(judgedM!)} m of ${formatMeters(targetM)} m',
+                'Not passed yet',
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 11,
+                  letterSpacing: 0.8,
                   fontWeight: FontWeight.w700,
-                  color: colors.ink,
-                ),
-              )
-            else
-              Text(
-                key: const Key('programs-proof-distance-fact'),
-                'Target ${formatMeters(targetM)} m',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: colors.ink,
+                  color: colors.inkFaint,
                 ),
               ),
-            if (!passed && slippedDate != null) ...[
+              const SizedBox(height: 4),
+              if (judgedM != null)
+                Text.rich(
+                  key: const Key('programs-proof-distance-fact'),
+                  TextSpan(
+                    text: formatMeters(judgedM!),
+                    style: TextStyle(
+                      fontSize: 52,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -2.4,
+                      height: 1,
+                      color: colors.ink,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                    children: [
+                      TextSpan(
+                        text: ' m of ${formatMeters(targetM)} m',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: colors.inkDim,
+                          letterSpacing: 0,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Text(
+                  key: const Key('programs-proof-distance-fact'),
+                  'Target ${formatMeters(targetM)} m',
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: colors.ink,
+                  ),
+                ),
+              if (slippedDate != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  key: const Key('programs-proof-slipped-date'),
+                  'Next attempt $slippedDate',
+                  style: TextStyle(fontSize: 15, color: colors.inkDim),
+                ),
+              ],
               const SizedBox(height: 12),
               Text(
-                key: const Key('programs-proof-slipped-date'),
-                'Next attempt $slippedDate',
-                style: TextStyle(fontSize: 15, color: colors.inkDim),
+                'Dates move. Areté and Streak stay as they are.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: colors.inkDim,
+                  height: 1.4,
+                ),
               ),
-            ],
-            if (passed) ...[
+            ] else ...[
+              Text(
+                'Trial cleared',
+                style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: 0.8,
+                  fontWeight: FontWeight.w700,
+                  color: Color.lerp(colors.accent, colors.ink, 0.3),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Milestone cleared.',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  color: colors.ink,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                key: const Key('programs-proof-distance-fact'),
+                judgedM != null
+                    ? '${formatMeters(judgedM!)} m of ${formatMeters(targetM)} m'
+                    : 'Target ${formatMeters(targetM)} m',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: colors.ink,
+                ),
+              ),
               const SizedBox(height: 12),
               Text(
                 'Steady work. The ladder moves forward.',
-                style: TextStyle(fontSize: 14, color: colors.inkDim, height: 1.4),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: colors.inkDim,
+                  height: 1.4,
+                ),
               ),
             ],
             const Spacer(),
@@ -298,8 +388,14 @@ class _ResultScaffold extends StatelessWidget {
                 backgroundColor: colors.accent,
                 foregroundColor: colors.accentInk,
                 padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
-              child: const Text('Back to program'),
+              child: const Text(
+                'Back to Agon',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
             ),
           ],
         ),

@@ -421,16 +421,13 @@ class ProgramPlanner {
     required int capacityM,
     required bool afterFail,
   }) {
-    // Prefer key-session band; dogfood 1200 → ~1440 then clamp.
-    final raw = roundToPoolStep(
-      ((goalM > capacityM ? goalM : capacityM) * 1.2).round(),
-    );
-    var total = clampInt(raw, keySessionMinM, keySessionMaxM);
+    // Scale from continuous capacity — not a hard 1300 m masters floor.
+    // 900 m continuous → ~1200 m session (WU + broken main + CD), not 1500.
+    var total = seedSessionTotalM(capacityM: capacityM, goalM: goalM);
     if (afterFail) {
-      // Flatten: stay within support/key overlap, no jump past prior week+10%.
       total = clampInt(
         roundToPoolStep((total * 0.95).round()),
-        supportSessionMinM,
+        sessionTotalFloorM(capacityM),
         keySessionMaxM,
       );
     }
@@ -438,26 +435,29 @@ class ProgramPlanner {
   }
 
   int _roleSessionTotalM(ChoreRole role, int base) {
+    // Relative to the week's per-session base — never re-floor to 1300.
     switch (role) {
       case ChoreRole.endurance:
-        return clampInt(base, keySessionMinM, keySessionMaxM);
+        return clampInt(base, absoluteSessionFloorM, keySessionMaxM);
       case ChoreRole.quality:
         return clampInt(
           roundToPoolStep((base * 0.95).round()),
-          supportSessionMinM,
+          absoluteSessionFloorM,
           keySessionMaxM,
         );
       case ChoreRole.technique:
         return clampInt(
           roundToPoolStep((base * 0.85).round()),
-          supportSessionMinM,
+          supportSessionMinM < absoluteSessionFloorM
+              ? absoluteSessionFloorM
+              : supportSessionMinM,
           supportSessionMaxM,
         );
       case ChoreRole.easy:
       case ChoreRole.recovery:
         return clampInt(
           roundToPoolStep((base * 0.75).round()),
-          supportSessionMinM,
+          absoluteSessionFloorM,
           supportSessionMaxM,
         );
       case ChoreRole.proof:
@@ -543,7 +543,7 @@ class ProgramPlanner {
       ),
       ChoreBlock(
         part: 'main',
-        label: mainPat.label,
+        label: _brokenMainLabel(mainPat.label, main, mainPat.defaultRestSec),
         distanceM: main,
         restGuidanceSec: mainPat.defaultRestSec,
         patternId: mainPat.id,
@@ -558,6 +558,12 @@ class ProgramPlanner {
         effortBand: cdPat.effortBand,
       ),
     ];
+  }
+
+  /// Athlete-facing main label: broken reps with rest — never implies continuous.
+  String _brokenMainLabel(String patternLabel, int mainM, int restSec) {
+    final rest = restSec > 0 ? ' · rest ${restSec}s' : '';
+    return '$patternLabel · $mainM m with rests$rest';
   }
 
   /// Spread sessions across the week (Mon-first local week from [start]).
@@ -577,9 +583,9 @@ class ProgramPlanner {
   String _focusLine(ChoreRole role, int? proofM) {
     switch (role) {
       case ChoreRole.endurance:
-        return 'Long-rep aerobic; shrink rest toward continuous';
+        return 'Long steady · broken with rest';
       case ChoreRole.quality:
-        return 'One threshold / goal-pace quality set';
+        return 'Quality / goal-pace reps';
       case ChoreRole.technique:
         return 'Technique + easy aerobic';
       case ChoreRole.easy:
@@ -587,9 +593,9 @@ class ProgramPlanner {
       case ChoreRole.recovery:
         return 'Easy recovery swim';
       case ChoreRole.proof:
-        return 'Capacity proof: ${proofM ?? '?'} m continuous';
+        return 'Trial · ${proofM ?? '?'} m non-stop';
       case ChoreRole.guidedTest:
-        return 'Guided baseline / CSS test';
+        return 'Sounding test swim';
     }
   }
 

@@ -45,13 +45,44 @@ const double deloadFactor = 0.80;
 /// Insert a deload week every N weeks (after a peak).
 const int deloadEveryWeeks = 4;
 
-/// Key (endurance) session total distance clamp.
+/// Absolute floor for any structured session (WU + main-with-rest + CD).
+/// Never force the masters key-session band on a thinner capacity athlete.
+const int absoluteSessionFloorM = 800;
+
+/// Typical masters key-session band (upper planning clamp only).
 const int keySessionMinM = 1300;
 const int keySessionMaxM = 2000;
 
-/// Support session total distance clamp.
-const int supportSessionMinM = 1000;
+/// Support session upper clamp.
 const int supportSessionMaxM = 1600;
+
+/// Soft lower band for support roles (technique / easy), still capacity-scaled.
+const int supportSessionMinM = 900;
+
+/// Session-total floor from continuous capacity (~1.15×, clamped).
+int sessionTotalFloorM(int capacityM) {
+  final cap = capacityM < 200 ? 200 : capacityM;
+  final scaled = roundToPoolStep((cap * 1.15).round());
+  return clampInt(scaled, absoluteSessionFloorM, keySessionMinM);
+}
+
+/// Seed session total from capacity: ~1.35× continuous (broken swim + WU/CD),
+/// capped near goal×1.4 so early weeks stay doable.
+int seedSessionTotalM({
+  required int capacityM,
+  required int goalM,
+}) {
+  final cap = capacityM > 0 ? capacityM : roundToPoolStep((goalM * 0.75).round());
+  final raw = roundToPoolStep((cap * 1.35).round());
+  final lo = sessionTotalFloorM(cap);
+  final goalCap = roundToPoolStep((goalM * 1.4).round());
+  final hi = clampInt(
+    goalCap < keySessionMaxM ? goalCap : keySessionMaxM,
+    lo,
+    keySessionMaxM,
+  );
+  return clampInt(raw, lo, hi);
+}
 
 // --- Warm-up / cool-down ---------------------------------------------------
 

@@ -143,9 +143,11 @@ void main() {
     expect(find.textContaining('1,200 m'), findsWidgets);
     expect(find.byKey(const Key('programs-today-chore')), findsOneWidget);
     expect(find.byKey(const Key('programs-chore-structure')), findsOneWidget);
+    expect(find.textContaining('WU · Main with rests · CD'), findsOneWidget);
     expect(find.textContaining('Warm-up'), findsOneWidget);
-    expect(find.textContaining('Main'), findsOneWidget);
+    expect(find.text('Main'), findsOneWidget);
     expect(find.textContaining('Cool-down'), findsOneWidget);
+    expect(find.textContaining('Agon · Pool swim'), findsOneWidget);
   });
 
   testWidgets('proof fail shows distance fact + slipped date, no shame words',
