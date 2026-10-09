@@ -73,7 +73,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Syncing'), findsOneWidget);
-    expect(find.text('Pulling today’s data'), findsOneWidget);
+    // Quiet sync chip only — large Watch sync card demoted when day stack shows.
+    expect(find.text('Pulling today’s data'), findsNothing);
     expect(find.byKey(const Key('home-sleep-duration')), findsOneWidget);
     expectForbiddenSectionsAbsent();
   });
@@ -108,9 +109,10 @@ void main() {
     expect(find.textContaining('%'), findsNothing);
     expect(find.byKey(const Key('home-session-0')), findsOneWidget);
     expect(find.byKey(const Key('home-session-1')), findsOneWidget);
-    expect(find.byKey(const Key('home-programs-cta')), findsOneWidget);
-    expect(find.text('Swim'), findsOneWidget);
-    expect(find.textContaining('AGONS'), findsOneWidget);
+    // Agon hybrid needs ProgramsController; without DI, sport dock is gone.
+    expect(find.byKey(const Key('home-programs-cta')), findsNothing);
+    expect(find.textContaining('AGONS'), findsNothing);
+    expect(find.text('ACTIVITY TOTALS'), findsOneWidget);
     expectForbiddenSectionsAbsent();
   });
 
