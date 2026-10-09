@@ -5,6 +5,7 @@ import 'package:fitness_os/features/food/presentation/view/food_capture_route.da
 import 'package:fitness_os/features/food/presentation/view/food_meal_edit_route.dart';
 import 'package:fitness_os/features/food/presentation/view/food_schedule_route.dart';
 import 'package:fitness_os/features/home/presentation/view/home_route.dart';
+import 'package:fitness_os/features/programs/presentation/view/programs_route.dart';
 import 'package:fitness_os/features/vitals/presentation/view/recovery_tab_host.dart';
 import 'package:fitness_os/features/vitals/presentation/view/sleep_detail_route.dart';
 import 'package:fitness_os/features/vitals/presentation/view/sleep_history_route.dart';
@@ -32,6 +33,7 @@ class RouteRegistry {
     FoodCaptureRoute.register();
     FoodMealEditRoute.register();
     FoodScheduleRoute.register();
+    ProgramsRoute.register();
     HomeRoute.register();
   }
 }
