@@ -49,6 +49,7 @@ void main() {
     expect(find.text('Pair a GT5 to begin'), findsOneWidget);
     expect(find.text('Calories'), findsNothing);
     expect(find.byKey(const Key('home-sleep-duration')), findsNothing);
+    expect(find.byKey(const Key('home-recovery-time-value')), findsNothing);
     expectForbiddenSectionsAbsent();
   });
 
@@ -62,6 +63,7 @@ void main() {
     expect(find.text('Sync now'), findsOneWidget);
     expect(find.text('Waiting'), findsOneWidget);
     expect(find.text('Calories'), findsNothing);
+    expect(find.byKey(const Key('home-recovery-time-value')), findsNothing);
     expectForbiddenSectionsAbsent();
   });
 
@@ -100,6 +102,12 @@ void main() {
     expect(find.text('1,842'), findsOneWidget);
     expect(find.byKey(const Key('home-sleep-duration')), findsOneWidget);
     expect(find.byKey(const Key('home-sleep-feel')), findsOneWidget);
+    expect(find.byKey(const Key('home-recovery-time-label')), findsOneWidget);
+    expect(find.byKey(const Key('home-recovery-time-value')), findsOneWidget);
+    expect(find.text('Recovery time'), findsOneWidget);
+    expect(find.text('14h'), findsOneWidget);
+    expect(find.textContaining('Fathom estimate'), findsNothing);
+    expect(find.textContaining('leftover'), findsNothing);
     expect(find.byKey(const Key('home-body-hr')), findsOneWidget);
     expect(find.byKey(const Key('home-hr-spark')), findsOneWidget);
     expect(find.text('Pool swim · #11'), findsOneWidget);
@@ -125,6 +133,8 @@ void main() {
     );
     expect(find.byKey(const Key('home-sessions-empty')), findsOneWidget);
     expect(find.text('No sessions yet today'), findsOneWidget);
+    expect(find.byKey(const Key('home-recovery-time-value')), findsOneWidget);
+    expect(find.text('0h'), findsOneWidget);
     expect(find.text('Calories'), findsOneWidget);
     expect(find.byKey(const Key('home-body-hr')), findsOneWidget);
     expect(find.byKey(const Key('home-session-0')), findsNothing);
@@ -144,6 +154,7 @@ void main() {
         syncCaption: base.syncCaption,
         sleepDurationLabel: base.sleepDurationLabel,
         sleepWindowLabel: base.sleepWindowLabel,
+        recoveryTimeLabel: base.recoveryTimeLabel,
         caloriesLabel: base.caloriesLabel,
         stepsLabel: base.stepsLabel,
         workoutTimeLabel: base.workoutTimeLabel,
@@ -152,6 +163,7 @@ void main() {
       ),
     );
     expect(find.byKey(const Key('home-sleep-feel')), findsNothing);
+    expect(find.byKey(const Key('home-recovery-time-value')), findsOneWidget);
     expect(find.textContaining('survey'), findsNothing);
     expectForbiddenSectionsAbsent();
   });

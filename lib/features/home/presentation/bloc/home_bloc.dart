@@ -76,6 +76,7 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
             sleepDurationLabel: prior.sleepDurationLabel,
             sleepWindowLabel: prior.sleepWindowLabel,
             sleepFeelCue: prior.sleepFeelCue,
+            recoveryTimeLabel: prior.recoveryTimeLabel,
             bodyHrLabel: prior.bodyHrLabel,
             bodyHrSparkSamples: prior.bodyHrSparkSamples,
             todaySessions: prior.todaySessions,
