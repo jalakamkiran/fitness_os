@@ -230,6 +230,20 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
         );
       }
 
+      final programsIndexLeft =
+          _prefs.containsKey(GateAPrefs.programsIndexJson);
+      final programsLedgerLeft =
+          _prefs.containsKey(GateAPrefs.programsLedgerJson);
+      final programsHideLeft =
+          _prefs.containsKey(GateAPrefs.programsHideGameLayer);
+      if (programsIndexLeft || programsLedgerLeft || programsHideLeft) {
+        return const Left(
+          ValidationFailure(
+            'Forget verify failed — programs prefs residue remains',
+          ),
+        );
+      }
+
       // Verify no meal / leftover / sample / export-cache residue (food-meals bar).
       try {
         final root = await _supportRoot();
@@ -238,6 +252,16 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
           return const Left(
             ValidationFailure(
               'Forget verify failed — food meal files residue remains',
+            ),
+          );
+        }
+
+        final programsDir =
+            Directory('${root.path}/${GateAPrefs.programsDir}');
+        if (await _dirHasFiles(programsDir)) {
+          return const Left(
+            ValidationFailure(
+              'Forget verify failed — programs files residue remains',
             ),
           );
         }
