@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fathom — Recovery hours (Home + Recovery)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="stage">
+    <div class="phone" id="phone" data-tab="home" data-state="rest">
+      <header class="app-header">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">F</span>
+          <div>
+            <p class="brand-title">Fathom</p>
+            <p class="brand-sub mono" id="syncLabel">GT5 · synced 4m ago</p>
+          </div>
+        </div>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">Dark</button>
+      </header>
+
+      <main class="scroll" id="main">
+        <!-- HOME TAB -->
+        <div class="tab-panel" data-panel="home">
+          <section class="hero" aria-label="Today’s Agon">
+            <div class="progress-strip">
+              <span class="pill"><span class="dot" aria-hidden="true"></span> Streak · 3 wk</span>
+              <span class="pill">Areté · L4</span>
+            </div>
+            <button class="chore-cta" type="button">
+              <p class="chore-kicker">Today’s course</p>
+              <p class="chore-title">Main set · continuous build</p>
+              <p class="chore-sub">Warm-up · 8×100 · cool-down · ~2.1k</p>
+            </button>
+          </section>
+
+          <p class="section-label">Last night</p>
+          <section class="sleep-card" id="sleepCard" aria-label="Sleep">
+            <div class="sleep-top">
+              <p class="sleep-dur" id="sleepDur">7h 12m</p>
+              <p class="sleep-window" id="sleepWindow">23:18 → 06:30</p>
+            </div>
+            <p class="sleep-note" id="sleepNote">Solid window · feel logged</p>
+          </section>
+
+          <!-- R9: Home recovery-time card near sleep — not a readiness score -->
+          <section class="hours-glance" id="homeHours" aria-label="Recovery time">
+            <div class="hours-glance-inner">
+              <p class="hours-kicker">Recovery time</p>
+              <p class="hours-value" id="homeHoursValue">14h</p>
+              <p class="hours-sub" id="homeHoursSub" hidden></p>
+            </div>
+            <div class="hours-meter" aria-hidden="true">
+              <span class="hours-meter-fill" id="homeMeter"></span>
+            </div>
+          </section>
+
+          <p class="section-label">Today’s sessions</p>
+          <div class="session-list" id="sessionList"></div>
+          <p class="sessions-empty" id="sessionsEmpty">No sessions yet · rest or not trained</p>
+        </div>
+
+        <!-- RECOVERY TAB -->
+        <div class="tab-panel" data-panel="recovery" hidden>
+          <!-- R10: top hero above subtabs -->
+          <section class="recovery-hero" id="recoveryHero" aria-label="Recovery time">
+            <p class="hero-kicker">Recovery time</p>
+            <p class="hero-value" id="heroValue">14h</p>
+            <p class="hero-lede" id="heroLede" hidden></p>
+            <p class="hero-note" id="heroNote" hidden></p>
+            <div class="hero-meter" aria-hidden="true">
+              <span class="hero-meter-fill" id="heroMeter"></span>
+            </div>
+          </section>
+
+          <nav class="subtabs" aria-label="Recovery subtabs">
+            <button type="button" class="subtab is-on" data-sub="sleep">Sleep</button>
+            <button type="button" class="subtab" data-sub="vitals">Vitals</button>
+            <button type="button" class="subtab" data-sub="food">Food</button>
+          </nav>
+
+          <div class="subpanel" data-subpanel="sleep">
+            <p class="section-label">Overnight</p>
+            <section class="sleep-card compact">
+              <div class="sleep-top">
+                <p class="sleep-dur" id="recSleepDur">7h 12m</p>
+                <p class="sleep-window">23:18 → 06:30</p>
+              </div>
+              <p class="sleep-note">Timing only · sleep is an input to hours, not a score</p>
+            </section>
+
+            <p class="section-label">Session recovery</p>
+            <div class="contrib" id="contribList"></div>
+          </div>
+          <div class="subpanel" data-subpanel="vitals" hidden>
+            <p class="placeholder-copy">Vitals trends stay here. Hours clock does not invent HRV readiness.</p>
+          </div>
+          <div class="subpanel" data-subpanel="food" hidden>
+            <p class="placeholder-copy">Food stays out of this cut’s fatigue clock.</p>
+          </div>
+        </div>
+
+        <!-- SESSION DETAIL (quiet source) -->
+        <div class="tab-panel" data-panel="detail" hidden>
+          <button type="button" class="back-link" id="backFromDetail">← Sessions</button>
+          <h2 class="detail-title" id="detailTitle">Pool swim</h2>
+          <p class="detail-meta" id="detailMeta">06:42 · 2,150 m</p>
+          <div class="detail-tile">
+            <p class="tile-label">Recovery</p>
+            <p class="tile-value" id="detailRecovery">12h</p>
+            <p class="tile-source mono" id="detailSource">estimated</p>
+          </div>
+          <p class="detail-hint">Primary tiles match watch-backed sessions. Source is quiet on detail only (R3).</p>
+        </div>
+      </main>
+
+      <nav class="tabbar" aria-label="Main">
+        <button type="button" class="tab is-on" data-nav="home">Home</button>
+        <button type="button" class="tab" data-nav="recovery">Recovery</button>
+        <button type="button" class="tab" data-nav="workouts" disabled title="Out of scope">Workouts</button>
+      </nav>
+    </div>
+
+    <aside class="rail" aria-label="Prototype states">
+      <p class="rail-eyebrow mono">ce-work · HTML first</p>
+      <h1>Recovery hours</h1>
+      <p class="rail-lede">Fatigue clock for Home + Recovery. Not a readiness %. Flutter domain engine deferred.</p>
+
+      <p class="rail-label">Scenario</p>
+      <div class="rail-btns" id="stateBtns">
+        <button type="button" data-state="rest" class="is-on">Rest morning (AE3)</button>
+        <button type="button" data-state="stack">Swim + strength stack</button>
+        <button type="button" data-state="zero">Recovered · 0h</button>
+        <button type="button" data-state="nosleep">No sleep strip</button>
+        <button type="button" data-state="empty">Insufficient (—)</button>
+      </div>
+
+      <p class="rail-label">Locks</p>
+      <ul class="rail-locks">
+        <li>Label: <strong>Recovery time</strong> + hours only</li>
+        <li>Home <strong>card</strong> near sleep · not Agon hero</li>
+        <li>No “Fathom estimate / leftover + sleep” chrome</li>
+        <li>Recovery hero above Sleep / Vitals / Food</li>
+        <li>Quiet estimated / watch on detail only</li>
+      </ul>
+
+      <p class="rail-foot mono">docs/design/recovery-hours-prototype/</p>
+    </aside>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

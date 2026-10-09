@@ -76,6 +76,7 @@ class HomeSnapshot {
     this.sleepDurationLabel,
     this.sleepWindowLabel,
     this.sleepFeelCue,
+    this.recoveryTimeLabel,
     this.bodyHrLabel,
     this.bodyHrSparkSamples = const [],
     this.todaySessions = const [],
@@ -97,6 +98,10 @@ class HomeSnapshot {
   /// Short feel-on-wake cue when already answered for the displayed sleep.
   final String? sleepFeelCue;
 
+  /// Overall recovery hours for the Home **Recovery time** card (`14h` / `0h` / `—`).
+  /// Null when chrome-only (card hidden). Never a readiness %.
+  final String? recoveryTimeLabel;
+
   /// Today HR rollup `min · avg · max` — omit when no today dayKey.
   final String? bodyHrLabel;
 
@@ -108,6 +113,7 @@ class HomeSnapshot {
 
   bool get hasDayStackContent =>
       sleepDurationLabel != null ||
+      recoveryTimeLabel != null ||
       caloriesLabel != null ||
       stepsLabel != null ||
       workoutTimeLabel != null ||
@@ -147,6 +153,7 @@ class HomeSnapshot {
           syncCaption: 'Prior day kept · muted until pass finishes',
           sleepDurationLabel: '7h 12m',
           sleepWindowLabel: '23:18 → 06:30',
+          recoveryTimeLabel: '14h',
           caloriesLabel: '1,842',
           stepsLabel: '7,420',
         ),
@@ -158,6 +165,7 @@ class HomeSnapshot {
           syncTitle: 'Couldn’t sync',
           syncCaption: 'Last good day kept · retry when ready',
           lastSyncedLabel: 'as of 09:14',
+          recoveryTimeLabel: '9h',
           bodyHrLabel: '52 · 68 · 118',
         ),
       HomePrecedence.dataAvailable => restDay
@@ -170,6 +178,7 @@ class HomeSnapshot {
               syncCaption: 'Sync healthy · rest day so far',
               sleepDurationLabel: '8h 04m',
               sleepWindowLabel: '22:50 → 06:54',
+              recoveryTimeLabel: '0h',
               caloriesLabel: '920',
               stepsLabel: '3,110',
               workoutTimeLabel: '0m · no sessions',
@@ -190,6 +199,7 @@ class HomeSnapshot {
               sleepDurationLabel: '7h 12m',
               sleepWindowLabel: '23:18 → 06:30',
               sleepFeelCue: 'OK — already answered',
+              recoveryTimeLabel: '14h',
               caloriesLabel: '1,842',
               stepsLabel: '7,420',
               workoutTimeLabel: '1h 18m · 2 sessions',
