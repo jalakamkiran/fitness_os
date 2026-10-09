@@ -158,9 +158,61 @@ void main() {
     expect(find.byKey(const Key('home-hybrid-hero')), findsOneWidget);
     expect(find.byKey(const Key('home-chore-cta')), findsOneWidget);
     expect(find.textContaining('Steady build'), findsOneWidget);
+    expect(find.byKey(const Key('home-progress-strip')), findsOneWidget);
     expect(find.byKey(const Key('home-week-adherence')), findsOneWidget);
     expect(find.textContaining('Plan adherence'), findsOneWidget);
-    expect(find.byKey(const Key('home-programs-cta')), findsNothing);
+    expect(find.byKey(const Key('home-programs-cta')), findsOneWidget);
+    expect(find.text('Agon plan'), findsOneWidget);
+  });
+
+  testWidgets('Agon plan CTA opens programs hub', (tester) async {
+    await tester.runAsync(() async {
+      await registerController(program: _program(dayIso: '2026-10-09'));
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: BpTheme.light(),
+        routes: {
+          '/programs': (_) => const Scaffold(
+                body: Text('programs-hub'),
+              ),
+        },
+        home: HomeSnapshotView(
+          snapshot: HomeSnapshot.forPrecedence(HomePrecedence.dataAvailable),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    await tester.tap(find.byKey(const Key('home-programs-cta')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('programs-hub'), findsOneWidget);
+  });
+
+  testWidgets('progress strip opens Odyssey', (tester) async {
+    await tester.runAsync(() async {
+      await registerController(program: _program(dayIso: '2026-10-09'));
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: BpTheme.light(),
+        home: HomeSnapshotView(
+          snapshot: HomeSnapshot.forPrecedence(HomePrecedence.dataAvailable),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    await tester.tap(find.byKey(const Key('home-progress-strip')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Odyssey'), findsOneWidget);
   });
 
   testWidgets('rest day: strip without primary CTA', (tester) async {

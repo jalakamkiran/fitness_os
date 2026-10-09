@@ -25,6 +25,8 @@ class ProgramsHomeScreen extends StatelessWidget {
     final ms = controller.nextMilestone;
     final chore = controller.todaysChore;
     final now = DateTime.now();
+    final todayIso = _localIsoDay(now);
+    final showManualTrial = ms != null && controller.trialNeedsManualRecord;
 
     return Scaffold(
       backgroundColor: colors.bg,
@@ -92,16 +94,6 @@ class ProgramsHomeScreen extends StatelessWidget {
                 milestone: ms,
                 program: program,
                 colors: colors,
-                onOpenProof: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => ProgramsProofScreen(
-                        controller: controller,
-                        milestoneId: ms.id,
-                      ),
-                    ),
-                  );
-                },
               ),
             if (ms != null) const SizedBox(height: 12),
             _ForecastCard(program: program, colors: colors),
@@ -135,6 +127,7 @@ class ProgramsHomeScreen extends StatelessWidget {
             if (chore != null)
               _CourseCard(
                 chore: chore,
+                todayIso: todayIso,
                 colors: colors,
                 onOpen: () {
                   Navigator.of(context).push(
@@ -149,7 +142,9 @@ class ProgramsHomeScreen extends StatelessWidget {
               )
             else
               Text(
-                'No course scheduled for today.',
+                controller.todaysChoreIncludingDone != null
+                    ? 'Today’s course is done. No further sessions scheduled.'
+                    : 'No course scheduled for today.',
                 style: TextStyle(color: colors.inkDim, fontSize: 14),
               ),
             if (!controller.hideGameLayer) ...[
@@ -190,7 +185,7 @@ class ProgramsHomeScreen extends StatelessWidget {
                 ),
               ),
             ],
-            if (ms != null) ...[
+            if (showManualTrial) ...[
               const SizedBox(height: 8),
               TextButton(
                 key: const Key('programs-open-proof'),
@@ -205,7 +200,7 @@ class ProgramsHomeScreen extends StatelessWidget {
                   );
                 },
                 child: Text(
-                  'Record trial',
+                  'Record trial manually',
                   style: TextStyle(
                     color: colors.inkDim,
                     fontWeight: FontWeight.w700,
@@ -277,13 +272,11 @@ class _MilestoneCard extends StatelessWidget {
     required this.milestone,
     required this.program,
     required this.colors,
-    required this.onOpenProof,
   });
 
   final Milestone milestone;
   final Program program;
   final FathomColors colors;
-  final VoidCallback onOpenProof;
 
   @override
   Widget build(BuildContext context) {
@@ -363,28 +356,7 @@ class _MilestoneCard extends StatelessWidget {
             trialM: trialM,
             colors: colors,
           ),
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: onOpenProof,
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text(
-                'Record trial',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: colors.inkDim,
-                  decoration: TextDecoration.underline,
-                  decorationColor: colors.ink.withValues(alpha: 0.15),
-                ),
-              ),
-            ),
-          ),
+          // Trials auto-record from a synced proof swim; no manual CTA here.
         ],
       ),
     );
@@ -506,10 +478,17 @@ class _ForecastCard extends StatelessWidget {
     final likely = program.goalForecastLikelyIso;
     final earliest = program.goalForecastEarliestIso;
     final latest = program.goalForecastLatestIso;
+    final planned = program.milestones.isNotEmpty
+        ? program.milestones.last.plannedDateIso
+        : likely;
     final slipped = earliest != null &&
         latest != null &&
         likely != null &&
-        (earliest != likely || latest != likely);
+        (earliest != likely || latest != likely || planned != likely);
+    final timeline = _ForecastTimelineData.fromProgram(
+      program,
+      now: DateTime.now(),
+    );
 
     return AgonCard(
       key: const Key('programs-forecast'),
@@ -527,13 +506,35 @@ class _ForecastCard extends StatelessWidget {
                   children: [
                     const LayerTag('Goal forecast'),
                     const SizedBox(height: 4),
-                    Text(
-                      likely ?? 'Building forecast…',
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                        color: colors.ink,
+                    Text.rich(
+                      TextSpan(
+                        text: likely == null
+                            ? 'Building forecast…'
+                            : formatShortDate(likely),
+                        style: TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                          color: colors.ink,
+                        ),
+                        children: likely == null
+                            ? null
+                            : [
+                                TextSpan(
+                                  text: slipped && planned != null
+                                      ? '  was ${formatShortDate(planned)}'
+                                      : '  as planned',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0,
+                                    color: colors.inkDim,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
+                                ),
+                              ],
                       ),
                     ),
                   ],
@@ -563,19 +564,453 @@ class _ForecastCard extends StatelessWidget {
               ),
             ],
           ),
-          if (earliest != null && latest != null) ...[
-            const SizedBox(height: 6),
+          if (timeline != null) ...[
+            const SizedBox(height: 14),
+            _ForecastTimeline(data: timeline, colors: colors),
+          ] else if (earliest != null && latest != null) ...[
+            const SizedBox(height: 8),
             Text(
-              'Range $earliest – $latest',
+              'Range ${formatShortDate(earliest)} – ${formatShortDate(latest)}',
               style: TextStyle(fontSize: 13, color: colors.inkDim),
             ),
           ],
-          const SizedBox(height: 8),
-          Text(
-            'The forecast updates only when a trial moves.',
-            style: TextStyle(fontSize: 11.5, color: colors.inkFaint),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.only(top: 9),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: colors.line)),
+            ),
+            child: Text(
+              slipped
+                  ? 'Already updated after a trial moved.'
+                  : 'Matches the course you activated. Updates only when a trial moves.',
+              style: TextStyle(fontSize: 11.5, color: colors.inkFaint),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+enum _TlKind { start, done, next, ghost }
+
+class _TlPoint {
+  const _TlPoint({
+    required this.day,
+    required this.kind,
+    required this.label,
+    required this.sub,
+    required this.above,
+  });
+
+  final int day;
+  final _TlKind kind;
+  final String label;
+  final String sub;
+  final bool above;
+}
+
+class _ForecastTimelineData {
+  const _ForecastTimelineData({
+    required this.span,
+    required this.today,
+    required this.points,
+    this.bandFrom,
+    this.bandTo,
+    this.todayNearStart = false,
+  });
+
+  final int span;
+  final int today;
+  final List<_TlPoint> points;
+  final int? bandFrom;
+  final int? bandTo;
+
+  /// When true, "Today" is folded into the start marker (no separate tick).
+  final bool todayNearStart;
+
+  static _ForecastTimelineData? fromProgram(
+    Program program, {
+    required DateTime now,
+  }) {
+    final start = _programStart(program);
+    final likely = tryParseIsoDay(program.goalForecastLikelyIso ?? '');
+    final earliest = tryParseIsoDay(program.goalForecastEarliestIso ?? '');
+    final latest = tryParseIsoDay(program.goalForecastLatestIso ?? '');
+    if (start == null) return null;
+
+    final today = DateTime(now.year, now.month, now.day);
+    var end = latest ?? likely ?? today.add(const Duration(days: 14));
+    for (final m in program.milestones) {
+      for (final iso in [m.forecastDateIso, m.plannedDateIso, m.passedAtIso]) {
+        if (iso == null) continue;
+        final d = tryParseIsoDay(iso);
+        if (d != null && d.isAfter(end)) end = d;
+      }
+    }
+    if (today.isAfter(end)) end = today;
+
+    // Keep at least ~3 weeks of span so early-program timelines aren't cramped.
+    final minEnd = start.add(const Duration(days: 21));
+    if (end.isBefore(minEnd)) end = minEnd;
+
+    final span = end.difference(start).inDays.clamp(1, 365);
+    int dayOf(DateTime d) => d.difference(start).inDays.clamp(0, span);
+    final todayDay = dayOf(today);
+    final todayNearStart = todayDay <= 1;
+
+    final points = <_TlPoint>[
+      _TlPoint(
+        day: 0,
+        kind: _TlKind.start,
+        label: formatShortDate(_isoFromDate(start)),
+        sub: todayNearStart ? 'today' : 'start',
+        above: false,
+      ),
+    ];
+
+    // Passed milestones — use passedAt when available; skip if on start day.
+    for (final m in program.milestones) {
+      if (m.status != MilestoneStatus.passed) continue;
+      final when = tryParseIsoDay(m.passedAtIso ?? m.forecastDateIso);
+      if (when == null) continue;
+      final day = dayOf(when);
+      if (day <= 1) continue;
+      points.add(
+        _TlPoint(
+          day: day,
+          kind: _TlKind.done,
+          label: formatShortDate(m.passedAtIso ?? m.forecastDateIso),
+          sub: formatMeters(m.targetDistanceM),
+          above: true,
+        ),
+      );
+    }
+
+    Milestone? nextOpen;
+    for (final m in program.milestones) {
+      if (m.status == MilestoneStatus.passed) continue;
+      nextOpen = m;
+      break;
+    }
+
+    if (nextOpen != null) {
+      final forecast = tryParseIsoDay(nextOpen.forecastDateIso);
+      final planned = tryParseIsoDay(nextOpen.plannedDateIso);
+      if (planned != null &&
+          forecast != null &&
+          planned != forecast &&
+          (forecast.difference(planned).inDays).abs() >= 4) {
+        points.add(
+          _TlPoint(
+            day: dayOf(planned),
+            kind: _TlKind.ghost,
+            label: formatShortDate(nextOpen.plannedDateIso),
+            sub: formatMeters(nextOpen.targetDistanceM),
+            above: true,
+          ),
+        );
+      }
+      if (forecast != null) {
+        points.add(
+          _TlPoint(
+            day: dayOf(forecast),
+            kind: _TlKind.next,
+            label: formatShortDate(nextOpen.forecastDateIso),
+            sub: formatMeters(nextOpen.targetDistanceM),
+            above: true,
+          ),
+        );
+      }
+    }
+
+    // Goal likely only when clearly after the next trial.
+    if (likely != null && nextOpen != null) {
+      final nextDay = dayOf(tryParseIsoDay(nextOpen.forecastDateIso) ?? likely);
+      final goalDay = dayOf(likely);
+      if (goalDay - nextDay >= 4) {
+        points.add(
+          _TlPoint(
+            day: goalDay,
+            kind: _TlKind.next,
+            label: formatShortDate(program.goalForecastLikelyIso!),
+            sub: 'goal',
+            above: true,
+          ),
+        );
+      }
+    }
+
+    points.sort((a, b) => a.day.compareTo(b.day));
+
+    int? bandFrom;
+    int? bandTo;
+    if (earliest != null && latest != null && earliest != latest) {
+      bandFrom = dayOf(earliest);
+      bandTo = dayOf(latest);
+    }
+
+    return _ForecastTimelineData(
+      span: span,
+      today: todayDay,
+      points: points,
+      bandFrom: bandFrom,
+      bandTo: bandTo,
+      todayNearStart: todayNearStart,
+    );
+  }
+
+  static DateTime? _programStart(Program program) {
+    if (program.activatedAtMs != null) {
+      final t = DateTime.fromMillisecondsSinceEpoch(program.activatedAtMs!);
+      return DateTime(t.year, t.month, t.day);
+    }
+    if (program.chores.isNotEmpty) {
+      final sorted = [...program.chores]
+        ..sort((a, b) => a.dayIso.compareTo(b.dayIso));
+      return tryParseIsoDay(sorted.first.dayIso);
+    }
+    if (program.milestones.isNotEmpty) {
+      return tryParseIsoDay(program.milestones.first.plannedDateIso);
+    }
+    return null;
+  }
+
+  static String _isoFromDate(DateTime d) {
+    final y = d.year.toString().padLeft(4, '0');
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    return '$y-$m-$day';
+  }
+}
+
+/// Compact HTML-style forecast rail: labels above/below, no overlapping Stack text.
+class _ForecastTimeline extends StatelessWidget {
+  const _ForecastTimeline({required this.data, required this.colors});
+
+  final _ForecastTimelineData data;
+  final FathomColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: const Key('programs-forecast-timeline'),
+      height: 96,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final w = constraints.maxWidth;
+          // Inset so edge labels don't clip.
+          const inset = 18.0;
+          final usable = (w - inset * 2).clamp(1.0, w);
+          double xOf(int day) =>
+              inset + (day / data.span).clamp(0.0, 1.0) * usable;
+
+          final above = data.points.where((p) => p.above).toList();
+          final below = data.points.where((p) => !p.above).toList();
+          final aboveXs = _spread(
+            above.map((p) => xOf(p.day)).toList(),
+            usable,
+            inset,
+            minGap: 56,
+          );
+          final belowXs = _spread(
+            below.map((p) => xOf(p.day)).toList(),
+            usable,
+            inset,
+            minGap: 56,
+          );
+
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Above labels
+              for (var i = 0; i < above.length; i++)
+                Positioned(
+                  left: aboveXs[i] - 28,
+                  top: 0,
+                  width: 56,
+                  child: _TlLabel(point: above[i], colors: colors),
+                ),
+              // Rail
+              Positioned(
+                left: inset,
+                right: inset,
+                top: 44,
+                child: Container(height: 2, color: colors.gaugeTrack),
+              ),
+              if (data.bandFrom != null && data.bandTo != null)
+                Positioned(
+                  left: xOf(data.bandFrom!),
+                  top: 36,
+                  width: (xOf(data.bandTo!) - xOf(data.bandFrom!))
+                      .clamp(12.0, usable),
+                  child: Container(
+                    height: 18,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      color: colors.accent.withValues(alpha: 0.14),
+                      border: Border.all(
+                        color: colors.accent.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ),
+                ),
+              Positioned(
+                left: inset,
+                top: 44,
+                width: (xOf(data.today) - inset).clamp(0.0, usable),
+                child: Container(height: 2, color: colors.accent),
+              ),
+              // Dots on rail
+              for (final p in data.points)
+                Positioned(
+                  left: xOf(p.day) - (p.kind == _TlKind.start ? 5 : 7),
+                  top: p.kind == _TlKind.start ? 40 : 38,
+                  child: _TlDot(kind: p.kind, colors: colors),
+                ),
+              // Today tick (only when not folded into start)
+              if (!data.todayNearStart)
+                Positioned(
+                  left: xOf(data.today) - 0.75,
+                  top: 28,
+                  child: Column(
+                    children: [
+                      Text(
+                        'TODAY',
+                        style: TextStyle(
+                          fontSize: 9,
+                          letterSpacing: 0.4,
+                          fontWeight: FontWeight.w700,
+                          color: colors.ink,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Container(width: 1.5, height: 22, color: colors.ink),
+                    ],
+                  ),
+                ),
+              // Below labels
+              for (var i = 0; i < below.length; i++)
+                Positioned(
+                  left: belowXs[i] - 28,
+                  top: 58,
+                  width: 56,
+                  child: _TlLabel(point: below[i], colors: colors),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// Nudge label centers apart so they don't sit on top of each other.
+  static List<double> _spread(
+    List<double> xs,
+    double usable,
+    double inset, {
+    required double minGap,
+  }) {
+    if (xs.length <= 1) return List<double>.from(xs);
+    final out = List<double>.from(xs);
+    final order = List<int>.generate(xs.length, (i) => i)
+      ..sort((a, b) => out[a].compareTo(out[b]));
+    final maxX = inset + usable;
+    for (var pass = 0; pass < 6; pass++) {
+      for (var i = 1; i < order.length; i++) {
+        final left = order[i - 1];
+        final right = order[i];
+        final gap = out[right] - out[left];
+        if (gap >= minGap) continue;
+        final push = (minGap - gap) / 2;
+        out[left] = (out[left] - push).clamp(inset, maxX);
+        out[right] = (out[right] + push).clamp(inset, maxX);
+      }
+    }
+    return out;
+  }
+}
+
+class _TlLabel extends StatelessWidget {
+  const _TlLabel({required this.point, required this.colors});
+
+  final _TlPoint point;
+  final FathomColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final ghost = point.kind == _TlKind.ghost;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          point.label,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.clip,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            height: 1.15,
+            color: ghost ? colors.inkFaint : colors.ink,
+            decoration: ghost ? TextDecoration.lineThrough : null,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+        Text(
+          point.sub,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.clip,
+          style: TextStyle(
+            fontSize: 10,
+            height: 1.15,
+            color: colors.inkDim,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TlDot extends StatelessWidget {
+  const _TlDot({required this.kind, required this.colors});
+
+  final _TlKind kind;
+  final FathomColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = kind == _TlKind.start;
+    final size = start ? 10.0 : 14.0;
+    late Color border;
+    late Color fill;
+    switch (kind) {
+      case _TlKind.done:
+        border = colors.accent;
+        fill = colors.accent;
+      case _TlKind.next:
+        border = colors.accent;
+        fill = colors.bgElev;
+      case _TlKind.ghost:
+        border = colors.inkFaint;
+        fill = Colors.transparent;
+      case _TlKind.start:
+        border = colors.inkFaint;
+        fill = colors.bgElev;
+    }
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: fill,
+        shape: start ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: start ? null : BorderRadius.circular(3),
+        border: Border.all(color: border, width: 2),
       ),
     );
   }
@@ -584,13 +1019,22 @@ class _ForecastCard extends StatelessWidget {
 class _CourseCard extends StatelessWidget {
   const _CourseCard({
     required this.chore,
+    required this.todayIso,
     required this.colors,
     required this.onOpen,
   });
 
   final ChoreSession chore;
+  final String todayIso;
   final FathomColors colors;
   final VoidCallback onOpen;
+
+  bool get _isToday => chore.dayIso == todayIso;
+
+  bool get _isDone =>
+      chore.state == ChoreState.doneSynced ||
+      chore.state == ChoreState.doneManual ||
+      chore.state == ChoreState.adjusted;
 
   @override
   Widget build(BuildContext context) {
@@ -599,6 +1043,16 @@ class _CourseCard extends StatelessWidget {
     final wu = sumPartMeters(chore.blocks, 'warmUp').clamp(1, 100000);
     final main = sumPartMeters(chore.blocks, 'main').clamp(1, 100000);
     final cd = sumPartMeters(chore.blocks, 'coolDown').clamp(1, 100000);
+    final dayLabel = formatCourseDayTag(chore.dayIso).split(' · ').first;
+    final layer = _isToday
+        ? (_isDone ? 'Today’s course · done' : 'Today’s course · $dayLabel')
+        : 'Next course · $dayLabel';
+    final badge = _isDone
+        ? (chore.state == ChoreState.doneSynced ? 'Synced' : 'Done')
+        : (_isToday ? 'Due today' : 'Up next');
+    final cta = _isDone
+        ? 'Review course'
+        : (_isToday ? 'Open today’s course' : 'Open next course');
 
     return AgonCard(
       key: const Key('programs-today-chore'),
@@ -614,9 +1068,7 @@ class _CourseCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    LayerTag(
-                      'Today’s course · ${formatCourseDayTag(chore.dayIso).split(' · ').first}',
-                    ),
+                    LayerTag(layer),
                     const SizedBox(height: 5),
                     Text(
                       title,
@@ -645,11 +1097,13 @@ class _CourseCard extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: colors.accent.withValues(alpha: 0.2),
+                  color: _isDone
+                      ? colors.up.withValues(alpha: 0.18)
+                      : colors.accent.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  'Due today',
+                  badge,
                   style: TextStyle(
                     fontSize: 10,
                     letterSpacing: 0.6,
@@ -735,16 +1189,22 @@ class _CourseCard extends StatelessWidget {
             child: FilledButton(
               onPressed: onOpen,
               style: FilledButton.styleFrom(
-                backgroundColor: colors.accent,
-                foregroundColor: colors.accentInk,
+                backgroundColor: _isDone ? colors.bgElev : colors.accent,
+                foregroundColor: _isDone ? colors.ink : colors.accentInk,
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
+                  side: _isDone
+                      ? BorderSide(color: colors.line)
+                      : BorderSide.none,
                 ),
               ),
-              child: const Text(
-                'Open today’s course',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+              child: Text(
+                cta,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                ),
               ),
             ),
           ),
@@ -943,4 +1403,11 @@ class _OdCell extends StatelessWidget {
       ),
     );
   }
+}
+
+String _localIsoDay(DateTime d) {
+  final y = d.year.toString().padLeft(4, '0');
+  final m = d.month.toString().padLeft(2, '0');
+  final day = d.day.toString().padLeft(2, '0');
+  return '$y-$m-$day';
 }
