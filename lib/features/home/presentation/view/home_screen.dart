@@ -218,6 +218,11 @@ class _HomeBody extends StatelessWidget {
       out.add(const SizedBox(height: 12));
     }
 
+    if (s.recoveryTimeLabel != null) {
+      out.add(_RecoveryTimeCard(snapshot: s, muted: muted));
+      out.add(const SizedBox(height: 12));
+    }
+
     if (s.precedence == HomePrecedence.syncInProgress &&
         !s.hasDayStackContent) {
       out.add(
@@ -582,6 +587,53 @@ class _SleepStrip extends StatelessWidget {
                 ),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Home **Recovery time** card — label + hours only (design SoT prototype).
+class _RecoveryTimeCard extends StatelessWidget {
+  const _RecoveryTimeCard({required this.snapshot, this.muted = false});
+
+  final HomeSnapshot snapshot;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = FathomColors.of(context);
+    final ink = muted ? colors.inkFaint : colors.ink;
+    final value = snapshot.recoveryTimeLabel!;
+    return Opacity(
+      opacity: muted ? 0.62 : 1,
+      child: _SurfaceCard(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Text(
+                'Recovery time',
+                key: const Key('home-recovery-time-label'),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: colors.inkFaint,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+            Text(
+              value,
+              key: const Key('home-recovery-time-value'),
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                color: ink,
+                letterSpacing: -0.6,
+              ),
+            ),
           ],
         ),
       ),

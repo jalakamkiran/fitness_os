@@ -6,6 +6,7 @@ import 'package:fitness_os/core/observability/sentry_sync_instrumentation.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/home/domain/home_precedence.dart';
 import 'package:fitness_os/features/home/domain/repositories/home_repository.dart';
+import 'package:fitness_os/features/vitals/domain/overall_recovery_hours.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/vitals/presentation/widgets/sleep_formatters.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
@@ -110,11 +111,12 @@ class HomeRepositoryImpl implements HomeRepository {
     String? sleepDurationLabel;
     String? sleepWindowLabel;
     String? sleepFeelCue;
+    int? sleepDurationSec;
     if (!chromeOnly) {
       final sleep = todaysSleepSession(sleepSessions, now: now);
       if (sleep != null && sleep.endUnix > sleep.beginUnix) {
-        final durSec = sleep.endUnix - sleep.beginUnix;
-        sleepDurationLabel = sleepFormatDuration(durSec);
+        sleepDurationSec = sleep.endUnix - sleep.beginUnix;
+        sleepDurationLabel = sleepFormatDuration(sleepDurationSec);
         sleepWindowLabel = sleepFormatWindow(sleep.beginUnix, sleep.endUnix);
         final feel = await _vitals.loadFeelOnWake(sleep);
         if (feel != null && feel.trim().isNotEmpty) {
@@ -209,6 +211,18 @@ class HomeRepositoryImpl implements HomeRepository {
         ? const <HomeTodaySessionCard>[]
         : todayWorkouts.map(buildHomeTodaySessionCard).toList();
 
+    String? recoveryTimeLabel;
+    if (!chromeOnly && everSynced) {
+      final overall = composeOverallRecoveryHours(
+        workouts: workouts,
+        now: now,
+        sleepDurationSec: sleepDurationSec,
+        daySteps: everSynced ? steps : null,
+        dayCalories: everSynced ? calories : null,
+      );
+      recoveryTimeLabel = overall.displayLabel;
+    }
+
     final sessionReady = _link.sessionReady;
 
     return HomeSnapshot(
@@ -239,6 +253,7 @@ class HomeRepositoryImpl implements HomeRepository {
       sleepDurationLabel: sleepDurationLabel,
       sleepWindowLabel: sleepWindowLabel,
       sleepFeelCue: sleepFeelCue,
+      recoveryTimeLabel: recoveryTimeLabel,
       bodyHrLabel: bodyHrLabel,
       bodyHrSparkSamples: sparkSamples,
       todaySessions: todaySessions,
