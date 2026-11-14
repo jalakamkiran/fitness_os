@@ -2,6 +2,7 @@ import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/workout_type_icon.dart';
 
 /// Calm session card for sport history lists — key signals only, no charts.
 class WorkoutSessionRow extends StatelessWidget {
@@ -55,6 +56,12 @@ class WorkoutSessionRow extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  WorkoutTypeIcon(
+                    type: workout.type,
+                    size: 22,
+                    color: colors.ink,
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

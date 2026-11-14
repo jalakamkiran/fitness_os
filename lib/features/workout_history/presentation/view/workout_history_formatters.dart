@@ -1,33 +1,20 @@
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/features/workout_history/domain/huawei_workout_types.dart'
+    as huawei_types;
 
-/// Frozen from owner 25m pool probe (2026-07-23): type=6 is pool (GB=6 / OW=8).
-const Map<int, String> kWorkoutTypeLabels = <int, String>{
-  1: 'Walk',
-  2: 'Run',
-  3: 'Cycle',
-  4: 'Climb',
-  5: 'Indoor run',
-  6: 'Pool swim',
-  7: 'Indoor cycle',
-  8: 'Open water',
-  9: 'Elliptical',
-  10: 'Rower',
-  140: 'Strength',
-};
+/// Re-export central workout type functions for backwards compatibility.
+String workoutTypeLabel(int type) => huawei_types.workoutTypeLabel(type);
 
-String workoutTypeLabel(int type) =>
-    kWorkoutTypeLabels[type] ?? 'Workout type $type';
-
-bool isSwimWorkout(int type) => type == 6 || type == 8;
+bool isSwimWorkout(int type) => huawei_types.isSwimWorkout(type);
 
 /// Land cardio for the Run/Walk tab: Walk (1), Outdoor Run (2), Indoor run (5).
 /// Mixed outdoor sessions sometimes wire as Walk when a walk segment dominates.
-bool isRunWorkout(int type) => type == 1 || type == 2 || type == 5;
+bool isRunWorkout(int type) => huawei_types.isRunWorkout(type);
 
 /// Outdoor Run (Totals/list type 2). Walk (1) / Indoor run (5) are never the Outdoor prove.
-bool isOutdoorRunWorkout(int type) => type == 2;
+bool isOutdoorRunWorkout(int type) => huawei_types.isOutdoorRunWorkout(type);
 
-bool isStrengthWorkout(int type) => type == 140;
+bool isStrengthWorkout(int type) => huawei_types.isStrengthWorkout(type);
 
 String formatWorkoutWhen(int unixSec) {
   if (unixSec <= 0) return 'unknown time';
@@ -109,7 +96,7 @@ String? formatDurationHero(int sec) {
 }
 
 /// Outdoor land (Walk / Outdoor Run) — not Indoor run (5).
-bool isOutdoorLandWorkout(int type) => type == 1 || type == 2;
+bool isOutdoorLandWorkout(int type) => huawei_types.isOutdoorLandWorkout(type);
 
 String workoutSessionTitle(WorkoutSummary w) {
   final label = workoutTypeLabel(w.type);
