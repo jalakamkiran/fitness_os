@@ -1,0 +1,16 @@
+{
+  "name": "fitness-os-backend",
+  "version": "1.0.0",
+  "description": "Fitness OS Firebase backend for AI coach integration",
+  "private": true,
+  "scripts": {
+    "build": "npm run build:functions",
+    "build:functions": "cd functions && npm run build",
+    "deploy": "firebase deploy",
+    "emulator": "firebase emulators:start",
+    "test": "cd functions && npm test"
+  },
+  "devDependencies": {
+    "firebase-tools": "^13.0.0"
+  }
+}

@@ -55,12 +55,27 @@ SENTRY_DSN=https://abc123def456@o123456.ingest.sentry.io/789012
 
 ### 3. `BACKEND_WRITE_KEY` (Optional)
 
-**Purpose**: Sync workout data to cloud backend.
+**Purpose**: Sync workout and vitals data to Firebase backend for AI coach access.
+
+**How to get**:
+```bash
+firebase functions:secrets:access DEVICE_WRITE_KEY --project fathom-fitness-os
+```
+
+**Value must match** the Firebase Functions secret `DEVICE_WRITE_KEY`.
 
 **What happens without it**: 
-- ✅ App still works
-- ℹ️ Workouts are only stored locally on the device
-- ℹ️ No cloud backup or cross-device sync
+- ✅ App still works perfectly
+- ℹ️ Workouts and vitals are stored locally only
+- ℹ️ No cloud sync or AI coach integration
+- ⚠️ Startup logs: "Backend sync DISABLED: BACKEND_WRITE_KEY not provided"
+
+**What happens with it**:
+- ✅ App syncs data to Firebase on app open and hourly in background
+- ✅ Read-only API available for AI fitness coach (Arjun)
+- ✅ Data accessible via: https://asia-south1-fathom-fitness-os.cloudfunctions.net/api/api/v1
+
+**See**: `docs/backend.md` for complete backend setup
 
 ---
 
