@@ -1,7 +1,9 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync.dart';
+import 'package:fitness_os/core/observability/sentry_config.dart';
 import 'package:fitness_os/core/observability/sentry_sync_instrumentation.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/home/domain/home_precedence.dart';
@@ -261,7 +263,7 @@ class HomeRepositoryImpl implements HomeRepository {
   }
 
   @override
-  Future<bool> syncNow() async {
+  Future<SyncResult> syncNow() async {
     final pass = SentrySyncInstrumentation.startPassTransaction(
       trigger: 'manual',
     );
@@ -269,6 +271,50 @@ class HomeRepositoryImpl implements HomeRepository {
       final workoutResult = await _workouts.syncFromWatch();
       final vitalsResult = await _vitals.syncFromWatch();
       final ok = workoutResult.isRight && vitalsResult.isRight;
+      
+      // Collect error details for debugging and Sentry
+      String? errorDetails;
+      if (!ok) {
+        final errors = <String>[];
+        workoutResult.fold(
+          (failure) {
+            errors.add('Workouts: ${failure.toString()}');
+            // Capture to Sentry for observability
+            if (SentryConfig.shouldInitialize) {
+              Sentry.captureException(
+                failure,
+                hint: Hint.withMap({
+                  'mechanism': 'sync_failure',
+                  'context': 'workout_sync',
+                  'failure_type': failure.runtimeType.toString(),
+                  'message': failure.message,
+                }),
+              );
+            }
+          },
+          (_) {},
+        );
+        vitalsResult.fold(
+          (failure) {
+            errors.add('Vitals: ${failure.toString()}');
+            // Capture to Sentry for observability
+            if (SentryConfig.shouldInitialize) {
+              Sentry.captureException(
+                failure,
+                hint: Hint.withMap({
+                  'mechanism': 'sync_failure',
+                  'context': 'vitals_sync',
+                  'failure_type': failure.runtimeType.toString(),
+                  'message': failure.message,
+                }),
+              );
+            }
+          },
+          (_) {},
+        );
+        errorDetails = errors.join('\n');
+      }
+      
       await _prefs.setString(
         GateAPrefs.homeLastSyncStatus,
         ok ? 'ok' : 'failed',
@@ -283,13 +329,13 @@ class HomeRepositoryImpl implements HomeRepository {
         pass,
         status: ok ? 'ok' : 'error',
       );
-      return ok;
-    } catch (_) {
+      return ok ? SyncResult.ok() : SyncResult.failed(errorDetails ?? 'Unknown sync error');
+    } catch (e, stackTrace) {
       await SentrySyncInstrumentation.finishWithStatus(
         pass,
         status: 'error',
       );
-      rethrow;
+      return SyncResult.failed('Exception: ${e.toString()}\nStack: ${stackTrace.toString()}');
     }
   }
 }

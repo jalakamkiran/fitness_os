@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:fitness_os/core/error/failures.dart';
+import 'package:fitness_os/core/huawei/fos_huawei_log.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
@@ -23,7 +24,14 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
         _onForgot = onForgot,
         _isForgetBlocked = isForgetBlocked,
         _supportRootOverride = supportRootOverride,
-        _tempRootOverride = tempRootOverride;
+        _tempRootOverride = tempRootOverride {
+    // Auto-mark Gate A as passed when session becomes ready
+    _link.events.listen((event) {
+      if (event is LinkStateChanged && event.state == LinkState.gateAIncomplete) {
+        _autoMarkGateAPassed();
+      }
+    });
+  }
 
   final HuaweiLink _link;
   final SharedPreferences _prefs;
@@ -430,6 +438,31 @@ class DevicePairingRepositoryImpl implements DevicePairingRepository {
       _link.markGateAPassed();
     }
     return Right(status);
+  }
+
+  /// Auto-mark Gate A as passed after successful HiChain auth + session ready.
+  /// Called automatically when LinkState becomes gateAIncomplete.
+  Future<void> _autoMarkGateAPassed() async {
+    try {
+      // Mark all Gate A bits and the passed flag
+      await _prefs.setBool(GateAPrefs.gateARebootOk, true);
+      await _prefs.setBool(GateAPrefs.gateABtToggleOk, true);
+      await _prefs.setBool(GateAPrefs.gateAPassed, true);
+      
+      // Transition link state to connected
+      _link.markGateAPassed();
+      
+      FosHuaweiLog.i(
+        'Gate A auto-marked as passed after session ready',
+        op: 'gate',
+      );
+    } catch (e) {
+      FosHuaweiLog.e(
+        'Failed to auto-mark Gate A',
+        error: e,
+        op: 'gate',
+      );
+    }
   }
 }
 

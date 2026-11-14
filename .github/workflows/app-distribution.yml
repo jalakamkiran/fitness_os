@@ -1,0 +1,174 @@
+name: Firebase App Distribution
+
+on:
+  push:
+    branches:
+      - main
+      - cursor/badminton-type-mapping-e9d5
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: 'Custom release notes (optional)'
+        required: false
+        type: string
+
+jobs:
+  build-and-distribute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.7'
+          channel: 'stable'
+          cache: true
+          cache-key: 'flutter-:os:-:channel:-:version:-:arch:-:hash:'
+          cache-path: '${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:'
+
+      # Note: Release keystore setup disabled temporarily due to keystore format issues
+      # ("Tag number over 30 is not supported" error with AGP 8.9.1)
+      # The build will use debug signing, which is OK for testing
+      # TODO: Regenerate keystore or upgrade AGP once Flutter 3.44.7 supports it
+
+      - name: Create .env file from secrets
+        run: |
+          # Fail if SENTRY_DSN is missing (required for observability)
+          if [ -z "$SENTRY_DSN" ]; then
+            echo "❌ ERROR: SENTRY_DSN secret is required but not set"
+            echo "   Add it in GitHub Settings → Secrets and variables → Actions"
+            echo "   Get the DSN from Sentry project settings"
+            exit 1
+          fi
+          
+          # Create .env with all secrets
+          echo "SENTRY_DSN=$SENTRY_DSN" > .env
+          echo "SENTRY_RAW_WORKOUT_DUMP=true" >> .env
+          echo "SENTRY_FORCE=true" >> .env
+          
+          # Add backend keys if available (optional, for data persistence)
+          if [ -n "$BACKEND_WRITE_KEY" ]; then
+            echo "BACKEND_WRITE_KEY=$BACKEND_WRITE_KEY" >> .env
+          fi
+          
+          echo "✅ Created .env file (DSN: ${#SENTRY_DSN} chars)"
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          BACKEND_WRITE_KEY: ${{ secrets.BACKEND_WRITE_KEY }}
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Build release APK with Sentry
+        run: |
+          # Check if release keystore is available, otherwise warn
+          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "⚠️  WARNING: No release keystore found. Using debug signing."
+            echo "   Add ANDROID_KEYSTORE_* secrets for production release signing."
+            echo "   See docs/app-distribution.md for setup instructions."
+          fi
+          
+          # Set version for Sentry release tracking
+          VERSION="0.1.0"
+          BUILD_NUMBER="${{ github.run_number }}"
+          
+          # Build release without obfuscation for now (easier debugging)
+          flutter build apk \
+            --release \
+            --target-platform android-arm64 \
+            --dart-define-from-file=.env \
+            --dart-define=APP_VERSION="$VERSION" \
+            --dart-define=APP_BUILD_NUMBER="$BUILD_NUMBER" \
+            --build-name="${VERSION}+${BUILD_NUMBER}" \
+            --build-number="$BUILD_NUMBER"
+          
+          echo "✅ Built release APK: com.example.fitness_os@${VERSION}+${BUILD_NUMBER}"
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Prepare release notes
+        id: release_notes
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          SHORT_SHA="${{ github.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+          COMMIT_MSG=$(git log -1 --pretty=%B | head -1)
+          
+          if [ -n "${{ github.event.inputs.release_notes }}" ]; then
+            NOTES="${{ github.event.inputs.release_notes }}"
+          else
+            NOTES="Branch: ${BRANCH}
+          Commit: ${SHORT_SHA}
+          
+          ${COMMIT_MSG}
+          
+          🧪 Debug build with:
+          - Sentry observability enabled
+          - Raw workout payload dumps (SENTRY_RAW_WORKOUT_DUMP=true)
+          - Badminton type 129 mapping + racket sport icons
+          
+          Install via Firebase App Tester app."
+          fi
+          
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "✅ Release notes prepared for ${BRANCH}@${SHORT_SHA}"
+
+      - name: Upload to Firebase App Distribution
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: ${{ secrets.FIREBASE_ANDROID_APP_ID || '1:842234944328:android:3dc4d51ae03b539827f17d' }}
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          file: build/app/outputs/flutter-apk/app-release.apk
+          groups: me
+          releaseNotes: ${{ steps.release_notes.outputs.notes }}
+
+      - name: Upload APK artifact (fallback)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-release-${{ github.run_number }}-${{ github.sha }}
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "### ✅ Firebase App Distribution Success" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build**: #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **APK**: app-debug.apk (debug-signed)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📱 **Install**: Open Firebase App Tester on Pixel → Accept invite" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔍 **Features**: Badminton mapping, Sentry observability, raw dumps enabled" >> $GITHUB_STEP_SUMMARY
