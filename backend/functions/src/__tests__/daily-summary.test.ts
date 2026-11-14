@@ -2,7 +2,7 @@ import {computeDailySummary} from "../services/daily-summary";
 
 jest.mock("firebase-admin", () => {
   const mockGet = jest.fn();
-  const mockWhere = jest.fn(() => ({
+  const mockWhere: any = jest.fn(() => ({
     where: mockWhere,
     orderBy: jest.fn(() => ({
       get: mockGet,
@@ -32,14 +32,33 @@ jest.mock("firebase-admin", () => {
 describe("Daily Summary Service", () => {
   it("should compute daily summary with null values for missing data", async () => {
     const admin = require("firebase-admin");
-    const mockGet = jest.fn().mockResolvedValue({
+    const mockEmptyDoc = {
       exists: false,
+      data: () => null,
+    };
+    const mockEmptySnapshot = {
       empty: true,
       docs: [],
-    });
+    };
     
-    admin.firestore().collection().doc().get = mockGet;
-    admin.firestore().collection().where().where().get = mockGet;
+    admin.firestore = jest.fn(() => ({
+      collection: jest.fn(() => ({
+        doc: jest.fn(() => ({
+          get: jest.fn().mockResolvedValue(mockEmptyDoc),
+        })),
+        where: jest.fn(() => ({
+          where: jest.fn(() => ({
+            orderBy: jest.fn(() => ({
+              get: jest.fn().mockResolvedValue(mockEmptySnapshot),
+              limit: jest.fn(() => ({
+                get: jest.fn().mockResolvedValue(mockEmptySnapshot),
+              })),
+            })),
+            get: jest.fn().mockResolvedValue(mockEmptySnapshot),
+          })),
+        })),
+      })),
+    }));
     
     const summary = await computeDailySummary("2026-11-14");
     
@@ -53,7 +72,17 @@ describe("Daily Summary Service", () => {
   it("should include workout data when present", async () => {
     const admin = require("firebase-admin");
     
-    const mockWorkoutsGet = jest.fn().mockResolvedValue({
+    const mockEmptyDoc = {
+      exists: false,
+      data: () => null,
+    };
+    
+    const mockEmptySnapshot = {
+      empty: true,
+      docs: [],
+    };
+    
+    const mockWorkoutsSnapshot = {
       empty: false,
       docs: [{
         id: "workout_1",
@@ -68,39 +97,39 @@ describe("Daily Summary Service", () => {
           syncedAt: "2026-11-14T07:05:00+05:30",
         }),
       }],
-    });
+    };
     
-    const mockEmptyGet = jest.fn().mockResolvedValue({
-      exists: false,
-      empty: true,
-      docs: [],
-    });
-    
-    admin.firestore().collection = jest.fn((name: string) => {
-      if (name === "workouts") {
+    admin.firestore = jest.fn(() => ({
+      collection: jest.fn((name: string) => {
+        if (name === "workouts") {
+          return {
+            where: jest.fn(() => ({
+              where: jest.fn(() => ({
+                orderBy: jest.fn(() => ({
+                  get: jest.fn().mockResolvedValue(mockWorkoutsSnapshot),
+                })),
+              })),
+            })),
+          };
+        }
         return {
+          doc: jest.fn(() => ({
+            get: jest.fn().mockResolvedValue(mockEmptyDoc),
+          })),
           where: jest.fn(() => ({
             where: jest.fn(() => ({
               orderBy: jest.fn(() => ({
-                get: mockWorkoutsGet,
+                get: jest.fn().mockResolvedValue(mockEmptySnapshot),
+                limit: jest.fn(() => ({
+                  get: jest.fn().mockResolvedValue(mockEmptySnapshot),
+                })),
               })),
+              get: jest.fn().mockResolvedValue(mockEmptySnapshot),
             })),
           })),
         };
-      }
-      return {
-        doc: jest.fn(() => ({get: mockEmptyGet})),
-        where: jest.fn(() => ({
-          where: jest.fn(() => ({
-            orderBy: jest.fn(() => ({
-              get: mockEmptyGet,
-              limit: jest.fn(() => ({get: mockEmptyGet})),
-            })),
-            get: mockEmptyGet,
-          })),
-        })),
-      };
-    });
+      }),
+    }));
     
     const summary = await computeDailySummary("2026-11-14");
     

@@ -1,4 +1,4 @@
-import {authenticateRead, authenticateWrite} from "../middleware/auth";
+import {authenticateRead, authenticateWrite, initializeKeys} from "../middleware/auth";
 import {Request, Response, NextFunction} from "express";
 
 jest.mock("firebase-admin", () => ({
@@ -22,8 +22,7 @@ describe("Authentication Middleware", () => {
       json: jest.fn(),
     };
     mockNext = jest.fn();
-    process.env.READ_ONLY_API_KEY = "test-read-key";
-    process.env.DEVICE_WRITE_KEY = "test-write-key";
+    initializeKeys("test-read-key", "test-write-key");
   });
   
   describe("authenticateRead", () => {

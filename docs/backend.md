@@ -107,10 +107,15 @@ This deploys:
 
 After deployment, Firebase will output the Cloud Functions URL:
 ```
-Function URL (api): https://us-central1-fitness-os-backend.cloudfunctions.net/api
+Function URL (api): https://asia-south1-fathom-fitness-os.cloudfunctions.net/api
 ```
 
-Save this URL - it's your API base for all endpoints.
+**Note:** The Express app maintains its own `/api` prefix, so full endpoints are:
+```
+https://asia-south1-fathom-fitness-os.cloudfunctions.net/api/api/v1/daily-summary
+```
+
+This double `/api/api/` is intentional - the first `/api` is the Cloud Function name, the second is the Express route prefix.
 
 ## API Reference
 
@@ -127,13 +132,13 @@ Fetch daily summary for a single day or date range.
 **Single day:**
 ```bash
 curl -H "Authorization: Bearer <READ_ONLY_API_KEY>" \
-  "https://<functions-url>/api/v1/daily-summary?date=2026-11-14"
+  "https://asia-south1-fathom-fitness-os.cloudfunctions.net/api/api/v1/daily-summary?date=2026-11-14"
 ```
 
 **Date range (max 31 days):**
 ```bash
 curl -H "Authorization: Bearer <READ_ONLY_API_KEY>" \
-  "https://<functions-url>/api/v1/daily-summary?from=2026-11-01&to=2026-11-14"
+  "https://asia-south1-fathom-fitness-os.cloudfunctions.net/api/api/v1/daily-summary?from=2026-11-01&to=2026-11-14"
 ```
 
 **Response:**
@@ -192,7 +197,7 @@ Fetch workouts within date range.
 
 ```bash
 curl -H "Authorization: Bearer <READ_ONLY_API_KEY>" \
-  "https://<functions-url>/api/v1/workouts?from=2026-11-01&to=2026-11-14"
+  "https://asia-south1-fathom-fitness-os.cloudfunctions.net/api/api/v1/workouts?from=2026-11-01&to=2026-11-14"
 ```
 
 **Response:**
@@ -234,7 +239,7 @@ Fetch weight measurements within date range.
 
 ```bash
 curl -H "Authorization: Bearer <READ_ONLY_API_KEY>" \
-  "https://<functions-url>/api/v1/weight?from=2026-11-01&to=2026-11-14"
+  "https://asia-south1-fathom-fitness-os.cloudfunctions.net/api/api/v1/weight?from=2026-11-01&to=2026-11-14"
 ```
 
 **Response:**
@@ -257,7 +262,7 @@ Get last sync timestamp for each data type.
 
 ```bash
 curl -H "Authorization: Bearer <READ_ONLY_API_KEY>" \
-  "https://<functions-url>/api/v1/sync-status"
+  "https://asia-south1-fathom-fitness-os.cloudfunctions.net/api/api/v1/sync-status"
 ```
 
 **Response:**
@@ -291,7 +296,7 @@ curl -X POST \
     "hrv": [...],
     "weight": [...]
   }' \
-  "https://<functions-url>/api/v1/sync"
+  "https://asia-south1-fathom-fitness-os.cloudfunctions.net/api/api/v1/sync"
 ```
 
 **Payload format:** See `backend/functions/src/services/sync-service.ts` for the full TypeScript interface.
@@ -318,7 +323,7 @@ curl -X POST \
     "kcal": 550,
     "protein": 45
   }' \
-  "https://<functions-url>/api/v1/meals"
+  "https://asia-south1-fathom-fitness-os.cloudfunctions.net/api/api/v1/meals"
 ```
 
 To enable:
@@ -352,7 +357,7 @@ export DEVICE_WRITE_KEY="test-write-key"
 Test the API:
 ```bash
 curl -H "Authorization: Bearer test-read-key" \
-  "http://localhost:5001/<project-id>/us-central1/api/api/v1/sync-status"
+  "http://localhost:5001/fathom-fitness-os/asia-south1/api/api/v1/sync-status"
 ```
 
 ### Running Tests
@@ -424,6 +429,7 @@ Monitor usage in Firebase Console:
 **"Rate limit exceeded"**
 - Wait for the retry period (returned in `retryAfter` field)
 - Implement exponential backoff in the client
+- **Note:** In-memory rate limiter resets on Cloud Function cold starts (typically after 15-30 minutes of inactivity)
 
 **"Invalid date format"**
 - Use `YYYY-MM-DD` format for all dates

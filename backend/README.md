@@ -62,10 +62,13 @@ npm test
 
 ## API Endpoints
 
-- `GET /api/v1/daily-summary` - Daily fitness summary
-- `GET /api/v1/workouts` - Workout sessions
-- `GET /api/v1/weight` - Weight measurements
-- `GET /api/v1/sync-status` - Last sync timestamps
-- `POST /api/v1/sync` - Sync data from app (write-only)
+Base URL: `https://asia-south1-fathom-fitness-os.cloudfunctions.net/api`
 
-Rate limit: 60 requests/hour per IP
+**Note:** Express routes maintain their own `/api` prefix, so full endpoints are:
+- `GET /api/api/v1/daily-summary` - Daily fitness summary
+- `GET /api/api/v1/workouts` - Workout sessions
+- `GET /api/api/v1/weight` - Weight measurements
+- `GET /api/api/v1/sync-status` - Last sync timestamps
+- `POST /api/api/v1/sync` - Sync data from app (write-only)
+
+Rate limit: 60 requests/hour per IP (in-memory, resets on cold start)

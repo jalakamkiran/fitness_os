@@ -8,7 +8,7 @@ import {
   WeightRecord,
   MealRecord,
 } from "../models/types";
-import {unixToIST, msToIST, getISTDate} from "./timezone";
+import {unixToIST, msToIST} from "./timezone";
 import {mapWorkoutType} from "../models/workout-type-mapping";
 
 export interface AppSyncPayload {

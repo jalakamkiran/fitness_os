@@ -1,7 +1,7 @@
 abstract final class BackendConfig {
   static const String baseUrl = String.fromEnvironment(
     'BACKEND_URL',
-    defaultValue: '',
+    defaultValue: 'https://asia-south1-fathom-fitness-os.cloudfunctions.net/api',
   );
 
   static const String writeKey = String.fromEnvironment(
@@ -9,5 +9,5 @@ abstract final class BackendConfig {
     defaultValue: '',
   );
 
-  static bool get isEnabled => baseUrl.isNotEmpty && writeKey.isNotEmpty;
+  static bool get isEnabled => writeKey.isNotEmpty;
 }
