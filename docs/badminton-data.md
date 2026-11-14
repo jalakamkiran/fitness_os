@@ -158,27 +158,48 @@ To confirm which metrics the GT5 Pro actually sends:
    - Varied swing speeds
    - At least 10 minutes duration
 
-2. **Capture the sync** with full wire logging:
-   ```kotlin
-   // Enable verbose logging
-   Log.d("FOS_HUAWEI", "Totals TLV dump: ${tlvs.map { "0x${it.tag.toString(16)}:${it.value.size}" }}")
+2. **Enable raw payload dumps** (owner consent):
+   ```bash
+   # .env
+   SENTRY_DSN=https://your-dsn@sentry.io/project-id
+   SENTRY_RAW_WORKOUT_DUMP=true
    ```
 
-3. **Compare with Huawei Workout app**:
+3. **Build and sync**:
+   ```bash
+   flutter build apk --dart-define-from-file=.env
+   # Install and trigger workout sync
+   ```
+
+4. **Find raw dumps in Sentry**:
+   - Go to Sentry project → Issues
+   - Search: `message:badminton.raw_dump`
+   - Download `badminton.raw_dump.totals` events
+   - Download `badminton.raw_dump.data` events (if enrichment ran)
+   - Check attachments for large payloads
+
+5. **Analyze TLV hex**:
+   - Examine `rawTotalsHex` field for full Totals payload
+   - Check `unknownTlvs` for unrecognized tag IDs
+   - Check `leftoverTlvs` for width-mismatched fields
+   - Look for patterns in unknown tag ranges (0x40-0x7E)
+
+6. **Compare with Huawei Workout app**:
    - What does the official app show for this workout?
    - Which metrics are displayed?
-   - Are there any "racket sport" specific screens?
+   - Correlate displayed values with hex dump
 
-4. **Analyze leftover TLVs**:
-   - Check `workout.enrichmentTags` in the Flutter state
-   - Look for unknown tag IDs in the 0x40-0x7E range
-   - Cross-reference with Gadgetbridge enum (behavioral oracle only)
-
-5. **Update parsing** when tags are confirmed:
+7. **Update parsing** when tags are confirmed:
    ```kotlin
    0x?? -> parseScalarU16(tlv)?.let { swingCount = it }
    0x?? -> parseScalarU16(tlv)?.let { forehandCount = it }
    // etc.
+   ```
+
+8. **Disable raw dumps** after reverse-engineering:
+   ```bash
+   # .env
+   SENTRY_RAW_WORKOUT_DUMP=false
    ```
 
 ## Testing Without a Device
@@ -221,9 +242,59 @@ test('badminton workout type 129 parsing', () {
 4. **Unit tests** with real capture payloads
 5. **Sentry breadcrumbs** for unusual payload structures
 
+## Raw Payload Capture (Owner Consent)
+
+For reverse-engineering unknown fields, enable `SENTRY_RAW_WORKOUT_DUMP=true`:
+
+**What gets sent to Sentry**:
+- Full TLV hex of workout totals for types 129-133
+- Raw sample stream hex from WorkoutData enrichment
+- Unknown/leftover TLV tags with full hex values
+- Workout metadata (id, type, start/end, duration)
+
+**Privacy**: MAC addresses redacted. Health data included by owner explicit consent for debugging only.
+
+**Finding dumps**:
+1. Sentry → Issues → Search: `message:badminton.raw_dump`
+2. Three event types:
+   - `badminton.raw_dump.totals` — Workout totals TLV hex
+   - `badminton.raw_dump.data` — WorkoutData pages + sample stream
+   - `badminton.raw_dump.pace` — Pace blocks (if present)
+3. Download attachments for large payloads (>500KB)
+
+**Example dump structure**:
+```json
+{
+  "version": "1.0",
+  "dumpType": "racket_workout_totals",
+  "metadata": {
+    "workoutNumber": 125,
+    "typeCode": 129,
+    "typeName": "Badminton",
+    "startTime": 1730706720,
+    "endTime": 1730710620,
+    "durationSec": 3900,
+    "service": "0x17",
+    "command": "0x08"
+  },
+  "rawTotalsHex": "02007D04644D6E80...",
+  "rawTotalsLength": 256,
+  "unknownTlvs": [
+    {"id": 60, "len": 4},
+    {"id": 61, "len": 2}
+  ],
+  "leftoverTlvs": [
+    {"tag": "0x66", "len": 16, "hex": "..."}
+  ]
+}
+```
+
+See `docs/sentry-setup.md` for complete configuration instructions.
+
 ## Changelog
 
 - **2026-11-14**: Initial documentation
   - Type 129 confirmed as Badminton
   - Totals parsing complete
   - Racket-specific metrics marked as TODO pending verification
+  - Raw payload dump feature added for reverse-engineering
