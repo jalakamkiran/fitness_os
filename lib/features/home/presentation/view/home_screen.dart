@@ -1,5 +1,6 @@
 import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:fitness_os/core/di/injector.dart';
@@ -73,7 +74,11 @@ class _HomeView extends StatelessWidget {
               return Center(child: Text(state.message));
             }
             final ready = state as HomeReady;
-            return _HomeBody(snapshot: ready.snapshot, message: ready.message);
+            return _HomeBody(
+              snapshot: ready.snapshot,
+              message: ready.message,
+              errorDetails: ready.errorDetails,
+            );
           },
         ),
       ),
@@ -82,10 +87,15 @@ class _HomeView extends StatelessWidget {
 }
 
 class _HomeBody extends StatelessWidget {
-  const _HomeBody({required this.snapshot, this.message});
+  const _HomeBody({
+    required this.snapshot,
+    this.message,
+    this.errorDetails,
+  });
 
   final HomeSnapshot snapshot;
   final String? message;
+  final String? errorDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -131,9 +141,40 @@ class _HomeBody extends StatelessWidget {
                 if (showSyncCard) _SyncCard(snapshot: snapshot),
                 if (message != null) ...[
                   if (showSyncCard) const SizedBox(height: 10),
-                  Text(
-                    message!,
-                    style: TextStyle(color: colors.hot, fontSize: 13),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          message!,
+                          style: TextStyle(color: colors.hot, fontSize: 13),
+                        ),
+                      ),
+                      if (errorDetails != null) ...[
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => _copyErrorDetails(context, errorDetails!),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: colors.hot.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: colors.hot, width: 1),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.copy, size: 14, color: colors.hot),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Copy details',
+                                  style: TextStyle(color: colors.hot, fontSize: 11, fontWeight: FontWeight.w500),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
                 if (dayCapable) ...[
@@ -1032,4 +1073,15 @@ class _SurfaceCard extends StatelessWidget {
       child: child,
     );
   }
+}
+
+/// Copy error details to clipboard and show confirmation
+void _copyErrorDetails(BuildContext context, String errorDetails) {
+  Clipboard.setData(ClipboardData(text: errorDetails));
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text('Error details copied to clipboard'),
+      duration: Duration(seconds: 2),
+    ),
+  );
 }

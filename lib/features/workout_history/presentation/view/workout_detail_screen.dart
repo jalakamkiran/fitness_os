@@ -350,9 +350,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          isSwim
-              ? '${workoutTypeLabel(workout.type)} #${workout.number}'
-              : '${_typeLabel(workout.type)} #${workout.number}',
+          '${workoutTypeLabel(workout.type)} #${workout.number}',
         ),
         actions: [
           if (!_sessionRemoved)
@@ -457,7 +455,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                         ),
                         _Row(
                           'Type',
-                          '${workout.type} (${_typeLabel(workout.type)})',
+                          '${workout.type} (${workoutTypeLabel(workout.type)})',
                         ),
                         if (workout.calories != null)
                           _Row('Calories', '${workout.calories} kcal'),
@@ -511,7 +509,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                       _Row('Duration', _formatDuration(workout.durationSec)),
                       _Row(
                         'Type',
-                        '${workout.type} (${_typeLabel(workout.type)})',
+                        '${workout.type} (${workoutTypeLabel(workout.type)})',
                       ),
                       if (workout.calories != null)
                         _Row('Calories', '${workout.calories} kcal'),
@@ -1555,24 +1553,6 @@ bool? _segmentsFetchedStatus(WorkoutSummary w) {
   return w.segments != null && w.segments!.isNotEmpty;
 }
 
-String _typeLabel(int type) {
-  // Frozen from owner 25m pool probe (2026-07-23): Totals 0x14 type=6 +
-  // poolLength cm + laps aligns with Gadgetbridge (pool=6, open water=8).
-  const names = <int, String>{
-    1: 'Walk',
-    2: 'Run',
-    3: 'Cycle',
-    4: 'Climb',
-    5: 'Indoor run',
-    6: 'Pool swim',
-    7: 'Indoor cycle',
-    8: 'Open water',
-    9: 'Elliptical',
-    10: 'Rower',
-    140: 'Strength',
-  };
-  return names[type] ?? 'Workout type $type';
-}
 
 /// Totals tag 0x18 is pool length in centimetres (catalog + 2500→25m probe).
 

@@ -30,13 +30,23 @@ Future<void> bootstrap() async {
           options.anrEnabled = true;
           options.enableNdkScopeSync = true;
           options.tracesSampleRate = 1.0;
+          
+          // Set environment: debug, profile, or release
+          options.environment = kReleaseMode
+              ? 'release'
+              : (kProfileMode ? 'profile' : 'debug');
+          
+          // Set release version (matches Firebase App Distribution format)
+          // Format: com.example.fitness_os@<version>+<build>
+          const packageName = 'com.example.fitness_os';
+          const version = String.fromEnvironment('APP_VERSION', defaultValue: '0.1.0');
+          const buildNumber = String.fromEnvironment('APP_BUILD_NUMBER', defaultValue: '1');
+          options.release = '$packageName@$version+$buildNumber';
+          
           options.beforeSend = SentryPrivacyScrub.beforeSend;
           options.beforeSendTransaction =
               SentryPrivacyScrub.beforeSendTransaction;
           options.beforeBreadcrumb = SentryPrivacyScrub.beforeBreadcrumb;
-          options.environment = kReleaseMode
-              ? 'release'
-              : (kProfileMode ? 'profile' : 'debug');
         },
         appRunner: _runAppBody,
       );
