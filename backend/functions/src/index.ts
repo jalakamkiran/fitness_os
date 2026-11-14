@@ -1,17 +1,27 @@
-import * as functions from "firebase-functions";
+import {onRequest} from "firebase-functions/v2/https";
+import {defineSecret} from "firebase-functions/params";
 import * as admin from "firebase-admin";
-import * as express from "express";
-import {authenticateRead, authenticateWrite} from "./middleware/auth";
+import express from "express";
+import {authenticateRead, authenticateWrite, initializeKeys} from "./middleware/auth";
 import {rateLimit} from "./middleware/rate-limit";
 import {computeDailySummary, computeDailySummaries} from "./services/daily-summary";
 import {syncFromApp} from "./services/sync-service";
 import {validateDateRange, parseDateRange} from "./services/timezone";
 import {SyncStatus} from "./models/types";
 
+const READ_ONLY_API_KEY = defineSecret("READ_ONLY_API_KEY");
+const DEVICE_WRITE_KEY = defineSecret("DEVICE_WRITE_KEY");
+
 admin.initializeApp();
 
 const app = express();
 app.use(express.json());
+
+// Initialize auth keys from secrets
+app.use((req, res, next) => {
+  initializeKeys(READ_ONLY_API_KEY.value(), DEVICE_WRITE_KEY.value());
+  next();
+});
 
 app.get("/api/v1/daily-summary", authenticateRead, rateLimit, async (req, res) => {
   try {
@@ -242,4 +252,14 @@ app.post("/api/v1/meals", authenticateWrite, async (req, res) => {
   }
 });
 
-export const api = functions.https.onRequest(app);
+export const api = onRequest(
+  {
+    region: "asia-south1",
+    secrets: [READ_ONLY_API_KEY, DEVICE_WRITE_KEY],
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 2,
+    timeoutSeconds: 60,
+  },
+  app
+);

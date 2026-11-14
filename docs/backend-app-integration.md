@@ -18,8 +18,10 @@ After deploying the backend:
 ```bash
 cd backend
 firebase deploy
-# Note the Functions URL: https://<region>-<project>.cloudfunctions.net/api
+# Functions URL: https://asia-south1-fathom-fitness-os.cloudfunctions.net/api
 ```
+
+**Note:** The Express app has its own `/api` prefix, so endpoints are `/api/api/v1/...`
 
 ### 2. Get Device Write Key
 
@@ -32,14 +34,14 @@ firebase functions:secrets:access DEVICE_WRITE_KEY
 
 **For development/testing:**
 ```bash
-flutter run --dart-define=BACKEND_URL=https://<region>-<project>.cloudfunctions.net/api \
+flutter run --dart-define=BACKEND_URL=https://asia-south1-fathom-fitness-os.cloudfunctions.net/api \
            --dart-define=BACKEND_WRITE_KEY=<your-device-write-key>
 ```
 
 **For release builds:**
 ```bash
 flutter build apk --release \
-  --dart-define=BACKEND_URL=https://<region>-<project>.cloudfunctions.net/api \
+  --dart-define=BACKEND_URL=https://asia-south1-fathom-fitness-os.cloudfunctions.net/api \
   --dart-define=BACKEND_WRITE_KEY=<your-device-write-key>
 ```
 
@@ -111,7 +113,7 @@ npm run emulator
 
 2. Build app with emulator URL:
 ```bash
-flutter run --dart-define=BACKEND_URL=http://10.0.2.2:5001/<project-id>/us-central1/api \
+flutter run --dart-define=BACKEND_URL=http://10.0.2.2:5001/fathom-fitness-os/asia-south1/api \
            --dart-define=BACKEND_WRITE_KEY=test-write-key
 ```
 
@@ -132,7 +134,7 @@ firebase firestore:get workouts --limit 5
 Or use the read-only API:
 ```bash
 curl -H "Authorization: Bearer <READ_ONLY_API_KEY>" \
-  "https://<functions-url>/api/v1/sync-status"
+  "https://asia-south1-fathom-fitness-os.cloudfunctions.net/api/api/v1/sync-status"
 ```
 
 ## Troubleshooting

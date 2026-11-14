@@ -7,8 +7,13 @@ export interface AuthenticatedRequest extends Request {
   isWriteAccess?: boolean;
 }
 
-const DEVICE_WRITE_KEY_ENV = "DEVICE_WRITE_KEY";
-const READ_ONLY_API_KEY_ENV = "READ_ONLY_API_KEY";
+let readOnlyKey: string | undefined;
+let deviceWriteKey: string | undefined;
+
+export function initializeKeys(readKey: string, writeKey: string): void {
+  readOnlyKey = readKey;
+  deviceWriteKey = writeKey;
+}
 
 export async function authenticateWrite(
   req: AuthenticatedRequest,
@@ -26,9 +31,8 @@ export async function authenticateWrite(
     // Check device write key first (simple bearer token)
     if (authHeader.startsWith("Bearer ")) {
       const token = authHeader.substring(7);
-      const deviceKey = process.env[DEVICE_WRITE_KEY_ENV];
       
-      if (deviceKey && token === deviceKey) {
+      if (deviceWriteKey && token === deviceWriteKey) {
         req.userId = "device";
         req.isWriteAccess = true;
         next();
@@ -70,9 +74,8 @@ export async function authenticateRead(
 
     if (authHeader.startsWith("Bearer ")) {
       const token = authHeader.substring(7);
-      const readKey = process.env[READ_ONLY_API_KEY_ENV];
       
-      if (readKey && token === readKey) {
+      if (readOnlyKey && token === readOnlyKey) {
         req.isReadOnly = true;
         next();
         return;
