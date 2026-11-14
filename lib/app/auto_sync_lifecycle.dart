@@ -1,7 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:get_it/get_it.dart';
 
+import 'package:fitness_os/core/backend/backend_config.dart';
+import 'package:fitness_os/core/backend/backend_sync_service.dart';
 import 'package:fitness_os/core/huawei/fos_huawei_log.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync.dart';
@@ -85,6 +88,12 @@ class _AutoSyncLifecycleState extends State<AutoSyncLifecycle>
       _ensureInFlight = false;
     }
     widget.autoSync.onResumed();
+    
+    // Trigger backend sync on app open
+    if (BackendConfig.isEnabled && GetIt.I.isRegistered<BackendSyncService>()) {
+      unawaited(GetIt.I<BackendSyncService>().syncToBackend());
+    }
+    
     if (_ensureQueued) {
       _ensureQueued = false;
       unawaited(_ensureSessionThenArm());

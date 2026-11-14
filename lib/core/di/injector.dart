@@ -1,5 +1,6 @@
 import 'package:get_it/get_it.dart';
 import 'package:fitness_os/features/food/data/di/food_di.dart';
+import 'package:fitness_os/core/backend/backend_sync_di.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync_di.dart';
 import 'package:fitness_os/core/storage/store_invalidation.dart';
 import 'package:fitness_os/features/device_pairing/data/di/device_pairing_di.dart';
@@ -26,6 +27,7 @@ Future<void> initDependencies() async {
   _initPrograms();
   await _initDiagnostics();
   registerOneShotAutoSync(sl);
+  await initBackendSync();
   _initHome();
   // [features] — auto-managed by create_feature.sh, do not edit manually
 }

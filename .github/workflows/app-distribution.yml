@@ -68,9 +68,12 @@ jobs:
           echo "SENTRY_RAW_WORKOUT_DUMP=true" >> .env
           echo "SENTRY_FORCE=true" >> .env
           
-          # Add backend keys if available (optional, for data persistence)
+          # Add backend write key if available (optional, for Firebase cloud sync)
           if [ -n "$BACKEND_WRITE_KEY" ]; then
             echo "BACKEND_WRITE_KEY=$BACKEND_WRITE_KEY" >> .env
+            echo "✅ Backend sync ENABLED (key: ${#BACKEND_WRITE_KEY} chars)"
+          else
+            echo "⚠️  Backend sync DISABLED (BACKEND_WRITE_KEY not set - data local-only)"
           fi
           
           echo "✅ Created .env file (DSN: ${#SENTRY_DSN} chars)"
