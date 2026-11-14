@@ -3,260 +3,1648 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fathom Design Revamp — Mockup Gallery</title>
+  <title>Fitness OS Design Revamp – Interactive Prototype</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="tokens.css">
   <style>
+    /* Prototype Frame & Navigation */
     body {
-      font-family: var(--font-sans);
-      padding: 40px;
-      max-width: 1400px;
-      margin: 0 auto;
-    }
-
-    h1 {
-      font: var(--text-display-lg);
-      letter-spacing: var(--text-display-lg-tracking);
-      color: var(--ink);
-      margin-bottom: 8px;
-    }
-
-    .subtitle {
-      font: var(--text-body-lg);
-      color: var(--ink-dim);
-      margin-bottom: 32px;
-    }
-
-    .section {
-      margin-bottom: 48px;
-    }
-
-    .section-title {
-      font: var(--text-headline-sm);
-      letter-spacing: var(--text-headline-sm-tracking);
-      color: var(--ink);
-      margin-bottom: 16px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .gallery {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 24px;
-    }
-
-    .mockup-card {
-      background-color: var(--bg-elev);
-      border: 1px solid var(--line);
-      border-radius: var(--radius-lg);
+      margin: 0;
       padding: 20px;
-      text-decoration: none;
-      transition: all 200ms var(--easing-standard);
-    }
-
-    .mockup-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px var(--shadow);
-    }
-
-    .mockup-preview {
-      width: 100%;
-      aspect-ratio: 390 / 844;
-      background-color: var(--bg);
-      border: 1px solid var(--line);
-      border-radius: var(--radius-md);
-      margin-bottom: 12px;
       display: flex;
-      align-items: center;
       justify-content: center;
-      font-size: 48px;
-      color: var(--ink-faint);
+      align-items: flex-start;
+      min-height: 100vh;
+      background: #0A0C10;
     }
 
-    .mockup-title {
-      font: var(--text-title-md);
-      letter-spacing: var(--text-title-md-tracking);
-      color: var(--ink);
-      margin-bottom: 4px;
+    .prototype-wrapper {
+      display: flex;
+      gap: 24px;
+      max-width: 1200px;
     }
 
-    .mockup-desc {
-      font: var(--text-body-sm);
-      color: var(--ink-faint);
+    .device-frame {
+      width: 390px;
+      height: 844px;
+      background: var(--bg);
+      border-radius: 36px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 0 0 10px #1a1d24, 0 0 0 12px #0f1116;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .screen-container {
+      width: 100%;
+      height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    .screen {
+      display: none;
+      padding: var(--layout-padding);
+      padding-bottom: 80px;
+      min-height: calc(844px - 80px);
+    }
+
+    .screen.active {
+      display: block;
+    }
+
+    /* Sidebar Controls */
+    .controls {
+      width: 280px;
+      background: #14181E;
+      border-radius: 12px;
+      padding: 20px;
+      color: #F3F6F8;
+      font-family: var(--font-sans);
+      max-height: 844px;
+      overflow-y: auto;
+    }
+
+    .controls h3 {
+      font-size: 14px;
+      font-weight: 700;
+      margin: 0 0 12px 0;
+      color: #5DFFC4;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .controls ul {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 24px 0;
+    }
+
+    .controls li {
+      margin: 0 0 8px 0;
+    }
+
+    .controls button {
+      width: 100%;
+      text-align: left;
+      padding: 10px 12px;
+      background: #1E242D;
+      border: 1px solid rgba(93, 255, 196, 0.15);
+      border-radius: 8px;
+      color: #A7B2BD;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .controls button:hover {
+      background: #252C38;
+      border-color: rgba(93, 255, 196, 0.3);
+      color: #F3F6F8;
+    }
+
+    .controls button.active {
+      background: rgba(93, 255, 196, 0.12);
+      border-color: #5DFFC4;
+      color: #5DFFC4;
     }
 
     .theme-toggle {
-      position: fixed;
-      top: 24px;
-      right: 24px;
-      padding: 12px 16px;
-      background-color: var(--bg-elev);
-      border: 1px solid var(--line);
-      border-radius: var(--radius-full);
+      margin-top: 8px;
+      padding: 10px 12px;
+      background: #252C38;
+      border: 1px solid rgba(93, 255, 196, 0.2);
+      border-radius: 8px;
+      color: #F3F6F8;
+      font-size: 13px;
       cursor: pointer;
-      font: var(--text-label-md);
-      color: var(--ink-dim);
-      transition: all 200ms var(--easing-standard);
+      width: 100%;
     }
 
-    .theme-toggle:hover {
+    /* Tab Bar (persistent) */
+    .tab-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 64px;
+      background-color: var(--tab-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      z-index: 100;
+    }
+
+    .tab-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 16px;
+      color: var(--ink-faint);
+      text-decoration: none;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: color 0.1s;
+    }
+
+    .tab-item.active {
+      color: var(--accent);
+    }
+
+    .tab-icon {
+      width: 24px;
+      height: 24px;
+      fill: currentColor;
+    }
+
+    /* Component Styles */
+    .card {
+      background-color: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: var(--card-padding);
+      margin-bottom: var(--card-gap);
+    }
+
+    .card-lg {
+      border-radius: var(--radius-lg);
+      padding: var(--space-xl);
+    }
+
+    .metric-hero {
+      font: var(--text-display-xl);
+      letter-spacing: var(--text-display-xl-tracking);
+      color: var(--ink);
+      margin: 0;
+    }
+
+    .metric-label {
+      font: var(--text-body-sm);
+      color: var(--ink-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin: 0 0 4px 0;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      background-color: var(--pool);
+      border: 1px solid var(--pool-line);
+      border-radius: var(--radius-full);
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--ink-dim);
+    }
+
+    .pill-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background-color: var(--accent);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-sm);
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      font-weight: 700;
+      font-size: 14px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.1s;
+    }
+
+    .btn-primary {
       background-color: var(--accent);
       color: var(--accent-ink);
     }
 
-    .status {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: var(--radius-sm);
-      font: var(--text-label-sm);
-      margin-left: 8px;
+    .btn-secondary {
+      background-color: var(--bg);
+      color: var(--ink);
+      border: 1px solid var(--line);
     }
 
-    .status-done {
-      background-color: rgba(15, 159, 110, 0.15);
-      color: var(--up);
+    .divider {
+      height: 1px;
+      background-color: var(--line);
+      border: none;
+      margin: var(--space-lg) 0;
     }
 
-    .status-wip {
-      background-color: rgba(217, 119, 6, 0.15);
-      color: var(--amber);
+    /* Sleep Hypnogram */
+    .hypnogram {
+      width: 100%;
+      height: 120px;
+      background: linear-gradient(to bottom, var(--bg) 0%, var(--bg-elev) 100%);
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+      margin: var(--space-md) 0;
+    }
+
+    .hypnogram-bars {
+      display: flex;
+      height: 100%;
+      align-items: flex-end;
+      padding: 8px;
+      gap: 2px;
+    }
+
+    .hypnogram-bar {
+      flex: 1;
+      border-radius: 2px;
+      transition: all 0.2s;
+    }
+
+    .hypnogram-bar.awake { background-color: var(--hot); }
+    .hypnogram-bar.rem { background-color: var(--amber); }
+    .hypnogram-bar.light { background-color: var(--accent); opacity: 0.6; }
+    .hypnogram-bar.deep { background-color: var(--accent); }
+
+    /* Clickable elements */
+    [data-nav] {
+      cursor: pointer;
+    }
+
+    [data-nav]:active {
+      transform: scale(0.98);
+      opacity: 0.8;
     }
   </style>
 </head>
 <body>
-  <button class="theme-toggle" onclick="toggleTheme()">Toggle Dark Mode</button>
 
-  <h1>Fathom Design Revamp</h1>
-  <p class="subtitle">
-    Strategic athlete's decision tool — calm, honest, data-dense.<br>
-    Click any mockup to view full screen. Read <a href="PRODUCT.md" style="color: var(--accent);">PRODUCT.md</a> 
-    and <a href="README.md" style="color: var(--accent);">README.md</a> for rationale.
-  </p>
+<div class="prototype-wrapper">
+  <!-- Sidebar Controls -->
+  <div class="controls">
+    <h3>Navigation</h3>
+    <ul>
+      <li><button onclick="showScreen('splash')" id="nav-splash">Splash</button></li>
+      <li><button onclick="showScreen('onboarding-permissions')" id="nav-onboarding-permissions">Onboarding: Permissions</button></li>
+      <li><button onclick="showScreen('onboarding-scan')" id="nav-onboarding-scan">Onboarding: Scan</button></li>
+      <li><button onclick="showScreen('onboarding-pairing')" id="nav-onboarding-pairing">Onboarding: Pairing</button></li>
+      <li><button onclick="showScreen('onboarding-sync')" id="nav-onboarding-sync">Onboarding: First Sync</button></li>
+      <li><button onclick="showScreen('today')" id="nav-today">Today</button></li>
+      <li><button onclick="showScreen('sleep-detail')" id="nav-sleep-detail">Sleep Detail</button></li>
+      <li><button onclick="showScreen('recovery')" id="nav-recovery">Recovery</button></li>
+      <li><button onclick="showScreen('heart-rate')" id="nav-heart-rate">Heart Rate & HRV</button></li>
+      <li><button onclick="showScreen('activity')" id="nav-activity">Activity</button></li>
+      <li><button onclick="showScreen('workouts')" id="nav-workouts">Workouts List</button></li>
+      <li><button onclick="showScreen('workout-detail-swim')" id="nav-workout-detail-swim">Workout: Swim</button></li>
+      <li><button onclick="showScreen('workout-detail-run')" id="nav-workout-detail-run">Workout: Run</button></li>
+      <li><button onclick="showScreen('workout-detail-badminton')" id="nav-workout-detail-badminton">Workout: Badminton</button></li>
+      <li><button onclick="showScreen('programs')" id="nav-programs">Programs (Agon)</button></li>
+      <li><button onclick="showScreen('food')" id="nav-food">Food</button></li>
+      <li><button onclick="showScreen('weight')" id="nav-weight">Weight</button></li>
+      <li><button onclick="showScreen('device-sync')" id="nav-device-sync">Device & Sync</button></li>
+      <li><button onclick="showScreen('settings')" id="nav-settings">Settings</button></li>
+      <li><button onclick="showScreen('profile')" id="nav-profile">Profile</button></li>
+    </ul>
 
-  <!-- Primary Screens -->
-  <section class="section">
-    <h2 class="section-title">Primary Screens <span class="status status-done">Core Flow</span></h2>
-    <div class="gallery">
+    <h3>States</h3>
+    <ul>
+      <li><button onclick="showScreen('state-loading')" id="nav-state-loading">Loading</button></li>
+      <li><button onclick="showScreen('state-empty')" id="nav-state-empty">Empty State</button></li>
+      <li><button onclick="showScreen('state-error')" id="nav-state-error">Error</button></li>
+      <li><button onclick="showScreen('state-offline')" id="nav-state-offline">Offline</button></li>
+      <li><button onclick="showScreen('state-syncing')" id="nav-state-syncing">Syncing</button></li>
+    </ul>
+
+    <button class="theme-toggle" onclick="toggleTheme()">Toggle Light/Dark</button>
+  </div>
+
+  <!-- Device Frame -->
+  <div class="device-frame">
+    <div class="screen-container" id="screenContainer">
       
-      <a href="home.html" class="mockup-card">
-        <div class="mockup-preview">🏠</div>
-        <h3 class="mockup-title">Today (Home)</h3>
-        <p class="mockup-desc">Readiness dashboard: Am I ready to train? Did I eat enough?</p>
-      </a>
+      <!-- SPLASH SCREEN -->
+      <div class="screen active" id="splash" data-testid="splash-screen">
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: calc(100vh - 80px); gap: 24px;">
+          <div style="width: 120px; height: 120px; background: linear-gradient(135deg, var(--accent) 0%, var(--up) 100%); border-radius: 32px;"></div>
+          <h1 style="font: var(--text-display-md); letter-spacing: var(--text-display-md-tracking); color: var(--ink);">Fitness OS</h1>
+          <div class="pill">
+            <div class="pill-dot"></div>
+            <span>Loading...</span>
+          </div>
+        </div>
+      </div>
 
-      <a href="workouts.html" class="mockup-card">
-        <div class="mockup-preview">💪</div>
-        <h3 class="mockup-title">Workouts</h3>
-        <p class="mockup-desc">Session history with trend charts, week grouping, tabs per sport.</p>
-      </a>
+      <!-- ONBOARDING: PERMISSIONS -->
+      <div class="screen" id="onboarding-permissions" data-testid="onboarding-permissions-screen">
+        <div style="padding-top: 80px;">
+          <h1 style="font: var(--text-display-lg); letter-spacing: var(--text-display-lg-tracking); color: var(--ink); margin-bottom: 12px;">Welcome to<br>Fitness OS</h1>
+          <p style="font: var(--text-body-md); color: var(--ink-dim); margin-bottom: 48px;">Your strategic training companion.<br>Let's get you connected to your watch.</p>
+          
+          <div class="card" style="margin-bottom: 16px;">
+            <h3 style="font: var(--text-title-md); color: var(--ink); margin-bottom: 8px;">📍 Location</h3>
+            <p style="font: var(--text-body-sm); color: var(--ink-dim); margin-bottom: 12px;">Required to scan for Bluetooth devices nearby.</p>
+            <button class="btn btn-primary" style="width: 100%;">Grant Location</button>
+          </div>
 
-      <a href="workout-detail.html" class="mockup-card">
-        <div class="mockup-preview">📊</div>
-        <h3 class="mockup-title">Workout Detail</h3>
-        <p class="mockup-desc">Single session analytics: pace, HR zones, recovery cost.</p>
-      </a>
+          <div class="card" style="margin-bottom: 16px;">
+            <h3 style="font: var(--text-title-md); color: var(--ink); margin-bottom: 8px;">🔵 Bluetooth</h3>
+            <p style="font: var(--text-body-sm); color: var(--ink-dim); margin-bottom: 12px;">Connect to your Huawei Watch GT5 Pro.</p>
+            <button class="btn btn-primary" style="width: 100%;">Enable Bluetooth</button>
+          </div>
 
-      <a href="recovery.html" class="mockup-card">
-        <div class="mockup-preview">🌙</div>
-        <h3 class="mockup-title">Recovery (Sleep)</h3>
-        <p class="mockup-desc">Last night score, contributors, sleep debt, timing consistency.</p>
-      </a>
+          <div class="card">
+            <h3 style="font: var(--text-title-md); color: var(--ink); margin-bottom: 8px;">🔔 Notifications</h3>
+            <p style="font: var(--text-body-sm); color: var(--ink-dim); margin-bottom: 12px;">Stay updated on sync status and program reminders.</p>
+            <button class="btn btn-secondary" style="width: 100%;">Maybe Later</button>
+          </div>
+        </div>
+      </div>
 
-      <a href="food.html" class="mockup-card">
-        <div class="mockup-preview">🍽️</div>
-        <h3 class="mockup-title">Food</h3>
-        <p class="mockup-desc">Calorie balance (burn vs. intake), meal log, week trend.</p>
-      </a>
+      <!-- ONBOARDING: SCAN -->
+      <div class="screen" id="onboarding-scan" data-testid="onboarding-scan-screen">
+        <div style="padding-top: 60px;">
+          <h1 style="font: var(--text-display-md); letter-spacing: var(--text-display-md-tracking); color: var(--ink); margin-bottom: 12px;">Searching for<br>your watch</h1>
+          <p style="font: var(--text-body-md); color: var(--ink-dim); margin-bottom: 32px;">Make sure your Huawei Watch is on and nearby.</p>
+
+          <div class="card" data-nav onclick="showScreen('onboarding-pairing')" style="margin-bottom: 12px; border-color: var(--accent); border-width: 2px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 style="font: var(--text-title-md); color: var(--ink); margin-bottom: 4px;">WATCH GT5 Pro</h3>
+                <p style="font: var(--text-body-sm); color: var(--ink-faint);">98:F1:70:A3:2C:1E</p>
+              </div>
+              <div class="pill">
+                <div class="pill-dot"></div>
+                <span>-65 dBm</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom: 12px; opacity: 0.5;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 style="font: var(--text-title-md); color: var(--ink); margin-bottom: 4px;">WATCH GT 4</h3>
+                <p style="font: var(--text-body-sm); color: var(--ink-faint);">A4:C3:F0:7D:1B:89</p>
+              </div>
+              <div class="pill">
+                <span>-82 dBm</span>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn btn-secondary" style="width: 100%; margin-top: 24px;">Stop Scanning</button>
+        </div>
+      </div>
+
+      <!-- ONBOARDING: PAIRING -->
+      <div class="screen" id="onboarding-pairing" data-testid="onboarding-pairing-screen">
+        <div style="padding-top: 80px; text-align: center;">
+          <div style="width: 80px; height: 80px; background: var(--pool); border-radius: 50%; margin: 0 auto 24px auto; display: flex; align-items: center; justify-content: center;">
+            <div style="width: 40px; height: 40px; border: 4px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+          </div>
+          <h1 style="font: var(--text-display-md); letter-spacing: var(--text-display-md-tracking); color: var(--ink); margin-bottom: 12px;">Pairing with<br>WATCH GT5 Pro</h1>
+          <p style="font: var(--text-body-md); color: var(--ink-dim); margin-bottom: 48px;">Establishing secure connection...</p>
+
+          <div class="card" style="text-align: left;">
+            <h3 style="font: var(--text-title-sm); color: var(--ink-dim); margin-bottom: 16px;">Next steps:</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="font: var(--text-body-sm); color: var(--ink-dim); margin-bottom: 12px; padding-left: 24px; position: relative;">
+                <span style="position: absolute; left: 0; color: var(--accent);">✓</span>
+                Bluetooth connection
+              </li>
+              <li style="font: var(--text-body-sm); color: var(--ink); margin-bottom: 12px; padding-left: 24px; position: relative; font-weight: 600;">
+                <span style="position: absolute; left: 0; color: var(--accent);">⋯</span>
+                Authenticating
+              </li>
+              <li style="font: var(--text-body-sm); color: var(--ink-faint); margin-bottom: 0; padding-left: 24px; position: relative;">
+                <span style="position: absolute; left: 0;">○</span>
+                First sync
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ONBOARDING: FIRST SYNC -->
+      <div class="screen" id="onboarding-sync" data-testid="onboarding-sync-screen">
+        <div style="padding-top: 80px;">
+          <h1 style="font: var(--text-display-md); letter-spacing: var(--text-display-md-tracking); color: var(--ink); margin-bottom: 12px;">First sync</h1>
+          <p style="font: var(--text-body-md); color: var(--ink-dim); margin-bottom: 32px;">Pulling the last 14 days of data from your watch...</p>
+
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <span style="font: var(--text-title-sm); color: var(--ink);">Sleep sessions</span>
+              <span class="pill" style="background-color: var(--accent); color: var(--accent-ink); border-color: var(--accent);">
+                <span style="font-weight: 700;">✓</span> Done
+              </span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <span style="font: var(--text-title-sm); color: var(--ink);">Workouts</span>
+              <span class="pill">
+                <div class="pill-dot"></div>
+                <span>Syncing...</span>
+              </span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <span style="font: var(--text-title-sm); color: var(--ink-faint);">Heart rate</span>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">Waiting...</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font: var(--text-title-sm); color: var(--ink-faint);">Activity totals</span>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">Waiting...</span>
+            </div>
+          </div>
+
+          <button class="btn btn-secondary" style="width: 100%; margin-top: 24px;">Cancel Sync</button>
+        </div>
+      </div>
+
+      <!-- TODAY SCREEN -->
+      <div class="screen" id="today" data-testid="today-screen">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-xl);">
+          <div>
+            <p style="font: var(--text-body-sm); color: var(--ink-faint); margin: 0;">Saturday, Nov 14</p>
+            <h1 style="font: var(--text-headline-lg); letter-spacing: var(--text-headline-lg-tracking); color: var(--ink); margin: 0;">Today</h1>
+          </div>
+          <div class="pill" data-nav onclick="showScreen('device-sync')">
+            <div class="pill-dot"></div>
+            <span>Synced 2m ago</span>
+          </div>
+        </div>
+
+        <!-- Sleep Card -->
+        <div class="card card-lg" data-nav onclick="showScreen('sleep-detail')" style="margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px;">Last Night</span>
+            <span style="font: var(--text-title-sm); color: var(--accent);">→</span>
+          </div>
+          <h2 class="metric-hero" style="margin-bottom: 8px;">84</h2>
+          <p style="font: var(--text-title-md); color: var(--ink-dim); margin-bottom: 16px;">Sleep score</p>
+          <div style="display: flex; gap: 16px; font: var(--text-body-sm); color: var(--ink-dim);">
+            <span><strong style="color: var(--ink);">7h 24m</strong> total</span>
+            <span><strong style="color: var(--ink);">2h 12m</strong> deep</span>
+            <span><strong style="color: var(--ink);">92%</strong> efficiency</span>
+          </div>
+        </div>
+
+        <!-- Recovery Card -->
+        <div class="card" data-nav onclick="showScreen('recovery')" style="margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px;">Recovery</span>
+            <span style="font: var(--text-title-sm); color: var(--accent);">→</span>
+          </div>
+          <h2 style="font: var(--text-display-lg); letter-spacing: var(--text-display-lg-tracking); color: var(--ink); margin: 0;">14h</h2>
+          <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 4px 0 0 0;">Until ready for hard work</p>
+        </div>
+
+        <!-- Activity Rings -->
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px;">Today's Activity</span>
+          <div style="display: flex; justify-content: space-around; margin-top: 16px;">
+            <div style="text-align: center;">
+              <div style="width: 80px; height: 80px; border-radius: 50%; background: conic-gradient(var(--accent) 0% 68%, var(--gauge-track) 68% 100%); display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+                <div style="width: 64px; height: 64px; border-radius: 50%; background: var(--bg-elev); display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                  <span style="font: var(--text-headline-sm); color: var(--ink);">6,842</span>
+                </div>
+              </div>
+              <span style="font: var(--text-body-sm); color: var(--ink-dim);">Steps</span>
+            </div>
+            <div style="text-align: center;">
+              <div style="width: 80px; height: 80px; border-radius: 50%; background: conic-gradient(var(--accent) 0% 52%, var(--gauge-track) 52% 100%); display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+                <div style="width: 64px; height: 64px; border-radius: 50%; background: var(--bg-elev); display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                  <span style="font: var(--text-headline-sm); color: var(--ink);">1,248</span>
+                </div>
+              </div>
+              <span style="font: var(--text-body-sm); color: var(--ink-dim);">Calories</span>
+            </div>
+            <div style="text-align: center;">
+              <div style="width: 80px; height: 80px; border-radius: 50%; background: conic-gradient(var(--accent) 0% 35%, var(--gauge-track) 35% 100%); display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+                <div style="width: 64px; height: 64px; border-radius: 50%; background: var(--bg-elev); display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                  <span style="font: var(--text-headline-sm); color: var(--ink);">21</span>
+                </div>
+              </div>
+              <span style="font: var(--text-body-sm); color: var(--ink-dim);">Active min</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Today's Workouts -->
+        <div class="card" data-nav onclick="showScreen('workouts')">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px;">Today's Workouts</span>
+            <span style="font: var(--text-title-sm); color: var(--accent);">→</span>
+          </div>
+          <div style="padding: 12px; background: var(--bg); border-radius: 8px; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span style="font: var(--text-title-sm); color: var(--ink);">Pool Swim</span>
+                <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">1,500m · 42:18</p>
+              </div>
+              <span style="font: var(--text-headline-sm); color: var(--ink);">🏊</span>
+            </div>
+          </div>
+          <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0; text-align: center;">1 session · 42 min</p>
+        </div>
+      </div>
+
+      <!-- SLEEP DETAIL SCREEN -->
+      <div class="screen" id="sleep-detail" data-testid="sleep-detail-screen">
+        <div style="display: flex; align-items: center; margin-bottom: var(--space-xl); gap: 12px;">
+          <button onclick="showScreen('today')" style="background: none; border: none; color: var(--accent); font-size: 24px; padding: 0; cursor: pointer;">←</button>
+          <h1 style="font: var(--text-headline-lg); letter-spacing: var(--text-headline-lg-tracking); color: var(--ink); margin: 0;">Sleep</h1>
+        </div>
+
+        <!-- Hero Score -->
+        <div class="card card-lg" style="text-align: center; margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px;">Last Night</span>
+          <h2 class="metric-hero" style="margin: 8px 0;">84</h2>
+          <p style="font: var(--text-title-md); color: var(--ink-dim); margin-bottom: 12px;">Sleep score</p>
+          <p style="font: var(--text-body-sm); color: var(--ink-faint);">23:14 – 06:38 (7h 24m)</p>
+        </div>
+
+        <!-- Hypnogram -->
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Sleep Stages</span>
+          <div class="hypnogram">
+            <div class="hypnogram-bars">
+              <div class="hypnogram-bar light" style="height: 30%;"></div>
+              <div class="hypnogram-bar light" style="height: 45%;"></div>
+              <div class="hypnogram-bar deep" style="height: 80%;"></div>
+              <div class="hypnogram-bar deep" style="height: 95%;"></div>
+              <div class="hypnogram-bar deep" style="height: 85%;"></div>
+              <div class="hypnogram-bar light" style="height: 40%;"></div>
+              <div class="hypnogram-bar light" style="height: 35%;"></div>
+              <div class="hypnogram-bar awake" style="height: 15%;"></div>
+              <div class="hypnogram-bar rem" style="height: 60%;"></div>
+              <div class="hypnogram-bar rem" style="height: 70%;"></div>
+              <div class="hypnogram-bar light" style="height: 45%;"></div>
+              <div class="hypnogram-bar deep" style="height: 90%;"></div>
+              <div class="hypnogram-bar deep" style="height: 85%;"></div>
+              <div class="hypnogram-bar light" style="height: 50%;"></div>
+              <div class="hypnogram-bar rem" style="height: 65%;"></div>
+              <div class="hypnogram-bar awake" style="height: 20%;"></div>
+              <div class="hypnogram-bar light" style="height: 40%;"></div>
+              <div class="hypnogram-bar light" style="height: 30%;"></div>
+              <div class="hypnogram-bar awake" style="height: 18%;"></div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 16px; margin-top: 12px; font: var(--text-body-sm);">
+            <div style="display: flex; align-items: center; gap: 6px;"><div style="width: 12px; height: 12px; border-radius: 3px; background: var(--accent);"></div><span style="color: var(--ink-dim);">Deep <strong style="color: var(--ink);">2h 12m</strong></span></div>
+            <div style="display: flex; align-items: center; gap: 6px;"><div style="width: 12px; height: 12px; border-radius: 3px; background: var(--accent); opacity: 0.6;"></div><span style="color: var(--ink-dim);">Light <strong style="color: var(--ink);">3h 48m</strong></span></div>
+            <div style="display: flex; align-items: center; gap: 6px;"><div style="width: 12px; height: 12px; border-radius: 3px; background: var(--amber);"></div><span style="color: var(--ink-dim);">REM <strong style="color: var(--ink);">1h 18m</strong></span></div>
+            <div style="display: flex; align-items: center; gap: 6px;"><div style="width: 12px; height: 12px; border-radius: 3px; background: var(--hot);"></div><span style="color: var(--ink-dim);">Awake <strong style="color: var(--ink);">6m</strong></span></div>
+          </div>
+        </div>
+
+        <!-- Score Factors -->
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Score Factors</span>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">92%</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Efficiency</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">8 min</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Latency</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">82</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Deep continuity</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">16 /min</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Breathing rate</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Vitals Overnight -->
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Vitals During Sleep</span>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">54 bpm</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Avg heart rate</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">97%</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Avg SpO₂</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">46 ms</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Avg HRV</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">48–62</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">HR range (bpm)</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 7-Day Trend -->
+        <div class="card">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">7-Day Trend</span>
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; height: 80px; gap: 8px;">
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 60%; position: relative;"><div style="position: absolute; bottom: 0; width: 100%; height: 75%; background: var(--accent); border-radius: 4px;"></div></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 70%; position: relative;"><div style="position: absolute; bottom: 0; width: 100%; height: 82%; background: var(--accent); border-radius: 4px;"></div></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 75%; position: relative;"><div style="position: absolute; bottom: 0; width: 100%; height: 88%; background: var(--accent); border-radius: 4px;"></div></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 65%; position: relative;"><div style="position: absolute; bottom: 0; width: 100%; height: 70%; background: var(--accent); border-radius: 4px;"></div></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 80%; position: relative;"><div style="position: absolute; bottom: 0; width: 100%; height: 85%; background: var(--accent); border-radius: 4px;"></div></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 72%; position: relative;"><div style="position: absolute; bottom: 0; width: 100%; height: 79%; background: var(--accent); border-radius: 4px;"></div></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 90%; position: relative;"><div style="position: absolute; bottom: 0; width: 100%; height: 93%; background: var(--accent); border-radius: 4px;"></div></div>
+          </div>
+          <p style="font: var(--text-body-sm); color: var(--ink-faint); margin: 8px 0 0 0; text-align: center;">Avg score: <strong style="color: var(--ink);">82</strong></p>
+        </div>
+      </div>
+
+      <!-- RECOVERY SCREEN -->
+      <div class="screen" id="recovery" data-testid="recovery-screen">
+        <h1 style="font: var(--text-headline-lg); letter-spacing: var(--text-headline-lg-tracking); color: var(--ink); margin-bottom: var(--space-xl);">Recovery</h1>
+
+        <div class="card card-lg" style="text-align: center; margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px;">Time Remaining</span>
+          <h2 class="metric-hero" style="margin: 8px 0;">14h</h2>
+          <p style="font: var(--text-body-sm); color: var(--ink-dim);">Until ready for hard work</p>
+        </div>
+
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">7-Day Training Load</span>
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; height: 100px; gap: 6px;">
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 45%; position: relative;"><div style="position: absolute; bottom: 0; width: 100%; height: 82%; background: var(--accent); border-radius: 4px;"></div></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">M</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 60%; position: relative;"><div style="position: absolute; bottom: 0; width: 100%; height: 75%; background: var(--accent); border-radius: 4px;"></div></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">T</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 0%; position: relative;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">W</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 80%; position: relative;"><div style="position: absolute; bottom: 0; width: 100%; height: 88%; background: var(--amber); border-radius: 4px;"></div></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">Th</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 40%; position: relative;"><div style="position: absolute; bottom: 0; width: 100%; height: 70%; background: var(--accent); border-radius: 4px;"></div></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">F</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 100%; position: relative;"><div style="position: absolute; bottom: 0; width: 100%; height: 95%; background: var(--hot); border-radius: 4px;"></div></div>
+              <span style="font: var(--text-body-sm); color: var(--ink);">S</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 0%; position: relative;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">Su</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Recent Sessions</span>
+          <div style="padding: 12px; background: var(--bg); border-radius: 8px; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <span style="font: var(--text-title-sm); color: var(--ink);">Pool Swim</span>
+              <span style="font: var(--text-headline-sm); color: var(--amber);">+18h</span>
+            </div>
+            <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">Load 142 · Aerobic TE 3.8</p>
+          </div>
+          <div style="padding: 12px; background: var(--bg); border-radius: 8px; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <span style="font: var(--text-title-sm); color: var(--ink);">Badminton</span>
+              <span style="font: var(--text-headline-sm); color: var(--hot);">+24h</span>
+            </div>
+            <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">Load 198 · Anaerobic TE 4.2</p>
+          </div>
+          <div style="padding: 12px; background: var(--bg); border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <span style="font: var(--text-title-sm); color: var(--ink);">Outdoor Run</span>
+              <span style="font: var(--text-headline-sm); color: var(--accent);">+12h</span>
+            </div>
+            <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">Load 98 · Aerobic TE 2.8</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- WORKOUTS LIST SCREEN -->
+      <div class="screen" id="workouts" data-testid="workouts-screen">
+        <h1 style="font: var(--text-headline-lg); letter-spacing: var(--text-headline-lg-tracking); color: var(--ink); margin-bottom: var(--space-xl);">Workouts</h1>
+
+        <div class="card" data-nav onclick="showScreen('workout-detail-swim')" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span style="font-size: 24px;">🏊</span>
+                <span style="font: var(--text-title-md); color: var(--ink);">Pool Swim</span>
+              </div>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">Today, 06:24 · 1,500m · 42:18</p>
+            </div>
+            <span style="font: var(--text-title-sm); color: var(--accent);">→</span>
+          </div>
+        </div>
+
+        <div class="card" data-nav onclick="showScreen('workout-detail-badminton')" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span style="font-size: 24px;">🏸</span>
+                <span style="font: var(--text-title-md); color: var(--ink);">Badminton</span>
+              </div>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">Nov 13, 18:45 · 1h 24m</p>
+            </div>
+            <span style="font: var(--text-title-sm); color: var(--accent);">→</span>
+          </div>
+        </div>
+
+        <div class="card" data-nav onclick="showScreen('workout-detail-run')" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span style="font-size: 24px;">🏃</span>
+                <span style="font: var(--text-title-md); color: var(--ink);">Outdoor Run</span>
+              </div>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">Nov 12, 07:10 · 8.2 km · 48:32</p>
+            </div>
+            <span style="font: var(--text-title-sm); color: var(--accent);">→</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- WORKOUT DETAIL: SWIM -->
+      <div class="screen" id="workout-detail-swim" data-testid="workout-detail-swim-screen">
+        <div style="display: flex; align-items: center; margin-bottom: var(--space-xl); gap: 12px;">
+          <button onclick="showScreen('workouts')" style="background: none; border: none; color: var(--accent); font-size: 24px; padding: 0; cursor: pointer;">←</button>
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+              <span style="font-size: 28px;">🏊</span>
+              <h1 style="font: var(--text-headline-md); letter-spacing: var(--text-headline-md-tracking); color: var(--ink); margin: 0;">Pool Swim</h1>
+            </div>
+            <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">Today, 06:24</p>
+          </div>
+        </div>
+
+        <div class="card card-lg" style="margin-bottom: 16px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+            <div>
+              <p style="font: var(--text-display-md); letter-spacing: var(--text-display-md-tracking); color: var(--ink); margin: 0;">1,500m</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Distance</p>
+            </div>
+            <div>
+              <p style="font: var(--text-display-md); letter-spacing: var(--text-display-md-tracking); color: var(--ink); margin: 0;">42:18</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Duration</p>
+            </div>
+          </div>
+          <hr class="divider">
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">2:49</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">/100m</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">18</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Strokes/lap</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">34</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">SWOLF</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Heart Rate Zones</span>
+          <div style="height: 60px; display: flex; gap: 2px; border-radius: 8px; overflow: hidden; margin-bottom: 12px;">
+            <div style="flex: 12; background: var(--pool);"></div>
+            <div style="flex: 28; background: var(--accent); opacity: 0.6;"></div>
+            <div style="flex: 45; background: var(--accent);"></div>
+            <div style="flex: 12; background: var(--amber);"></div>
+            <div style="flex: 3; background: var(--hot);"></div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">132 bpm</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Avg</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">168 bpm</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Max</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">Zone 3</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Primary</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Training Effect</span>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">142</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Load</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">3.8</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Aerobic TE</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">+18h</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Recovery</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Lap Breakdown</span>
+          <div style="max-height: 200px; overflow-y: auto;">
+            <div style="display: grid; grid-template-columns: 40px 1fr 60px 60px; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line);">
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">1</span>
+              <span style="font: var(--text-body-sm); color: var(--ink);">50m Freestyle</span>
+              <span style="font: var(--text-body-sm); color: var(--ink);">2:52</span>
+              <span style="font: var(--text-body-sm); color: var(--ink-dim);">SWOLF 35</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 40px 1fr 60px 60px; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line);">
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">2</span>
+              <span style="font: var(--text-body-sm); color: var(--ink);">50m Freestyle</span>
+              <span style="font: var(--text-body-sm); color: var(--ink);">2:48</span>
+              <span style="font: var(--text-body-sm); color: var(--ink-dim);">SWOLF 34</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 40px 1fr 60px 60px; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line);">
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">3</span>
+              <span style="font: var(--text-body-sm); color: var(--ink);">50m Freestyle</span>
+              <span style="font: var(--text-body-sm); color: var(--ink);">2:47</span>
+              <span style="font: var(--text-body-sm); color: var(--ink-dim);">SWOLF 33</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WORKOUT DETAIL: RUN -->
+      <div class="screen" id="workout-detail-run" data-testid="workout-detail-run-screen">
+        <div style="display: flex; align-items: center; margin-bottom: var(--space-xl); gap: 12px;">
+          <button onclick="showScreen('workouts')" style="background: none; border: none; color: var(--accent); font-size: 24px; padding: 0; cursor: pointer;">←</button>
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+              <span style="font-size: 28px;">🏃</span>
+              <h1 style="font: var(--text-headline-md); letter-spacing: var(--text-headline-md-tracking); color: var(--ink); margin: 0;">Outdoor Run</h1>
+            </div>
+            <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">Nov 12, 07:10</p>
+          </div>
+        </div>
+
+        <div class="card card-lg" style="margin-bottom: 16px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+            <div>
+              <p style="font: var(--text-display-md); letter-spacing: var(--text-display-md-tracking); color: var(--ink); margin: 0;">8.2 km</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Distance</p>
+            </div>
+            <div>
+              <p style="font: var(--text-display-md); letter-spacing: var(--text-display-md-tracking); color: var(--ink); margin: 0;">48:32</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Duration</p>
+            </div>
+          </div>
+          <hr class="divider">
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">5:55</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">/km pace</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">162</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Avg cadence</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">384</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Calories</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Heart Rate Zones</span>
+          <div style="height: 60px; display: flex; gap: 2px; border-radius: 8px; overflow: hidden; margin-bottom: 12px;">
+            <div style="flex: 8; background: var(--pool);"></div>
+            <div style="flex: 22; background: var(--accent); opacity: 0.6;"></div>
+            <div style="flex: 50; background: var(--accent);"></div>
+            <div style="flex: 18; background: var(--amber);"></div>
+            <div style="flex: 2; background: var(--hot);"></div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">148 bpm</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Avg</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">172 bpm</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Max</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">Zone 3</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Primary</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Training Effect</span>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">98</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Load</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">2.8</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Aerobic TE</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">+12h</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Recovery</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WORKOUT DETAIL: BADMINTON -->
+      <div class="screen" id="workout-detail-badminton" data-testid="workout-detail-badminton-screen">
+        <div style="display: flex; align-items: center; margin-bottom: var(--space-xl); gap: 12px;">
+          <button onclick="showScreen('workouts')" style="background: none; border: none; color: var(--accent); font-size: 24px; padding: 0; cursor: pointer;">←</button>
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+              <span style="font-size: 28px;">🏸</span>
+              <h1 style="font: var(--text-headline-md); letter-spacing: var(--text-headline-md-tracking); color: var(--ink); margin: 0;">Badminton</h1>
+            </div>
+            <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">Nov 13, 18:45</p>
+          </div>
+        </div>
+
+        <div class="card card-lg" style="margin-bottom: 16px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+              <p style="font: var(--text-display-md); letter-spacing: var(--text-display-md-tracking); color: var(--ink); margin: 0;">1h 24m</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Duration</p>
+            </div>
+            <div>
+              <p style="font: var(--text-display-md); letter-spacing: var(--text-display-md-tracking); color: var(--ink); margin: 0;">582</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Calories</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Heart Rate Zones</span>
+          <div style="height: 60px; display: flex; gap: 2px; border-radius: 8px; overflow: hidden; margin-bottom: 12px;">
+            <div style="flex: 5; background: var(--pool);"></div>
+            <div style="flex: 15; background: var(--accent); opacity: 0.6;"></div>
+            <div style="flex: 35; background: var(--accent);"></div>
+            <div style="flex: 32; background: var(--amber);"></div>
+            <div style="flex: 13; background: var(--hot);"></div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">156 bpm</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Avg</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">184 bpm</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Max</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">Zone 4</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Primary</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Training Effect</span>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">198</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Load</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">4.2</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Anaerobic TE</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">+24h</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Recovery</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PROGRAMS SCREEN -->
+      <div class="screen" id="programs" data-testid="programs-screen">
+        <div style="display: flex; align-items: center; margin-bottom: var(--space-xl); gap: 12px;">
+          <button onclick="showScreen('settings')" style="background: none; border: none; color: var(--accent); font-size: 24px; padding: 0; cursor: pointer;">←</button>
+          <h1 style="font: var(--text-headline-lg); letter-spacing: var(--text-headline-lg-tracking); color: var(--ink); margin: 0;">Programs</h1>
+        </div>
+
+        <div class="card card-lg" style="margin-bottom: 16px; text-align: center;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px;">This Week</span>
+          <h2 style="font: var(--text-display-lg); letter-spacing: var(--text-display-lg-tracking); color: var(--ink); margin: 8px 0;">4 / 5</h2>
+          <p style="font: var(--text-body-sm); color: var(--ink-dim);">Sessions completed</p>
+        </div>
+
+        <div class="card" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font: var(--text-title-sm); color: var(--ink);">Monday – Endurance</span>
+            <span class="pill" style="background: var(--accent); color: var(--accent-ink); border-color: var(--accent);">Done</span>
+          </div>
+          <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">3,000m WU + Main + CD</p>
+        </div>
+
+        <div class="card" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font: var(--text-title-sm); color: var(--ink);">Tuesday – Quality</span>
+            <span class="pill" style="background: var(--accent); color: var(--accent-ink); border-color: var(--accent);">Done</span>
+          </div>
+          <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">2,500m intervals at threshold</p>
+        </div>
+
+        <div class="card" style="margin-bottom: 12px; border-color: var(--accent); border-width: 2px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font: var(--text-title-sm); color: var(--ink);">Today – Recovery</span>
+            <span class="pill" style="background: var(--pool); border-color: var(--pool-line);">Due</span>
+          </div>
+          <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">1,500m easy technique work</p>
+        </div>
+
+        <div class="card" style="opacity: 0.6;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font: var(--text-title-sm); color: var(--ink-dim);">Friday – Endurance</span>
+            <span style="font: var(--text-body-sm); color: var(--ink-faint);">Scheduled</span>
+          </div>
+          <p style="font: var(--text-body-sm); color: var(--ink-faint); margin: 0;">3,500m long aerobic</p>
+        </div>
+      </div>
+
+      <!-- FOOD SCREEN -->
+      <div class="screen" id="food" data-testid="food-screen">
+        <h1 style="font: var(--text-headline-lg); letter-spacing: var(--text-headline-lg-tracking); color: var(--ink); margin-bottom: var(--space-xl);">Food</h1>
+
+        <div class="card card-lg" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Energy Balance</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <div style="text-align: center; flex: 1;">
+              <p style="font: var(--text-headline-lg); color: var(--up); margin: 0;">1,820</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Calories in</p>
+            </div>
+            <div style="font-size: 24px; color: var(--ink-faint);">−</div>
+            <div style="text-align: center; flex: 1;">
+              <p style="font: var(--text-headline-lg); color: var(--ink); margin: 0;">1,248</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Calories out</p>
+            </div>
+            <div style="font-size: 24px; color: var(--ink-faint);">=</div>
+            <div style="text-align: center; flex: 1;">
+              <p style="font: var(--text-headline-lg); color: var(--accent); margin: 0;">+572</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Balance</p>
+            </div>
+          </div>
+          <hr class="divider">
+          <button class="btn btn-primary" style="width: 100%;">+ Add Meal</button>
+        </div>
+
+        <div class="card" style="margin-bottom: 12px;">
+          <div style="display: flex; gap: 12px;">
+            <div style="width: 64px; height: 64px; background: var(--pool); border-radius: 8px;"></div>
+            <div style="flex: 1;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="font: var(--text-title-sm); color: var(--ink);">Breakfast</span>
+                <span style="font: var(--text-headline-sm); color: var(--ink);">480</span>
+              </div>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">Oats, banana, almond butter · 07:30</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 12px;">
+          <div style="display: flex; gap: 12px;">
+            <div style="width: 64px; height: 64px; background: var(--pool); border-radius: 8px;"></div>
+            <div style="flex: 1;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="font: var(--text-title-sm); color: var(--ink);">Lunch</span>
+                <span style="font: var(--text-headline-sm); color: var(--ink);">620</span>
+              </div>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">Grilled chicken, quinoa, veggies · 12:45</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display: flex; gap: 12px;">
+            <div style="width: 64px; height: 64px; background: var(--pool); border-radius: 8px;"></div>
+            <div style="flex: 1;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="font: var(--text-title-sm); color: var(--ink);">Dinner</span>
+                <span style="font: var(--text-headline-sm); color: var(--ink);">720</span>
+              </div>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">Salmon, brown rice, salad · 19:20</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WEIGHT SCREEN -->
+      <div class="screen" id="weight" data-testid="weight-screen">
+        <div style="display: flex; align-items: center; margin-bottom: var(--space-xl); gap: 12px;">
+          <button onclick="showScreen('settings')" style="background: none; border: none; color: var(--accent); font-size: 24px; padding: 0; cursor: pointer;">←</button>
+          <h1 style="font: var(--text-headline-lg); letter-spacing: var(--text-headline-lg-tracking); color: var(--ink); margin: 0;">Weight</h1>
+        </div>
+
+        <div class="card card-lg" style="text-align: center; margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px;">Current</span>
+          <h2 class="metric-hero" style="margin: 8px 0;">72.4 kg</h2>
+          <p style="font: var(--text-body-sm); color: var(--ink-dim);">Updated yesterday</p>
+        </div>
+
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">30-Day Trend</span>
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; height: 120px; gap: 4px;">
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 65%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 68%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 72%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 70%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 73%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 75%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 74%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 76%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 78%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 77%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 79%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 80%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 82%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 81%;"></div>
+            <div style="flex: 1; background: var(--gauge-track); border-radius: 4px; height: 83%;"></div>
+          </div>
+          <p style="font: var(--text-body-sm); color: var(--ink-faint); margin: 8px 0 0 0; text-align: center;">Avg: <strong style="color: var(--ink);">72.6 kg</strong></p>
+        </div>
+
+        <button class="btn btn-primary" style="width: 100%;">+ Add Weight Entry</button>
+      </div>
+
+      <!-- HEART RATE & HRV SCREEN -->
+      <div class="screen" id="heart-rate" data-testid="heart-rate-screen">
+        <div style="display: flex; align-items: center; margin-bottom: var(--space-xl); gap: 12px;">
+          <button onclick="showScreen('settings')" style="background: none; border: none; color: var(--accent); font-size: 24px; padding: 0; cursor: pointer;">←</button>
+          <h1 style="font: var(--text-headline-lg); letter-spacing: var(--text-headline-lg-tracking); color: var(--ink); margin: 0;">Heart Rate</h1>
+        </div>
+
+        <div class="card card-lg" style="margin-bottom: 16px; text-align: center;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px;">Resting</span>
+          <h2 class="metric-hero" style="margin: 8px 0;">52 bpm</h2>
+          <p style="font: var(--text-body-sm); color: var(--ink-dim);">Updated 10 min ago</p>
+        </div>
+
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Today's HR Curve</span>
+          <div style="height: 100px; background: var(--bg); border-radius: 8px; position: relative; overflow: hidden;">
+            <svg width="100%" height="100%" viewBox="0 0 300 100" preserveAspectRatio="none">
+              <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="0,80 20,75 40,70 60,68 80,65 100,62 120,60 140,58 160,62 180,70 200,75 220,72 240,68 260,65 280,63 300,60" />
+            </svg>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">52 bpm</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Min</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">68 bpm</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Avg</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">142 bpm</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Max</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">7-Day Resting HR</span>
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; height: 80px; gap: 8px;">
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 80%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">M</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 75%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">T</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 78%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">W</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 72%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">Th</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 70%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">F</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 68%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink);">S</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 65%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">Su</span>
+            </div>
+          </div>
+          <p style="font: var(--text-body-sm); color: var(--ink-faint); margin: 8px 0 0 0; text-align: center;">Avg: <strong style="color: var(--ink);">53 bpm</strong></p>
+        </div>
+      </div>
+
+      <!-- ACTIVITY SCREEN -->
+      <div class="screen" id="activity" data-testid="activity-screen">
+        <div style="display: flex; align-items: center; margin-bottom: var(--space-xl); gap: 12px;">
+          <button onclick="showScreen('settings')" style="background: none; border: none; color: var(--accent); font-size: 24px; padding: 0; cursor: pointer;">←</button>
+          <h1 style="font: var(--text-headline-lg); letter-spacing: var(--text-headline-lg-tracking); color: var(--ink); margin: 0;">Activity</h1>
+        </div>
+
+        <div class="card card-lg" style="margin-bottom: 16px; text-align: center;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px;">Today</span>
+          <h2 class="metric-hero" style="margin: 8px 0;">6,842</h2>
+          <p style="font: var(--text-body-sm); color: var(--ink-dim);">Steps · 68% of goal</p>
+        </div>
+
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">7-Day Steps</span>
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; height: 100px; gap: 6px;">
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 85%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">M</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 92%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">T</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 78%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">W</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 95%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">Th</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 88%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">F</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 100%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink);">S</span>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div style="width: 100%; background: var(--gauge-track); border-radius: 4px; height: 68%;"></div>
+              <span style="font: var(--text-body-sm); color: var(--ink-faint);">Su</span>
+            </div>
+          </div>
+          <p style="font: var(--text-body-sm); color: var(--ink-faint); margin: 8px 0 0 0; text-align: center;">Daily avg: <strong style="color: var(--ink);">8,420</strong></p>
+        </div>
+
+        <div class="card">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Today's Summary</span>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">5.4 km</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Distance</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">1,248</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Calories</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">21 min</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Active</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">68%</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Goal reached</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DEVICE & SYNC SCREEN -->
+      <div class="screen" id="device-sync" data-testid="device-sync-screen">
+        <div style="display: flex; align-items: center; margin-bottom: var(--space-xl); gap: 12px;">
+          <button onclick="showScreen('settings')" style="background: none; border: none; color: var(--accent); font-size: 24px; padding: 0; cursor: pointer;">←</button>
+          <h1 style="font: var(--text-headline-lg); letter-spacing: var(--text-headline-lg-tracking); color: var(--ink); margin: 0;">Watch</h1>
+        </div>
+
+        <div class="card card-lg" style="margin-bottom: 16px;">
+          <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+            <div style="width: 72px; height: 72px; background: var(--pool); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 32px;">⌚</div>
+            <div style="flex: 1;">
+              <h2 style="font: var(--text-title-lg); color: var(--ink); margin: 0 0 4px 0;">WATCH GT5 Pro</h2>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">98:F1:70:A3:2C:1E</p>
+            </div>
+          </div>
+          <hr class="divider">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--accent); margin: 0;">78%</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Battery</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--accent); margin: 0;">Connected</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Status</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font: var(--text-title-sm); color: var(--ink);">Last Sync</span>
+            <span class="pill" style="background: var(--accent); color: var(--accent-ink); border-color: var(--accent);">
+              <div class="pill-dot"></div>
+              <span>2 min ago</span>
+            </span>
+          </div>
+          <button class="btn btn-primary" style="width: 100%; margin-top: 12px;">Sync Now</button>
+        </div>
+
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Auto-Tracking</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line);">
+            <span style="font: var(--text-body-sm); color: var(--ink);">TruSleep</span>
+            <span class="pill" style="background: var(--accent); color: var(--accent-ink); border-color: var(--accent);">Armed</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line);">
+            <span style="font: var(--text-body-sm); color: var(--ink);">Auto-HR</span>
+            <span class="pill" style="background: var(--accent); color: var(--accent-ink); border-color: var(--accent);">Armed</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
+            <span style="font: var(--text-body-sm); color: var(--ink);">Auto-SpO₂</span>
+            <span class="pill" style="background: var(--accent); color: var(--accent-ink); border-color: var(--accent);">Armed</span>
+          </div>
+        </div>
+
+        <button class="btn btn-secondary" style="width: 100%;">Forget Device</button>
+      </div>
+
+      <!-- SETTINGS SCREEN -->
+      <div class="screen" id="settings" data-testid="settings-screen">
+        <h1 style="font: var(--text-headline-lg); letter-spacing: var(--text-headline-lg-tracking); color: var(--ink); margin-bottom: var(--space-xl);">More</h1>
+
+        <div class="card" data-nav onclick="showScreen('programs')" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font: var(--text-title-md); color: var(--ink);">Programs</span>
+            <span style="font: var(--text-title-sm); color: var(--accent);">→</span>
+          </div>
+        </div>
+
+        <div class="card" data-nav onclick="showScreen('weight')" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font: var(--text-title-md); color: var(--ink);">Weight</span>
+            <span style="font: var(--text-title-sm); color: var(--accent);">→</span>
+          </div>
+        </div>
+
+        <div class="card" data-nav onclick="showScreen('heart-rate')" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font: var(--text-title-md); color: var(--ink);">Heart Rate & HRV</span>
+            <span style="font: var(--text-title-sm); color: var(--accent);">→</span>
+          </div>
+        </div>
+
+        <div class="card" data-nav onclick="showScreen('activity')" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font: var(--text-title-md); color: var(--ink);">Activity</span>
+            <span style="font: var(--text-title-sm); color: var(--accent);">→</span>
+          </div>
+        </div>
+
+        <div class="card" data-nav onclick="showScreen('device-sync')" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font: var(--text-title-md); color: var(--ink);">Watch & Sync</span>
+            <span style="font: var(--text-title-sm); color: var(--accent);">→</span>
+          </div>
+        </div>
+
+        <div class="card" data-nav onclick="showScreen('profile')" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font: var(--text-title-md); color: var(--ink);">Profile</span>
+            <span style="font: var(--text-title-sm); color: var(--accent);">→</span>
+          </div>
+        </div>
+
+        <hr class="divider">
+
+        <div class="card" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font: var(--text-title-md); color: var(--ink);">Notifications</span>
+            <span style="font: var(--text-body-sm); color: var(--ink-dim);">On</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font: var(--text-title-md); color: var(--ink);">Theme</span>
+            <span style="font: var(--text-body-sm); color: var(--ink-dim);">Light</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font: var(--text-title-md); color: var(--ink);">About</span>
+            <span style="font: var(--text-body-sm); color: var(--ink-dim);">v1.0.0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- PROFILE SCREEN -->
+      <div class="screen" id="profile" data-testid="profile-screen">
+        <div style="display: flex; align-items: center; margin-bottom: var(--space-xl); gap: 12px;">
+          <button onclick="showScreen('settings')" style="background: none; border: none; color: var(--accent); font-size: 24px; padding: 0; cursor: pointer;">←</button>
+          <h1 style="font: var(--text-headline-lg); letter-spacing: var(--text-headline-lg-tracking); color: var(--ink); margin: 0;">Profile</h1>
+        </div>
+
+        <div class="card card-lg" style="text-align: center; margin-bottom: 16px;">
+          <div style="width: 80px; height: 80px; background: var(--pool); border-radius: 50%; margin: 0 auto 12px auto;"></div>
+          <h2 style="font: var(--text-headline-md); color: var(--ink); margin: 0 0 4px 0;">Kiran Rao</h2>
+          <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 0;">Competitive swimmer</p>
+        </div>
+
+        <div class="card" style="margin-bottom: 16px;">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Biometrics</span>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">28</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Age</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">Male</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Sex</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">178 cm</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Height</p>
+            </div>
+            <div>
+              <p style="font: var(--text-headline-sm); color: var(--ink); margin: 0;">72.4 kg</p>
+              <p style="font: var(--text-body-sm); color: var(--ink-dim); margin: 2px 0 0 0;">Weight</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span style="font: var(--text-body-sm); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 12px;">Goals</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line);">
+            <span style="font: var(--text-body-sm); color: var(--ink);">Daily Steps</span>
+            <span style="font: var(--text-headline-sm); color: var(--ink);">10,000</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
+            <span style="font: var(--text-body-sm); color: var(--ink);">Sleep Goal</span>
+            <span style="font: var(--text-headline-sm); color: var(--ink);">8h</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATE: LOADING -->
+      <div class="screen" id="state-loading" data-testid="state-loading">
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: calc(100vh - 160px); gap: 24px;">
+          <div style="width: 80px; height: 80px; border: 4px solid var(--gauge-track); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+          <p style="font: var(--text-title-md); color: var(--ink-dim);">Loading...</p>
+        </div>
+      </div>
+
+      <!-- STATE: EMPTY -->
+      <div class="screen" id="state-empty" data-testid="state-empty">
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: calc(100vh - 160px); gap: 24px; text-align: center; padding: 0 32px;">
+          <div style="width: 120px; height: 120px; background: var(--pool); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px;">📭</div>
+          <h2 style="font: var(--text-headline-md); color: var(--ink); margin: 0;">No data yet</h2>
+          <p style="font: var(--text-body-md); color: var(--ink-dim); margin: 0;">Sync your watch to see workouts, sleep, and activity data.</p>
+          <button class="btn btn-primary" onclick="showScreen('device-sync')">Sync Now</button>
+        </div>
+      </div>
+
+      <!-- STATE: ERROR -->
+      <div class="screen" id="state-error" data-testid="state-error">
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: calc(100vh - 160px); gap: 24px; text-align: center; padding: 0 32px;">
+          <div style="width: 120px; height: 120px; background: rgba(232, 93, 76, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px;">⚠️</div>
+          <h2 style="font: var(--text-headline-md); color: var(--ink); margin: 0;">Sync failed</h2>
+          <p style="font: var(--text-body-md); color: var(--ink-dim); margin: 0;">Could not connect to your watch. Make sure Bluetooth is on and your watch is nearby.</p>
+          <button class="btn btn-primary" onclick="showScreen('today')">Retry</button>
+        </div>
+      </div>
+
+      <!-- STATE: OFFLINE -->
+      <div class="screen" id="state-offline" data-testid="state-offline">
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: calc(100vh - 160px); gap: 24px; text-align: center; padding: 0 32px;">
+          <div style="width: 120px; height: 120px; background: rgba(217, 119, 6, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px;">📵</div>
+          <h2 style="font: var(--text-headline-md); color: var(--ink); margin: 0;">Watch disconnected</h2>
+          <p style="font: var(--text-body-md); color: var(--ink-dim); margin: 0;">Your watch is not connected. Turn on Bluetooth to sync.</p>
+          <button class="btn btn-primary" onclick="showScreen('device-sync')">Reconnect</button>
+        </div>
+      </div>
+
+      <!-- STATE: SYNCING -->
+      <div class="screen" id="state-syncing" data-testid="state-syncing">
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: calc(100vh - 160px); gap: 24px; text-align: center; padding: 0 32px;">
+          <div style="width: 80px; height: 80px; border: 4px solid var(--gauge-track); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+          <h2 style="font: var(--text-headline-md); color: var(--ink); margin: 0;">Syncing...</h2>
+          <p style="font: var(--text-body-md); color: var(--ink-dim); margin: 0;">Pulling data from your watch</p>
+          <button class="btn btn-secondary" onclick="showScreen('today')">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Tab Bar (all screens except splash/onboarding) -->
+      <div class="tab-bar" id="tabBar" style="display: none;">
+        <div class="tab-item" onclick="showScreen('today')" data-tab="today">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+          <span>Today</span>
+        </div>
+        <div class="tab-item" onclick="showScreen('workouts')" data-tab="workouts">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20.57 14.86L22 13.43 20.57 12 17 15.57 8.43 7 12 3.43 10.57 2 9.14 3.43 7.71 2 5.57 4.14 4.14 2.71 2.71 4.14l1.43 1.43L2 7.71l1.43 1.43L2 10.57 3.43 12 7 8.43 15.57 17 12 20.57 13.43 22l1.43-1.43L16.29 22l2.14-2.14 1.43 1.43 1.43-1.43-1.43-1.43L22 16.29z"/></svg>
+          <span>Workouts</span>
+        </div>
+        <div class="tab-item" onclick="showScreen('recovery')" data-tab="recovery">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+          <span>Recovery</span>
+        </div>
+        <div class="tab-item" onclick="showScreen('food')" data-tab="food">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/></svg>
+          <span>Food</span>
+        </div>
+        <div class="tab-item" onclick="showScreen('settings')" data-tab="more">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+          <span>More</span>
+        </div>
+      </div>
 
     </div>
-  </section>
+  </div>
+</div>
 
-  <!-- Secondary Screens -->
-  <section class="section">
-    <h2 class="section-title">Secondary Screens <span class="status status-done">Advanced Features</span></h2>
-    <div class="gallery">
+<style>
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+</style>
 
-      <a href="programs.html" class="mockup-card">
-        <div class="mockup-preview">🎯</div>
-        <h3 class="mockup-title">Programs (Agon)</h3>
-        <p class="mockup-desc">Next trial, forecast, today's course, Odyssey progress.</p>
-      </a>
+<script>
+  let currentScreen = 'splash';
 
-      <a href="watch.html" class="mockup-card">
-        <div class="mockup-preview">⌚</div>
-        <h3 class="mockup-title">Watch & Sync</h3>
-        <p class="mockup-desc">Sync status, watch details, manual sync trigger.</p>
-      </a>
-
-      <a href="settings.html" class="mockup-card">
-        <div class="mockup-preview">⚙️</div>
-        <h3 class="mockup-title">Settings</h3>
-        <p class="mockup-desc">Profile (weight, BMR), goals, preferences, advanced tools.</p>
-      </a>
-
-    </div>
-  </section>
-
-  <!-- Onboarding & States -->
-  <section class="section">
-    <h2 class="section-title">Onboarding & States <span class="status status-done">Edge Cases</span></h2>
-    <div class="gallery">
-
-      <a href="onboarding.html" class="mockup-card">
-        <div class="mockup-preview">👋</div>
-        <h3 class="mockup-title">Onboarding</h3>
-        <p class="mockup-desc">First-run setup: philosophy, pairing, profile, feature intro.</p>
-      </a>
-
-      <a href="empty-home.html" class="mockup-card">
-        <div class="mockup-preview">∅</div>
-        <h3 class="mockup-title">Empty State — Home</h3>
-        <p class="mockup-desc">Before first sync: honest gaps, clear next steps.</p>
-      </a>
-
-      <a href="empty-workouts.html" class="mockup-card">
-        <div class="mockup-preview">∅</div>
-        <h3 class="mockup-title">Empty State — Workouts</h3>
-        <p class="mockup-desc">No sessions yet: why empty, how to sync.</p>
-      </a>
-
-      <a href="error-sync.html" class="mockup-card">
-        <div class="mockup-preview">⚠️</div>
-        <h3 class="mockup-title">Error — Sync Failed</h3>
-        <p class="mockup-desc">Sync error with reason, recovery action, troubleshooting.</p>
-      </a>
-
-    </div>
-  </section>
-
-  <!-- Documentation -->
-  <section class="section">
-    <h2 class="section-title">Documentation</h2>
-    <div style="display: flex; flex-direction: column; gap: 12px;">
-      <a href="PRODUCT.md" style="color: var(--accent); font: var(--text-title-sm);">
-        📄 PRODUCT.md — User profile, jobs-to-be-done, information architecture
-      </a>
-      <a href="README.md" style="color: var(--accent); font: var(--text-title-sm);">
-        📄 README.md — Design system, tokens, rationale, implementation notes
-      </a>
-      <a href="tokens.css" style="color: var(--accent); font: var(--text-title-sm);">
-        📄 tokens.css — Design tokens (colors, typography, spacing)
-      </a>
-    </div>
-  </section>
-
-  <script>
-    function toggleTheme() {
-      const html = document.documentElement;
-      const currentTheme = html.getAttribute('data-theme');
-      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-      html.setAttribute('data-theme', newTheme);
+  function showScreen(screenId) {
+    // Hide all screens
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    
+    // Show target screen
+    const target = document.getElementById(screenId);
+    if (target) {
+      target.classList.add('active');
+      currentScreen = screenId;
+      
+      // Update sidebar nav
+      document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+      const navBtn = document.getElementById('nav-' + screenId);
+      if (navBtn) navBtn.classList.add('active');
+      
+      // Show/hide tab bar (hide for splash and onboarding)
+      const tabBar = document.getElementById('tabBar');
+      if (screenId.startsWith('splash') || screenId.startsWith('onboarding') || screenId.startsWith('state-')) {
+        tabBar.style.display = 'none';
+      } else {
+        tabBar.style.display = 'flex';
+      }
+      
+      // Update tab bar active state
+      document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+      if (screenId === 'today') document.querySelector('[data-tab="today"]').classList.add('active');
+      if (screenId.startsWith('workout')) document.querySelector('[data-tab="workouts"]').classList.add('active');
+      if (screenId === 'recovery') document.querySelector('[data-tab="recovery"]').classList.add('active');
+      if (screenId === 'food' || screenId === 'weight') document.querySelector('[data-tab="food"]').classList.add('active');
+      if (screenId === 'settings' || screenId === 'profile' || screenId === 'device-sync' || screenId === 'programs') document.querySelector('[data-tab="more"]').classList.add('active');
+      
+      // Scroll to top
+      document.querySelector('.screen-container').scrollTop = 0;
     }
+  }
 
-    // Detect system preference
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    }
-  </script>
+  function toggleTheme() {
+    const html = document.documentElement;
+    const current = html.getAttribute('data-theme');
+    html.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+  }
+
+  // Initialize: mark splash as active
+  document.getElementById('nav-splash').classList.add('active');
+</script>
+
 </body>
 </html>
