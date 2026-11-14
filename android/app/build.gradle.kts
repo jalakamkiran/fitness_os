@@ -35,7 +35,7 @@ android {
 
     signingConfigs {
         create("release") {
-            // Load keystore from environment or fall back to debug signing
+            // Load keystore from key.properties if available
             val keystorePropertiesFile = rootProject.file("key.properties")
             if (keystorePropertiesFile.exists()) {
                 val keystoreProperties = Properties()
@@ -46,24 +46,24 @@ android {
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
             } else {
-                // CI or local without keystore: fallback to debug signing
-                // Note: ANDROID_KEYSTORE_BASE64 support temporarily disabled due to
-                // "Tag number over 30 is not supported" error with current keystore format
-                // TODO: Regenerate keystore or upgrade AGP once Flutter 3.44.7 supports it
-                println("⚠️  WARNING: No release keystore found. Using debug signing.")
-                println("   Add ANDROID_KEYSTORE_* secrets or create android/key.properties")
-                println("   (Release keystore currently disabled due to format compatibility)")
-                storeFile = signingConfigs.getByName("debug").storeFile
-                storePassword = signingConfigs.getByName("debug").storePassword
-                keyAlias = signingConfigs.getByName("debug").keyAlias
-                keyPassword = signingConfigs.getByName("debug").keyPassword
+                // No keystore configured - debug signing will be used instead
+                println("⚠️  WARNING: No release keystore found (android/key.properties missing).")
+                println("   The release build will use debug signing (OK for testing).")
+                println("   For production, add android/key.properties with keystore details.")
             }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            // Use release signing if keystore exists, otherwise fallback to debug
+            // AGP will auto-generate ~/.android/debug.keystore if missing
+            val keystorePropertiesFile = rootProject.file("key.properties")
+            signingConfig = if (keystorePropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             // Disable minify for now to avoid breaking Huawei BLE stack and Sentry
             // TODO: Add proper proguard rules and re-enable
             isMinifyEnabled = false
