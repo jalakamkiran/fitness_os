@@ -3,6 +3,7 @@ package com.example.fitness_os.huawei
 import android.util.Log
 import java.nio.ByteBuffer
 import java.util.Base64
+import com.example.fitness_os.observability.HuaweiSyncBreadcrumbs
 
 /**
  * Clean-room Gate B workout sync — Count → Totals → hint-gated enrichment.
@@ -326,7 +327,11 @@ class HuaweiWorkoutSync(
         val end = endUnix.coerceAtLeast(start)
         val enrichFloor = enrichStartUnix.coerceAtLeast(0)
         Log.i(TAG, "workout-sync start window=[$start,$end] enrichStart=$enrichFloor")
+        
+        HuaweiSyncBreadcrumbs.workoutSyncPhase("sync_start")
+        HuaweiSyncBreadcrumbs.fitnessDataSyncStart(start, end)
 
+        HuaweiSyncBreadcrumbs.workoutSyncPhase("count_request")
         val countFrame = exchangeEncrypted(
             buildCountRequest(start, end),
             SVC,
@@ -335,6 +340,7 @@ class HuaweiWorkoutSync(
         )
         if (countFrame == null) {
             Log.w(TAG, "workout-sync count timeout")
+            HuaweiSyncBreadcrumbs.workoutTimeout("count")
             return mapOf(
                 "status" to "stuck",
                 "message" to "Workout count timed out — disconnect and retry",
@@ -372,6 +378,11 @@ class HuaweiWorkoutSync(
             val totals = parseTotals(totalsFrame)?.withCountHints(ref)
             if (totals == null) {
                 Log.w(TAG, "workout-sync totals parse failed number=${ref.workoutNumber}")
+                HuaweiSyncBreadcrumbs.tlvParseFailure(
+                    tag = 0x81,
+                    length = 0,
+                    context = "totals_parse_failed_workout_${ref.workoutNumber}"
+                )
                 continue
             }
             Log.i(
@@ -380,6 +391,26 @@ class HuaweiWorkoutSync(
                     "start=${totals.startTime} duration=${totals.durationSec}s " +
                     "data=${totals.dataCount} pace=${totals.paceCount} seg=${totals.segmentsCount}",
             )
+            
+            HuaweiSyncBreadcrumbs.workoutTotalsParsed(
+                workoutNumber = totals.number,
+                type = totals.type,
+                durationSec = totals.durationSec,
+                dataCount = totals.dataCount,
+                paceCount = totals.paceCount,
+                segmentsCount = totals.segmentsCount
+            )
+            
+            // Track racket sports (badminton type 129, tennis 131, etc.)
+            if (totals.type in 129..133) {
+                HuaweiSyncBreadcrumbs.racketSportWorkout(
+                    workoutNumber = totals.number,
+                    typeCode = totals.type,
+                    durationSec = totals.durationSec,
+                    hasHrData = totals.hrMin != null || totals.hrMax != null,
+                    hasLoad = totals.load != null
+                )
+            }
             val leftoverLenHint = if (totals.leftoverTlvs.isNotEmpty()) {
                 HuaweiFraming.encodeTlvs(totals.leftoverTlvs).size
             } else {
@@ -417,8 +448,14 @@ class HuaweiWorkoutSync(
             workouts.add(workoutMap)
         }
 
+        val finalStatus = if (enrichmentPartial) "partial_batch" else "ok"
+        HuaweiSyncBreadcrumbs.fitnessDataSyncComplete(
+            itemCount = workouts.size,
+            status = finalStatus
+        )
+        
         return mapOf(
-            "status" to if (enrichmentPartial) "partial_batch" else "ok",
+            "status" to finalStatus,
             "workouts" to workouts,
         )
     }

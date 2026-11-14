@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+import com.example.fitness_os.observability.HuaweiSyncBreadcrumbs
 
 /**
  * Gate A session orchestration (clean-room).
@@ -970,6 +971,7 @@ class HuaweiSession(
 
     fun authenticate(): SessionOutcome {
         Log.i(TAG, "authenticate() start hasSecrets=${secrets.hasSecrets()}")
+        HuaweiSyncBreadcrumbs.authStep("authenticate_start", true)
         emit(mapOf("type" to "session_state", "state" to "authenticating"))
         return try {
             bytesReceived.set(0)
@@ -987,6 +989,7 @@ class HuaweiSession(
             synchronized(frameLock) { frameQueue.clear() }
             awaitAnyFrame(LISTEN_BEFORE_SEND_MS)
 
+            HuaweiSyncBreadcrumbs.authStep("link_params_request", true)
             val linkResp = exchange(
                 HuaweiFraming.Frame(
                     SVC, CMD_LINK_PARAMS,
@@ -1000,6 +1003,7 @@ class HuaweiSession(
                 CMD_LINK_PARAMS,
             ) ?: return failAndDisconnect("No link-params response", "r11_retry")
 
+            HuaweiSyncBreadcrumbs.authStep("link_params_response", true)
             val link = parseLinkParams(linkResp)
                 ?: return failAndDisconnect("Could not parse link-params", "r11_hci_capture_needed")
             sliceSize = link.maxFrameSize.takeIf { it > 64 } ?: 0x00F4
@@ -1019,9 +1023,20 @@ class HuaweiSession(
                 "device-status ok status=${statusResp?.tlvs?.firstOrNull { it.tag == 0x01 }?.value?.firstOrNull()?.toInt()?.and(0xFF)}",
             )
 
-            if (isHiChainFamily(link.deviceSupportType)) runHiChain3(link) else runNormalAuth(link)
+            val result = if (isHiChainFamily(link.deviceSupportType)) runHiChain3(link) else runNormalAuth(link)
+            HuaweiSyncBreadcrumbs.authStep(
+                "authenticate_complete",
+                result.status == SessionStatus.READY
+            )
+            result
         } catch (e: Exception) {
             Log.e(TAG, "authenticate failed", e)
+            HuaweiSyncBreadcrumbs.authStep("authenticate_exception", false)
+            HuaweiSyncBreadcrumbs.captureException(
+                e,
+                "authenticate",
+                mapOf("hasSecrets" to secrets.hasSecrets())
+            )
             failAndDisconnect(e.message ?: "authenticate failed", "r11_retry")
         }
     }
