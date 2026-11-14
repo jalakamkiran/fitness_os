@@ -45,6 +45,46 @@ SENTRY_DSN=https://your-dsn-here@sentry.io/project-id
 SENTRY_FORCE=true
 ```
 
+#### Optional: Enable Raw Workout Payload Dumps (Owner Consent)
+
+For reverse-engineering unknown workout fields (swing count, rally data, cadence), enable raw payload capture for racket sports:
+
+```bash
+# .env
+SENTRY_DSN=https://your-dsn-here@sentry.io/project-id
+SENTRY_RAW_WORKOUT_DUMP=true
+```
+
+**Default behavior**:
+- ✅ Enabled in debug builds (to capture development data)
+- ❌ Disabled in release builds (to protect user privacy)
+
+**What gets dumped**:
+- Raw TLV hex for workout totals (badminton, tennis, table tennis, squash)
+- Raw sample stream hex from WorkoutData pages
+- Unknown/leftover TLV tags with full hex values
+- Workout metadata (id, type, start/end, duration)
+
+**Privacy**: MAC addresses are still redacted. Health data is included by owner explicit consent for debugging purposes only.
+
+**Finding the dumps in Sentry**:
+1. Go to your Sentry project → Issues
+2. Search for: `message:badminton.raw_dump`
+3. Three event types:
+   - `badminton.raw_dump.totals` — Workout totals TLV hex
+   - `badminton.raw_dump.data` — WorkoutData enrichment pages + sample stream
+   - `badminton.raw_dump.pace` — Pace blocks (if present)
+4. For large payloads (>500KB), look for chunked events: `badminton.raw_dump.*.chunk_N_of_M`
+5. Download attachments: `workout_dump_chunk_1.json`, etc.
+
+**Disabling after reverse-engineering**:
+```bash
+# .env
+SENTRY_RAW_WORKOUT_DUMP=false
+```
+
+Or simply remove the line (defaults to debug-only).
+
 ### 3. Build with Sentry enabled
 
 ```bash
@@ -59,7 +99,7 @@ flutter run --dart-define-from-file=.env
 
 ## What Gets Logged
 
-### Privacy-Safe Data
+### Normal Mode (Default)
 
 Sentry **only** logs:
 
@@ -71,8 +111,6 @@ Sentry **only** logs:
 ✅ Timeout events  
 ✅ Sync phase transitions (Count → Totals → Enrichment)  
 
-### What's Never Sent
-
 ❌ Heart rate values or series  
 ❌ GPS coordinates or location data  
 ❌ Raw sample bodies (HR points, leftover TLVs)  
@@ -81,6 +119,20 @@ Sentry **only** logs:
 ❌ Workout totals (calories, distance, steps)  
 
 All health data is scrubbed by `SentryPrivacyScrub.beforeSend` on the Dart side and never included in Kotlin breadcrumbs.
+
+### Raw Dump Mode (`SENTRY_RAW_WORKOUT_DUMP=true`, Owner Consent)
+
+For reverse-engineering racket sports (badminton, tennis, etc.):
+
+✅ Full TLV hex for workout totals (all fields, unknown tags)  
+✅ Raw sample stream hex (HR series, cadence, etc.)  
+✅ Unknown/leftover TLV full hex values  
+✅ Workout metadata (id, type, timing)  
+
+❌ Still redacted: MAC addresses, user IDs  
+⚠️ **Includes health data** (HR, calories, etc.) by owner explicit consent for debugging
+
+This mode is **off by default in release builds** to protect user privacy.
 
 ## Key Breadcrumb Categories
 

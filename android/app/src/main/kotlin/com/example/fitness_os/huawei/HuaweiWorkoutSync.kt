@@ -4,6 +4,7 @@ import android.util.Log
 import java.nio.ByteBuffer
 import java.util.Base64
 import com.example.fitness_os.observability.HuaweiSyncBreadcrumbs
+import com.example.fitness_os.observability.RawWorkoutDump
 
 /**
  * Clean-room Gate B workout sync — Count → Totals → hint-gated enrichment.
@@ -536,6 +537,36 @@ class HuaweiWorkoutSync(
                 out["dataPages"] = pages.map { it.toMap() }
                 if (sampleTotal > 0) out["sampleCount"] = sampleTotal
             }
+            
+            // Dump raw data for racket sports (owner consent)
+            if (totals.type in 129..133 && pages.isNotEmpty()) {
+                try {
+                    val pointPages = pages.filter { it.hasPointBodies }
+                    val rawSampleHex = if (pointPages.isNotEmpty()) {
+                        encodeWorkoutSampleFile(pointPages).toHexFull()
+                    } else null
+                    
+                    RawWorkoutDump.dumpRacketWorkoutData(
+                        workoutNumber = totals.number,
+                        typeCode = totals.type,
+                        dataPages = pages.map { page ->
+                            mapOf(
+                                "index" to page.index,
+                                "timestamp" to (page.timestamp ?: 0),
+                                "intervalSec" to (page.intervalSec ?: 0),
+                                "sampleCount" to (page.sampleCount ?: 0),
+                                "dataLength" to (page.dataLength ?: 0),
+                                "bitmap" to (page.bitmap ?: 0),
+                                "tags" to page.tags.map { mapOf("id" to it.id, "len" to it.len) },
+                                "leftoverCount" to page.leftoverTlvs.size,
+                            )
+                        },
+                        rawSampleStreamHex = rawSampleHex,
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to dump raw racket workout data: ${e.message}")
+                }
+            }
             val pointPages = pages.filter { it.hasPointBodies }
             val sampleFetch = when {
                 dataTimedOut -> "timeout"
@@ -596,6 +627,19 @@ class HuaweiWorkoutSync(
                 "workout-sync pace number=${totals.number} " +
                     "blocks=${paceBlocks.size}/${totals.paceCount}",
             )
+            
+            // Dump raw pace for racket sports (owner consent)
+            if (totals.type in 129..133 && paceBlocks.isNotEmpty()) {
+                try {
+                    RawWorkoutDump.dumpRacketWorkoutPace(
+                        workoutNumber = totals.number,
+                        typeCode = totals.type,
+                        paceBlocks = paceBlocks,
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to dump raw racket workout pace: ${e.message}")
+                }
+            }
         } else if (totals.paceCount > 0 && enrichmentTimedOut) {
             Log.d(
                 TAG,
@@ -757,6 +801,10 @@ class HuaweiWorkoutSync(
     fun parseTotals(frame: HuaweiFraming.Frame): WorkoutTotals? {
         val container = frame.tlvs.firstOrNull { it.tag == 0x81 }?.value
             ?: return null
+        
+        // Capture raw hex for reverse-engineering (owner consent)
+        val rawHex = container.toHexFull()
+        
         val tlvs = HuaweiFraming.decodeTlvs(container)
         var number = 0
         var startTime = 0L
@@ -837,6 +885,31 @@ class HuaweiWorkoutSync(
         if (durationSec == 0L && endTime > startTime) {
             durationSec = endTime - startTime
         }
+        
+        // Dump raw workout for racket sports (owner consent for debugging)
+        if (type in 129..133) {
+            try {
+                RawWorkoutDump.dumpRacketWorkoutTotals(
+                    workoutNumber = number,
+                    typeCode = type,
+                    startTime = startTime,
+                    endTime = endTime,
+                    durationSec = durationSec,
+                    rawTotalsHex = rawHex,
+                    unknownTlvs = unknownTags.map { mapOf("id" to it.id, "len" to it.len) },
+                    leftoverTlvs = leftoverTlvs.map {
+                        mapOf(
+                            "tag" to "0x${it.tag.toString(16)}",
+                            "len" to it.value.size,
+                            "hex" to it.value.toHexFull()
+                        )
+                    },
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to dump raw racket workout totals: ${e.message}")
+            }
+        }
+        
         return WorkoutTotals(
             number = number,
             startTime = startTime,
