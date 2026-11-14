@@ -1026,7 +1026,7 @@ class HuaweiSession(
             val result = if (isHiChainFamily(link.deviceSupportType)) runHiChain3(link) else runNormalAuth(link)
             HuaweiSyncBreadcrumbs.authStep(
                 "authenticate_complete",
-                result.status == SessionStatus.READY
+                result == SessionOutcome.Ready
             )
             result
         } catch (e: Exception) {
@@ -2247,4 +2247,4 @@ class HuaweiSession(
     enum class SessionOutcome { Ready, AuthFailed }
 }
 
-private fun ByteArray.toHexFull(): String = joinToString("") { "%02X".format(it) }
+internal fun ByteArray.toHexFull(): String = joinToString("") { "%02X".format(it) }

@@ -83,7 +83,7 @@ object HuaweiSyncBreadcrumbs {
         pageIndex: Int? = null,
     ) {
         if (!isEnabled) return
-        val data = mutableMapOf("phase" to phase)
+        val data = mutableMapOf<String, Any>("phase" to phase)
         if (workoutNumber != null) data["workoutNumber"] = workoutNumber
         if (pageIndex != null) data["pageIndex"] = pageIndex
         
@@ -104,7 +104,7 @@ object HuaweiSyncBreadcrumbs {
         pageIndex: Int? = null,
     ) {
         if (!isEnabled) return
-        val data = mutableMapOf("command" to command)
+        val data = mutableMapOf<String, Any>("command" to command)
         if (workoutNumber != null) data["workoutNumber"] = workoutNumber
         if (pageIndex != null) data["pageIndex"] = pageIndex
         
@@ -242,7 +242,7 @@ object HuaweiSyncBreadcrumbs {
         Sentry.withScope { scope ->
             scope.setContexts("huawei_context", context)
             additionalData.forEach { (key, value) ->
-                scope.setExtra(key, value)
+                scope.setExtra(key, value.toString())
             }
             Sentry.captureException(throwable)
         }
