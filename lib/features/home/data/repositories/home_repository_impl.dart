@@ -1,7 +1,9 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync.dart';
+import 'package:fitness_os/core/observability/sentry_config.dart';
 import 'package:fitness_os/core/observability/sentry_sync_instrumentation.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/home/domain/home_precedence.dart';
@@ -270,16 +272,44 @@ class HomeRepositoryImpl implements HomeRepository {
       final vitalsResult = await _vitals.syncFromWatch();
       final ok = workoutResult.isRight && vitalsResult.isRight;
       
-      // Collect error details for debugging
+      // Collect error details for debugging and Sentry
       String? errorDetails;
       if (!ok) {
         final errors = <String>[];
         workoutResult.fold(
-          (e) => errors.add('Workouts: ${e.toString()}'),
+          (failure) {
+            errors.add('Workouts: ${failure.toString()}');
+            // Capture to Sentry for observability
+            if (SentryConfig.shouldInitialize) {
+              Sentry.captureException(
+                failure,
+                hint: Hint.withMap({
+                  'mechanism': 'sync_failure',
+                  'context': 'workout_sync',
+                  'failure_type': failure.runtimeType.toString(),
+                  'message': failure.message,
+                }),
+              );
+            }
+          },
           (_) {},
         );
         vitalsResult.fold(
-          (e) => errors.add('Vitals: ${e.toString()}'),
+          (failure) {
+            errors.add('Vitals: ${failure.toString()}');
+            // Capture to Sentry for observability
+            if (SentryConfig.shouldInitialize) {
+              Sentry.captureException(
+                failure,
+                hint: Hint.withMap({
+                  'mechanism': 'sync_failure',
+                  'context': 'vitals_sync',
+                  'failure_type': failure.runtimeType.toString(),
+                  'message': failure.message,
+                }),
+              );
+            }
+          },
           (_) {},
         );
         errorDetails = errors.join('\n');
