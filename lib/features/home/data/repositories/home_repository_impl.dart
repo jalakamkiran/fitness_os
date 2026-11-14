@@ -261,7 +261,7 @@ class HomeRepositoryImpl implements HomeRepository {
   }
 
   @override
-  Future<bool> syncNow() async {
+  Future<SyncResult> syncNow() async {
     final pass = SentrySyncInstrumentation.startPassTransaction(
       trigger: 'manual',
     );
@@ -269,6 +269,22 @@ class HomeRepositoryImpl implements HomeRepository {
       final workoutResult = await _workouts.syncFromWatch();
       final vitalsResult = await _vitals.syncFromWatch();
       final ok = workoutResult.isRight && vitalsResult.isRight;
+      
+      // Collect error details for debugging
+      String? errorDetails;
+      if (!ok) {
+        final errors = <String>[];
+        workoutResult.fold(
+          (e) => errors.add('Workouts: ${e.toString()}'),
+          (_) {},
+        );
+        vitalsResult.fold(
+          (e) => errors.add('Vitals: ${e.toString()}'),
+          (_) {},
+        );
+        errorDetails = errors.join('\n');
+      }
+      
       await _prefs.setString(
         GateAPrefs.homeLastSyncStatus,
         ok ? 'ok' : 'failed',
@@ -283,13 +299,13 @@ class HomeRepositoryImpl implements HomeRepository {
         pass,
         status: ok ? 'ok' : 'error',
       );
-      return ok;
-    } catch (_) {
+      return ok ? SyncResult.ok() : SyncResult.failed(errorDetails ?? 'Unknown sync error');
+    } catch (e, stackTrace) {
       await SentrySyncInstrumentation.finishWithStatus(
         pass,
         status: 'error',
       );
-      rethrow;
+      return SyncResult.failed('Exception: ${e.toString()}\nStack: ${stackTrace.toString()}');
     }
   }
 }

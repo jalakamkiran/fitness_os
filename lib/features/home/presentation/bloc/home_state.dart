@@ -14,10 +14,11 @@ final class HomeLoadInProgress extends HomeState {
 }
 
 final class HomeReady extends HomeState {
-  const HomeReady(this.snapshot, {this.message});
+  const HomeReady(this.snapshot, {this.message, this.errorDetails});
 
   final HomeSnapshot snapshot;
   final String? message;
+  final String? errorDetails;
 }
 
 final class HomeFailure extends HomeState {

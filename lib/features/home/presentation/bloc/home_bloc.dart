@@ -85,12 +85,13 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
       );
     }
 
-    final ok = await _repository.syncNow();
+    final result = await _repository.syncNow();
     final snap = await _getHomeData();
     emit(
       HomeReady(
         snap,
-        message: ok ? null : 'Sync failed — retry when ready.',
+        message: result.success ? null : 'Sync failed — retry when ready.',
+        errorDetails: result.errorDetails,
       ),
     );
   }
