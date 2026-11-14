@@ -73,7 +73,7 @@ class BackendSyncService {
   Future<Map<String, dynamic>> _buildSyncPayload() async {
     final payload = <String, dynamic>{};
 
-    final workouts = await _workoutRepo.loadWorkouts();
+    final workouts = await _workoutRepo.loadLocal();
     if (workouts.isNotEmpty) {
       payload['workouts'] = workouts
           .map((w) => {
@@ -112,10 +112,11 @@ class BackendSyncService {
           'endUnix': session.endUnix,
           if (stages.isNotEmpty)
             'stages': stages
+                .where((s) => _backendStageCode(s.wireType) != null)
                 .map((s) => {
                       'timestampUnix': s.timestampUnix,
                       'durationMin': s.durationMin,
-                      'stage': s.stage,
+                      'stage': _backendStageCode(s.wireType),
                     })
                 .toList(),
           if (enrich != null) ...{
@@ -155,6 +156,16 @@ class BackendSyncService {
 
     return payload;
   }
+
+  /// Watch wire codes (1 light, 2 deep, 3 REM, 4/7 awake) → backend
+  /// `sync-service.ts` codes (1 awake, 2 light, 3 deep, 4 REM).
+  static int? _backendStageCode(int? wireType) => switch (wireType) {
+        1 => 2,
+        2 => 3,
+        3 => 4,
+        4 || 7 => 1,
+        _ => null,
+      };
 
   bool _isEmpty(Map<String, dynamic> payload) {
     return payload.isEmpty ||
