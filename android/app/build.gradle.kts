@@ -1,6 +1,5 @@
 import java.util.Properties
 import java.io.FileInputStream
-import java.util.Base64
 
 plugins {
     id("com.android.application")
@@ -47,26 +46,17 @@ android {
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
             } else {
-                // CI or local without keystore: use environment variables or debug signing
-                val keystoreBase64 = System.getenv("ANDROID_KEYSTORE_BASE64")
-                if (keystoreBase64 != null) {
-                    val keystoreFile = file("${rootProject.buildDir}/app-release.keystore")
-                    keystoreFile.parentFile.mkdirs()
-                    keystoreFile.writeBytes(Base64.getDecoder().decode(keystoreBase64))
-                    
-                    storeFile = keystoreFile
-                    storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: "android"
-                    keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "upload"
-                    keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: storePassword
-                } else {
-                    // Fallback to debug signing
-                    println("⚠️  WARNING: No release keystore found. Using debug signing.")
-                    println("   Add ANDROID_KEYSTORE_* secrets or create android/key.properties")
-                    storeFile = signingConfigs.getByName("debug").storeFile
-                    storePassword = signingConfigs.getByName("debug").storePassword
-                    keyAlias = signingConfigs.getByName("debug").keyAlias
-                    keyPassword = signingConfigs.getByName("debug").keyPassword
-                }
+                // CI or local without keystore: fallback to debug signing
+                // Note: ANDROID_KEYSTORE_BASE64 support temporarily disabled due to
+                // "Tag number over 30 is not supported" error with current keystore format
+                // TODO: Regenerate keystore or upgrade AGP once Flutter 3.44.7 supports it
+                println("⚠️  WARNING: No release keystore found. Using debug signing.")
+                println("   Add ANDROID_KEYSTORE_* secrets or create android/key.properties")
+                println("   (Release keystore currently disabled due to format compatibility)")
+                storeFile = signingConfigs.getByName("debug").storeFile
+                storePassword = signingConfigs.getByName("debug").storePassword
+                keyAlias = signingConfigs.getByName("debug").keyAlias
+                keyPassword = signingConfigs.getByName("debug").keyPassword
             }
         }
     }

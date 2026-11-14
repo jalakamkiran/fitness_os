@@ -48,17 +48,10 @@ jobs:
           cache-key: 'flutter-:os:-:channel:-:version:-:arch:-:hash:'
           cache-path: '${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:'
 
-      - name: Setup release keystore
-        run: |
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "${RUNNER_TEMP}/app-release.keystore"
-            echo "ANDROID_KEYSTORE_FILE=${RUNNER_TEMP}/app-release.keystore" >> $GITHUB_ENV
-            echo "✅ Release keystore decoded"
-          else
-            echo "ℹ️  No release keystore configured (using debug signing)"
-          fi
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      # Note: Release keystore setup disabled temporarily due to keystore format issues
+      # ("Tag number over 30 is not supported" error with AGP 8.9.1)
+      # The build will use debug signing, which is OK for testing
+      # TODO: Regenerate keystore or upgrade AGP once Flutter 3.44.7 supports it
 
       - name: Create .env file from secrets
         run: |
