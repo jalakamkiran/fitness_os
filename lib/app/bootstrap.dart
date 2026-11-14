@@ -9,6 +9,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
+import 'package:fitness_os/core/backend/backend_config.dart';
 import 'package:fitness_os/core/observability/sentry_config.dart';
 import 'package:fitness_os/core/observability/sentry_privacy_scrub.dart';
 import 'package:fitness_os/features/food/data/food_notification_scheduler.dart';
@@ -78,6 +79,9 @@ Future<void> _runAppBody() async {
   );
 
   await initDependencies();
+  
+  // Log backend sync status at startup
+  BackendConfig.logStartupStatus();
   
   // Initialize notification plugin after DI
   final scheduler = GetIt.I<FoodNotificationScheduler>();
