@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fathom Design Revamp — Mockup Gallery</title>
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    body {
+      font-family: var(--font-sans);
+      padding: 40px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font: var(--text-display-lg);
+      letter-spacing: var(--text-display-lg-tracking);
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      font: var(--text-body-lg);
+      color: var(--ink-dim);
+      margin-bottom: 32px;
+    }
+
+    .section {
+      margin-bottom: 48px;
+    }
+
+    .section-title {
+      font: var(--text-headline-sm);
+      letter-spacing: var(--text-headline-sm-tracking);
+      color: var(--ink);
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 24px;
+    }
+
+    .mockup-card {
+      background-color: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      text-decoration: none;
+      transition: all 200ms var(--easing-standard);
+    }
+
+    .mockup-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px var(--shadow);
+    }
+
+    .mockup-preview {
+      width: 100%;
+      aspect-ratio: 390 / 844;
+      background-color: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      color: var(--ink-faint);
+    }
+
+    .mockup-title {
+      font: var(--text-title-md);
+      letter-spacing: var(--text-title-md-tracking);
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
+
+    .mockup-desc {
+      font: var(--text-body-sm);
+      color: var(--ink-faint);
+    }
+
+    .theme-toggle {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      padding: 12px 16px;
+      background-color: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      font: var(--text-label-md);
+      color: var(--ink-dim);
+      transition: all 200ms var(--easing-standard);
+    }
+
+    .theme-toggle:hover {
+      background-color: var(--accent);
+      color: var(--accent-ink);
+    }
+
+    .status {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      font: var(--text-label-sm);
+      margin-left: 8px;
+    }
+
+    .status-done {
+      background-color: rgba(15, 159, 110, 0.15);
+      color: var(--up);
+    }
+
+    .status-wip {
+      background-color: rgba(217, 119, 6, 0.15);
+      color: var(--amber);
+    }
+  </style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="toggleTheme()">Toggle Dark Mode</button>
+
+  <h1>Fathom Design Revamp</h1>
+  <p class="subtitle">
+    Strategic athlete's decision tool — calm, honest, data-dense.<br>
+    Click any mockup to view full screen. Read <a href="PRODUCT.md" style="color: var(--accent);">PRODUCT.md</a> 
+    and <a href="README.md" style="color: var(--accent);">README.md</a> for rationale.
+  </p>
+
+  <!-- Primary Screens -->
+  <section class="section">
+    <h2 class="section-title">Primary Screens <span class="status status-done">Core Flow</span></h2>
+    <div class="gallery">
+      
+      <a href="home.html" class="mockup-card">
+        <div class="mockup-preview">🏠</div>
+        <h3 class="mockup-title">Today (Home)</h3>
+        <p class="mockup-desc">Readiness dashboard: Am I ready to train? Did I eat enough?</p>
+      </a>
+
+      <a href="workouts.html" class="mockup-card">
+        <div class="mockup-preview">💪</div>
+        <h3 class="mockup-title">Workouts</h3>
+        <p class="mockup-desc">Session history with trend charts, week grouping, tabs per sport.</p>
+      </a>
+
+      <a href="workout-detail.html" class="mockup-card">
+        <div class="mockup-preview">📊</div>
+        <h3 class="mockup-title">Workout Detail</h3>
+        <p class="mockup-desc">Single session analytics: pace, HR zones, recovery cost.</p>
+      </a>
+
+      <a href="recovery.html" class="mockup-card">
+        <div class="mockup-preview">🌙</div>
+        <h3 class="mockup-title">Recovery (Sleep)</h3>
+        <p class="mockup-desc">Last night score, contributors, sleep debt, timing consistency.</p>
+      </a>
+
+      <a href="food.html" class="mockup-card">
+        <div class="mockup-preview">🍽️</div>
+        <h3 class="mockup-title">Food</h3>
+        <p class="mockup-desc">Calorie balance (burn vs. intake), meal log, week trend.</p>
+      </a>
+
+    </div>
+  </section>
+
+  <!-- Secondary Screens -->
+  <section class="section">
+    <h2 class="section-title">Secondary Screens <span class="status status-done">Advanced Features</span></h2>
+    <div class="gallery">
+
+      <a href="programs.html" class="mockup-card">
+        <div class="mockup-preview">🎯</div>
+        <h3 class="mockup-title">Programs (Agon)</h3>
+        <p class="mockup-desc">Next trial, forecast, today's course, Odyssey progress.</p>
+      </a>
+
+      <a href="watch.html" class="mockup-card">
+        <div class="mockup-preview">⌚</div>
+        <h3 class="mockup-title">Watch & Sync</h3>
+        <p class="mockup-desc">Sync status, watch details, manual sync trigger.</p>
+      </a>
+
+      <a href="settings.html" class="mockup-card">
+        <div class="mockup-preview">⚙️</div>
+        <h3 class="mockup-title">Settings</h3>
+        <p class="mockup-desc">Profile (weight, BMR), goals, preferences, advanced tools.</p>
+      </a>
+
+    </div>
+  </section>
+
+  <!-- Onboarding & States -->
+  <section class="section">
+    <h2 class="section-title">Onboarding & States <span class="status status-done">Edge Cases</span></h2>
+    <div class="gallery">
+
+      <a href="onboarding.html" class="mockup-card">
+        <div class="mockup-preview">👋</div>
+        <h3 class="mockup-title">Onboarding</h3>
+        <p class="mockup-desc">First-run setup: philosophy, pairing, profile, feature intro.</p>
+      </a>
+
+      <a href="empty-home.html" class="mockup-card">
+        <div class="mockup-preview">∅</div>
+        <h3 class="mockup-title">Empty State — Home</h3>
+        <p class="mockup-desc">Before first sync: honest gaps, clear next steps.</p>
+      </a>
+
+      <a href="empty-workouts.html" class="mockup-card">
+        <div class="mockup-preview">∅</div>
+        <h3 class="mockup-title">Empty State — Workouts</h3>
+        <p class="mockup-desc">No sessions yet: why empty, how to sync.</p>
+      </a>
+
+      <a href="error-sync.html" class="mockup-card">
+        <div class="mockup-preview">⚠️</div>
+        <h3 class="mockup-title">Error — Sync Failed</h3>
+        <p class="mockup-desc">Sync error with reason, recovery action, troubleshooting.</p>
+      </a>
+
+    </div>
+  </section>
+
+  <!-- Documentation -->
+  <section class="section">
+    <h2 class="section-title">Documentation</h2>
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <a href="PRODUCT.md" style="color: var(--accent); font: var(--text-title-sm);">
+        📄 PRODUCT.md — User profile, jobs-to-be-done, information architecture
+      </a>
+      <a href="README.md" style="color: var(--accent); font: var(--text-title-sm);">
+        📄 README.md — Design system, tokens, rationale, implementation notes
+      </a>
+      <a href="tokens.css" style="color: var(--accent); font: var(--text-title-sm);">
+        📄 tokens.css — Design tokens (colors, typography, spacing)
+      </a>
+    </div>
+  </section>
+
+  <script>
+    function toggleTheme() {
+      const html = document.documentElement;
+      const currentTheme = html.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', newTheme);
+    }
+
+    // Detect system preference
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  </script>
+</body>
+</html>
