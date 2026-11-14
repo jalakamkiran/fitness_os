@@ -137,7 +137,7 @@ object RawWorkoutDump {
     fun dumpRacketWorkoutPace(
         workoutNumber: Int,
         typeCode: Int,
-        paceBlocks: List<Map<String, Any>>,
+        paceBlocks: List<Map<String, Any?>>,
         additionalContext: Map<String, Any>? = null,
     ) {
         if (!isEnabled) return
