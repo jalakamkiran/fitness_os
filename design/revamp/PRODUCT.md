@@ -294,3 +294,276 @@ The redesign **reorganizes existing data into decision-centric surfaces**:
 - Weekly: "Is my plan working?" → Week grouping + Agon forecast
 
 No flashy animations. No motivational quotes. Just honest, well-organized data that supports an athlete making training and nutrition decisions. The UI becomes a **tool, not a toy**.
+
+---
+
+## Data Placement Rationale
+
+### Why Each Data Group Lives Where It Does
+
+This section explains the reasoning behind the placement of every data group collected from the Huawei Watch GT5 Pro, based on the complete audit in `DATA_INVENTORY.md`.
+
+---
+
+#### **Sleep Data → Sleep Detail Screen**
+
+**Data Fields:**
+- TruSleep score, stages (Awake/REM/Light/Deep), efficiency %, latency, deep continuity
+- HR/SpO₂/HRV/breathing rate overnight
+- Bed/asleep/wake/rising times
+- 7/30-day trend charts
+
+**Why Here:**
+Sleep is a **foundational recovery input**. Athletes need to understand sleep quality before making training decisions. The detail screen provides the full story:
+- **Hero Score**: Immediate answer ("Was last night's sleep good?")
+- **Hypnogram**: Visual proof of stage progression (catch interruptions, poor deep sleep)
+- **Score Factors**: Actionable contributors (low efficiency = too much awake time; high latency = trouble falling asleep)
+- **Vitals Overnight**: Prove recovery quality (low HR = good parasympathetic tone; good SpO₂ = no breathing issues)
+- **Trends**: Show consistency or regression over 7/30 days
+
+**Why Not on Today?**
+Today's sleep card shows the **summary** (score + duration + key stages). The detail screen is for **investigation** when the score is poor or the athlete wants to optimize.
+
+---
+
+#### **Recovery Time → Recovery Screen + Today Card**
+
+**Data Fields:**
+- Session-by-session recovery times (from `WorkoutSummary.recoveryTime`)
+- Training load per session (`WorkoutSummary.load`)
+- Aerobic/anaerobic TE (`WorkoutSummary.aerobicEffect`, `anaerobicEffect`)
+- Overall recovery composition (stacked recovery + sleep/activity modifiers, from `overall_recovery_hours.dart`)
+
+**Why Here:**
+Recovery time is the **critical go/no-go decision metric** for hard training. Athletes need to know:
+- **Total hours remaining**: Can I do a hard session today? (Hero card on Recovery screen + tile on Today)
+- **What contributed**: Which recent sessions are still costing me? (Session list with individual recovery times)
+- **7-day training load chart**: Am I overreaching? (Visual spike detection)
+
+**Why Split Between Recovery Screen & Today?**
+- **Today Card**: Quick glance answer ("14h remaining")
+- **Recovery Screen**: Full context (training load history, session breakdown, modifiers from sleep/activity)
+
+**Why Not Just on Today?**
+Recovery is a **complex composition** (not a single sensor reading). The full screen provides the evidence athletes need to trust the number.
+
+---
+
+#### **Workout Data → Workouts List + Detail Screens**
+
+**Data Fields:**
+- All sports: Duration, calories, HR zones, training load, aerobic/anaerobic TE, recovery time
+- Swim-specific: Laps, strokes, SWOLF, pace, pool length, style
+- Run-specific: Distance, pace, splits, cadence
+- Badminton: High anaerobic zones, duration
+- Strength: Load, TE, recovery
+
+**Why Here:**
+Workouts are **performance logs**. Athletes review them to:
+- **Track progress**: Am I getting faster? (pace trends)
+- **Validate sessions**: Did I hit the prescribed zones? (HR zone distribution)
+- **Identify patterns**: Why was this session harder than last week? (compare training load)
+
+**Why Split List + Detail?**
+- **List**: Quick scan of recent sessions (date, sport, distance/duration)
+- **Detail**: Full session breakdown (laps, splits, HR curve, training effect)
+
+**Why Sport-Specific Detail Screens?**
+Each sport has **different key metrics**:
+- **Swim**: SWOLF, strokes/lap, pace consistency matter more than absolute speed
+- **Run**: Pace splits, cadence, elevation (when available)
+- **Badminton**: Anaerobic zones dominate (explosive sport)
+- **Strength**: Load, sets/reps estimate, TE (no distance/pace)
+
+Generic "workout detail" would dilute the signal.
+
+---
+
+#### **Activity Totals → Activity Screen + Today Rings**
+
+**Data Fields:**
+- Steps, calories, distance (from `FitnessTotalsDay` day rollup)
+- 7-day trend charts
+
+**Why Here:**
+Activity totals are **baseline movement context** for recovery and nutrition. Athletes need to know:
+- **Did I hit my step goal?** (Today rings)
+- **Am I consistent week-to-week?** (7-day chart)
+- **How much did I burn today?** (for energy balance)
+
+**Why Split Between Activity Screen & Today?**
+- **Today Rings**: Quick goal progress (68% of 10,000 steps)
+- **Activity Screen**: Trends and comparisons (last 7 days, daily avg)
+
+**Why Not Just on Recovery Screen?**
+Activity is a **separate job** from training recovery. Non-workout movement (walking to work, errands) affects energy balance but doesn't require recovery time.
+
+---
+
+#### **Heart Rate → Heart Rate & HRV Screen**
+
+**Data Fields:**
+- 24h HR curve (from `DailyHrSample` continuous samples)
+- Resting HR (min from `DailyHrDaySummary`)
+- 7-day resting HR trend
+- Max/min/avg HR
+
+**Why Here:**
+Resting HR is a **key recovery marker**. Athletes track it to:
+- **Detect overtraining**: Elevated resting HR = insufficient recovery
+- **Validate readiness**: Stable resting HR = ready for hard work
+- **Understand daily trends**: Catch illness or stress early
+
+**Why Not on Recovery Screen?**
+Resting HR is **one input** to recovery, not the full story. The dedicated screen provides:
+- **24h context**: See HR spikes (caffeine? stress?)
+- **Trend analysis**: 7-day chart catches gradual elevation
+
+**Why Not on Today?**
+Today focuses on **actionable decisions** (sleep score, recovery time, today's workouts). HR is a **diagnostic detail** when something feels off.
+
+---
+
+#### **Programs (Agon) → Programs Screen**
+
+**Data Fields:**
+- Chore sessions (WU/Main/CD blocks, from `ChoreSession`)
+- Due/done/skipped states (`ChoreState`)
+- Effort zones, rest intervals (`ChoreBlock.effortBand`, `restGuidanceSec`)
+- Auto-linking to completed workouts (`matchedWorkoutNumber`)
+
+**Why Here:**
+Programs are **prescribed structure**. Athletes need to:
+- **See this week's plan**: What's due today? (Weekly calendar view)
+- **Check block details**: What's in the main set? (Session detail with WU/Main/CD)
+- **Track completion**: Did I do it? (Done/skipped states)
+
+**Why Not on Today?**
+Today is for **what happened** (last night's sleep, today's workouts). Programs are for **what should happen** (structured training plan). Mixing them creates cognitive load.
+
+**Why Under "More" Tab?**
+Programs are **not daily decisions** for most athletes. They check the plan once (morning or night before) and execute. Today/Recovery/Workouts are **constant reference** throughout the day.
+
+---
+
+#### **Food → Food Screen + Energy Balance**
+
+**Data Fields:**
+- Meal log with photos (`FoodMeal.photoPath`, `kcal`, `slot`)
+- Daily calorie sum (computed from meals)
+- Energy balance (calories in - calories out from `FitnessTotalsDay.calories`)
+
+**Why Here:**
+Food is **fueling context** for training. Athletes need to:
+- **Track intake**: Did I eat enough today? (Energy balance card)
+- **Log meals**: What did I eat? (Photo log with manual kcal)
+- **Understand deficit/surplus**: Am I under-fueling? (Balance: +572 or −300)
+
+**Why Energy Balance is Hero?**
+Without context, calorie tracking is **meaningless**. Showing intake alone doesn't answer "Did I eat enough?" Balance (in - out) gives the answer immediately.
+
+**Why Photos?**
+Visual log is **faster than manual entry** and more honest (can't forget the snack you photographed).
+
+**Why Not on Recovery Screen?**
+Food affects recovery but is a **separate behavior**. Recovery screen focuses on **training inputs** (sessions, sleep). Food screen focuses on **nutrition inputs**.
+
+---
+
+#### **Weight → Weight Screen**
+
+**Data Fields:**
+- Current weight (`weightKg`, manual or from future Bluetooth scale)
+- 30-day trend chart
+
+**Why Here:**
+Weight is a **periodic check**, not a daily metric. Athletes track it to:
+- **Monitor trends**: Am I losing/gaining? (30-day chart)
+- **Validate energy balance**: Surplus = gain, deficit = loss
+- **Adjust nutrition goals**: Trending up? Reduce intake.
+
+**Why Not on Today?**
+Weight changes **slowly** (days/weeks, not hours). Daily display would be noise. The dedicated screen shows **trends**, which matter more than single readings.
+
+**Why Under "More" Tab?**
+Weight is **not a training decision input**. It's a periodic check (weekly or bi-weekly). Today/Recovery/Workouts are constant reference.
+
+---
+
+#### **Device & Sync → Device & Sync Screen + Today Pill**
+
+**Data Fields:**
+- Watch name, MAC, battery level (from `HuaweiSession.kt` CMD_BATTERY)
+- Connection status (`LinkState`)
+- Last sync time, sync-in-progress indicator
+- Auto-tracking feature arm status (TruSleep, Auto-HR, Auto-SpO₂)
+
+**Why Here:**
+Device status is **infrastructure context**. Athletes need to:
+- **Check battery**: Is my watch going to die overnight? (78% = good)
+- **Verify connection**: Why isn't new data showing up? (disconnected)
+- **Trigger sync**: Manual sync when data is stale (Sync Now button)
+
+**Why Split Between Today Pill & Detail Screen?**
+- **Today Pill**: Quick status ("Synced 2m ago")
+- **Detail Screen**: Full diagnostics (battery, connection, feature arm status)
+
+**Why Not Always Visible?**
+Device status is **infrastructure**—only relevant when something is wrong. The Today pill provides the quick check; the detail screen is for troubleshooting.
+
+---
+
+#### **Settings & Profile → More Tab**
+
+**Data Fields:**
+- User name, photo, biometrics (age, sex, height, weight)
+- Goals (daily steps, sleep hours)
+- Notifications, theme, about
+
+**Why Here:**
+Settings are **configuration**, not daily decisions. Athletes access them:
+- **Once per setup**: Set biometrics, goals
+- **Rarely**: Change theme, toggle notifications
+- **Never during training**: Settings don't inform "What should I do today?"
+
+**Why Under "More" Tab?**
+Grouping non-daily tasks under "More" keeps the primary tabs (Today, Workouts, Recovery, Food) focused on **actionable decisions**.
+
+---
+
+#### **State Screens (Loading, Empty, Error, Offline, Syncing)**
+
+**Data Fields:** None (UI states, not data)
+
+**Why Here:**
+State screens **explain system status** when normal UI can't display:
+- **Loading**: Data fetch in progress (spinner)
+- **Empty**: No data yet (onboarding, first sync)
+- **Error**: Sync failed (retry button)
+- **Offline**: BT off or watch disconnected (reconnect prompt)
+- **Syncing**: Manual sync in progress (cancel button)
+
+**Why Not Inline Banners?**
+Full-screen states provide **clear feedback** without UI clutter. Athletes know immediately why they're not seeing data, rather than guessing from an empty list.
+
+---
+
+### Summary: Data Placement Philosophy
+
+1. **Today Screen** = **High-frequency decisions** (sleep score, recovery time, today's workouts)
+2. **Detail Screens** = **Investigation** when summary isn't enough (sleep factors, workout laps, HR trends)
+3. **Recovery Screen** = **Training readiness** (can I train hard today?)
+4. **Workouts Screen** = **Performance log** (am I improving?)
+5. **Food Screen** = **Fueling context** (did I eat enough?)
+6. **Activity Screen** = **Baseline movement** (steps, non-workout calories)
+7. **More Tab** = **Periodic checks & config** (weight, programs, device, settings)
+
+**Unplaced Data (Future):**
+- Advanced HRV/Stress samples → Heart Rate & HRV screen (when LPv2 exposes)
+- SpO₂ continuous samples → Heart Rate & HRV screen (when requested in FitnessDataSync)
+- Run cadence → Workout Detail: Run (when parsed from WorkoutData sample pages)
+- Menstrual cycle → New "Health" screen under More tab (when synced)
+
+---
+
+**End of Data Placement Rationale**
