@@ -31,9 +31,14 @@ object RawWorkoutDump {
      */
     val isEnabled: Boolean
         get() {
-            // Check if Sentry is enabled and dump flag is set
-            // For now, we'll use a simple check - in production this would read BuildConfig
-            return Sentry.isEnabled() && shouldDumpRawWorkouts()
+            return try {
+                // Check if Sentry is enabled and dump flag is set
+                // Sentry may not be initialized on Android if DSN is missing
+                Sentry.isEnabled() && shouldDumpRawWorkouts()
+            } catch (e: Exception) {
+                // Sentry not initialized or error checking - disable dumps
+                false
+            }
         }
 
     /**

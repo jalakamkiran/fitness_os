@@ -4,10 +4,57 @@ This guide explains how to set up Firebase App Distribution for OTA (over-the-ai
 
 ## Overview
 
-The GitHub Actions workflow automatically builds and distributes debug APKs to testers via Firebase App Distribution when code is pushed to:
+The GitHub Actions workflow automatically builds and distributes **release APKs** to testers via Firebase App Distribution when code is pushed to:
 - `main` branch
 - `cursor/badminton-type-mapping-e9d5` branch (PR #20)
 - Manual workflow trigger (`workflow_dispatch`)
+
+## Required GitHub Secrets
+
+**Critical**: Add these secrets first or the CI build will fail.
+
+Navigate to: https://github.com/jalakamkiran/fitness_os/settings/secrets/actions
+
+### 1. `SENTRY_DSN` (REQUIRED)
+
+**Purpose**: Crash reporting and sync failure observability.
+
+- **Get from**: Sentry project → Settings → Client Keys (DSN)
+- **Format**: `https://<key>@o<org-id>.ingest.sentry.io/<project-id>`
+- **Why required**: Without this, the app has NO crash reporting and sync failures are invisible. The CI build will FAIL if this is missing.
+
+Example:
+```
+SENTRY_DSN=https://abc123@o123456.ingest.sentry.io/789012
+```
+
+### 2. `FIREBASE_SERVICE_ACCOUNT_JSON` (REQUIRED)
+
+**Purpose**: Upload APKs to Firebase App Distribution.
+
+- **Value**: Paste the **entire JSON content** from the service account key file
+- **Format**: Full JSON (see "Create Service Account" section below)
+
+### 3. `BACKEND_WRITE_KEY` (Optional)
+
+**Purpose**: Sync workout data to cloud backend.
+
+- **What happens if missing**: Workouts are only stored locally on the device
+- **Format**: API key string
+
+### 4. Release Keystore Secrets (Optional)
+
+**Purpose**: Sign release APKs for production distribution.
+
+**If missing**: The build will use debug signing with a warning (OK for testing, not for production).
+
+Required keystore secrets:
+- `ANDROID_KEYSTORE_BASE64`: Base64-encoded keystore file
+- `ANDROID_KEYSTORE_PASSWORD`: Keystore password
+- `ANDROID_KEY_ALIAS`: Key alias (e.g., `upload`)
+- `ANDROID_KEY_PASSWORD`: Key password
+
+See "Release Keystore Setup" section below for how to generate these.
 
 ## Firebase Project Setup
 

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:fitness_os/core/huawei/fos_huawei_log.dart';
 import 'package:fitness_os/core/huawei/huawei_bt_channel.dart';
+import 'package:fitness_os/core/observability/sentry_config.dart';
 import 'package:fitness_os/core/observability/sentry_sync_instrumentation.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -333,8 +334,24 @@ class HuaweiLink {
         count: result.workouts.length,
       );
       return result;
-    } on PlatformException catch (e) {
+    } on PlatformException catch (e, stackTrace) {
       FosHuaweiLog.e('syncWorkouts failed', error: e, op: 'sync');
+      
+      // Capture full exception to Sentry for debugging
+      if (SentryConfig.shouldInitialize) {
+        await Sentry.captureException(
+          e,
+          stackTrace: stackTrace,
+          hint: Hint.withMap({
+            'mechanism': 'platform_exception',
+            'context': 'workout_sync',
+            'error_code': e.code,
+            'error_message': e.message,
+            'error_details': e.details?.toString(),
+          }),
+        );
+      }
+      
       await SentrySyncInstrumentation.finishWithStatus(
         span,
         status: 'error',
@@ -342,7 +359,7 @@ class HuaweiLink {
       return WorkoutSyncResult(
         status: WorkoutSyncStatus.error,
         // Safe short reason only — never forward raw protocol/hex details.
-        message: e.code,
+        message: e.message ?? e.code,
         workouts: const [],
       );
     } finally {
@@ -425,15 +442,31 @@ class HuaweiLink {
         partial: partial,
       );
       return result;
-    } on PlatformException catch (e) {
+    } on PlatformException catch (e, stackTrace) {
       FosHuaweiLog.e('syncActivity failed', error: e, op: 'sync');
+      
+      // Capture full exception to Sentry for debugging
+      if (SentryConfig.shouldInitialize) {
+        await Sentry.captureException(
+          e,
+          stackTrace: stackTrace,
+          hint: Hint.withMap({
+            'mechanism': 'platform_exception',
+            'context': 'activity_sync',
+            'error_code': e.code,
+            'error_message': e.message,
+            'error_details': e.details?.toString(),
+          }),
+        );
+      }
+      
       await SentrySyncInstrumentation.finishWithStatus(
         span,
         status: 'error',
       );
       return ActivitySyncResult(
         status: ActivitySyncStatus.error,
-        message: e.code,
+        message: e.message ?? e.code,
       );
     } finally {
       _syncInFlight = false;

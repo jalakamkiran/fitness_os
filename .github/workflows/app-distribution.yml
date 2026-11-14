@@ -48,25 +48,72 @@ jobs:
           cache-key: 'flutter-:os:-:channel:-:version:-:arch:-:hash:'
           cache-path: '${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:'
 
+      - name: Setup release keystore
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "${RUNNER_TEMP}/app-release.keystore"
+          echo "ANDROID_KEYSTORE_FILE=${RUNNER_TEMP}/app-release.keystore" >> $GITHUB_ENV
+          echo "✅ Release keystore decoded"
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+
       - name: Create .env file from secrets
         run: |
-          echo "SENTRY_DSN=${{ secrets.SENTRY_DSN }}" > .env
+          # Fail if SENTRY_DSN is missing (required for observability)
+          if [ -z "$SENTRY_DSN" ]; then
+            echo "❌ ERROR: SENTRY_DSN secret is required but not set"
+            echo "   Add it in GitHub Settings → Secrets and variables → Actions"
+            echo "   Get the DSN from Sentry project settings"
+            exit 1
+          fi
+          
+          # Create .env with all secrets
+          echo "SENTRY_DSN=$SENTRY_DSN" > .env
           echo "SENTRY_RAW_WORKOUT_DUMP=true" >> .env
+          echo "SENTRY_FORCE=true" >> .env
+          
+          # Add backend keys if available (optional, for data persistence)
+          if [ -n "$BACKEND_WRITE_KEY" ]; then
+            echo "BACKEND_WRITE_KEY=$BACKEND_WRITE_KEY" >> .env
+          fi
+          
           echo "✅ Created .env file (DSN: ${#SENTRY_DSN} chars)"
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          BACKEND_WRITE_KEY: ${{ secrets.BACKEND_WRITE_KEY }}
 
       - name: Get Flutter dependencies
         run: flutter pub get
 
-      - name: Build debug APK with Sentry
+      - name: Build release APK with Sentry
         run: |
+          # Check if release keystore is available, otherwise warn
+          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "⚠️  WARNING: No release keystore found. Using debug signing."
+            echo "   Add ANDROID_KEYSTORE_* secrets for production release signing."
+            echo "   See docs/app-distribution.md for setup instructions."
+          fi
+          
+          # Set version for Sentry release tracking
+          VERSION="0.1.0"
+          BUILD_NUMBER="${{ github.run_number }}"
+          
+          # Build release without obfuscation for now (easier debugging)
           flutter build apk \
-            --debug \
+            --release \
             --target-platform android-arm64 \
             --dart-define-from-file=.env \
-            --build-name=0.1.0+${{ github.run_number }} \
-            --build-number=${{ github.run_number }}
+            --dart-define=APP_VERSION="$VERSION" \
+            --dart-define=APP_BUILD_NUMBER="$BUILD_NUMBER" \
+            --build-name="${VERSION}+${BUILD_NUMBER}" \
+            --build-number="$BUILD_NUMBER"
+          
+          echo "✅ Built release APK: com.example.fitness_os@${VERSION}+${BUILD_NUMBER}"
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: Prepare release notes
         id: release_notes
@@ -103,7 +150,7 @@ jobs:
         with:
           appId: ${{ secrets.FIREBASE_ANDROID_APP_ID || '1:842234944328:android:3dc4d51ae03b539827f17d' }}
           serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-          file: build/app/outputs/flutter-apk/app-debug.apk
+          file: build/app/outputs/flutter-apk/app-release.apk
           groups: me
           releaseNotes: ${{ steps.release_notes.outputs.notes }}
 
@@ -111,8 +158,8 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: app-debug-${{ github.run_number }}-${{ github.sha }}
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: app-release-${{ github.run_number }}-${{ github.sha }}
+          path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
           if-no-files-found: error
 
