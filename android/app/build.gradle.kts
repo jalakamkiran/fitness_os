@@ -23,6 +23,10 @@ android {
         jvmTarget = "17"
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.fitness_os"
@@ -31,6 +35,10 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        
+        // Raw workout dump flag (from Gradle property or dart-define)
+        val rawDumpEnabled = project.findProperty("SENTRY_RAW_WORKOUT_DUMP")?.toString()?.toBoolean() ?: false
+        buildConfigField("boolean", "SENTRY_RAW_WORKOUT_DUMP", rawDumpEnabled.toString())
     }
 
     signingConfigs {

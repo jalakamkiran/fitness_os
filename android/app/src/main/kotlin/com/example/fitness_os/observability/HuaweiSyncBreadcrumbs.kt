@@ -281,6 +281,35 @@ object HuaweiSyncBreadcrumbs {
         )
     }
 
+    /**
+     * Record workout enrichment summary (after Data/Pace/Swim fetch).
+     */
+    fun workoutEnrichmentComplete(
+        workoutNumber: Int,
+        pagesRequested: Int,
+        pagesFetched: Int,
+        sampleFetchStatus: String,
+        pointPages: Int,
+        sampleCount: Int,
+        samplesPersisted: Boolean,
+    ) {
+        if (!isEnabled) return
+        addBreadcrumb(
+            message = "Workout enrichment: #$workoutNumber pages=$pagesFetched/$pagesRequested samples=$sampleFetchStatus",
+            category = "huawei.workout.enrichment",
+            level = SentryLevel.DEBUG,
+            data = mapOf(
+                "workoutNumber" to workoutNumber,
+                "pagesRequested" to pagesRequested,
+                "pagesFetched" to pagesFetched,
+                "sampleFetchStatus" to sampleFetchStatus,
+                "pointPages" to pointPages,
+                "sampleCount" to sampleCount,
+                "samplesPersisted" to samplesPersisted
+            )
+        )
+    }
+
     // Helper functions
 
     private fun addBreadcrumb(
