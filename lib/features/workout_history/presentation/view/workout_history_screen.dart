@@ -11,9 +11,12 @@ import 'package:fitness_os/features/workout_history/domain/strength_session_metr
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_bloc.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_event.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_state.dart';
+import 'package:fitness_os/features/workout_history/domain/huawei_workout_types.dart'
+    show isSportsWorkout, workoutTypeLabel, workoutTypeCategory;
 import 'package:fitness_os/features/workout_history/presentation/view/workout_detail_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/sport_tabs.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/sports_filter_chips.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/workout_session_row.dart';
 
 List<({String label, String value})> strengthSessionMeta(WorkoutSummary w) {
@@ -106,7 +109,9 @@ class _WorkoutHistoryView extends StatefulWidget {
 
 class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
   WorkoutSportTab _sport = WorkoutSportTab.swim;
+  Set<int> _sportsFilter = {}; // Empty = all sports
   bool _exportBusy = false;
+  List<WorkoutSummary> _lastWorkouts = [];
 
   StrengthSessionExportService get _export =>
       widget.exportService ?? sl<StrengthSessionExportService>();
@@ -210,6 +215,45 @@ class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
         SnackBar(content: Text('Share failed: $e')),
       );
     }
+  }
+
+  WorkoutSportTab _tabForWorkout(int type) {
+    if (isSwimWorkout(type)) return WorkoutSportTab.swim;
+    if (isRunWorkout(type)) return WorkoutSportTab.run;
+    if (isStrengthWorkout(type)) return WorkoutSportTab.gym;
+    if (isSportsWorkout(type)) return WorkoutSportTab.sports;
+    return WorkoutSportTab.sports; // Default to sports for unknown types
+  }
+
+  void _showSyncSnackBar(
+    WorkoutHistoryState state,
+    List<WorkoutSummary> newWorkouts,
+  ) {
+    if (!mounted) return;
+
+    final count = newWorkouts.length;
+    final types = newWorkouts.map((w) => workoutTypeLabel(w.type)).toSet();
+    final typesList = types.take(3).join(', ');
+    final moreCount = types.length > 3 ? ' +${types.length - 3} more' : '';
+
+    String message;
+    if (count == 1) {
+      final w = newWorkouts.first;
+      message =
+          'Full-history sync returned 1 workout (${workoutTypeLabel(w.type)} #${w.number}). '
+          'Sessions the watch already marked synced may not be re-sent.';
+    } else {
+      message =
+          'Full-history sync returned $count workouts ($typesList$moreCount). '
+          'Sessions the watch already marked synced may not be re-sent.';
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 5),
+      ),
+    );
   }
 
   @override
@@ -325,7 +369,28 @@ class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
           ),
         ],
       ),
-      body: BlocBuilder<WorkoutHistoryBloc, WorkoutHistoryState>(
+      body: BlocConsumer<WorkoutHistoryBloc, WorkoutHistoryState>(
+        listener: (context, state) {
+          // Auto-select tab of most recent synced workout
+          if (state.workouts.isNotEmpty && state.workouts != _lastWorkouts) {
+            final newWorkouts = state.workouts
+                .where((w) => !_lastWorkouts.any((old) => old.number == w.number))
+                .toList();
+            
+            if (newWorkouts.isNotEmpty) {
+              final mostRecent = newWorkouts.first;
+              final newTab = _tabForWorkout(mostRecent.type);
+              if (newTab != _sport) {
+                setState(() => _sport = newTab);
+              }
+              
+              // Show improved sync feedback SnackBar
+              _showSyncSnackBar(state, newWorkouts);
+            }
+            
+            _lastWorkouts = state.workouts;
+          }
+        },
         builder: (context, state) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -334,20 +399,23 @@ class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: SportTabs(
                   selected: _sport,
-                  onSelected: (tab) => setState(() => _sport = tab),
+                  onSelected: (tab) => setState(() {
+                    _sport = tab;
+                    if (tab == WorkoutSportTab.sports) {
+                      _sportsFilter = {}; // Reset filter when switching to Sports tab
+                    }
+                  }),
                 ),
               ),
-              if (state.message != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                  child: Text(
-                    state.message!,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: state.phase == WorkoutHistoryPhase.stuck
-                          ? colors.hot
-                          : colors.inkDim,
-                    ),
-                  ),
+              if (_sport == WorkoutSportTab.sports)
+                SportsFilterChips(
+                  availableTypes: state.workouts
+                      .where((w) => isSportsWorkout(w.type))
+                      .map((w) => w.type)
+                      .toSet(),
+                  selectedTypes: _sportsFilter,
+                  onSelectionChanged: (types) =>
+                      setState(() => _sportsFilter = types),
                 ),
               Expanded(
                 child: switch (_sport) {
@@ -374,12 +442,12 @@ class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
                           '—',
                       metaColumns: runSessionMeta,
                     ),
-                  WorkoutSportTab.strength => _SportSessionPanel(
+                  WorkoutSportTab.gym => _SportSessionPanel(
                       workouts: state.workouts,
                       match: isStrengthWorkout,
-                      countSuffix: 'strength',
+                      countSuffix: 'gym/strength',
                       emptyBody:
-                          'No strength sessions yet.\n'
+                          'No gym sessions yet.\n'
                           'Complete a strength workout on the watch, then Sync.',
                       thirdLabel: 'Calories',
                       thirdValue: (w) =>
@@ -390,6 +458,23 @@ class _WorkoutHistoryViewState extends State<_WorkoutHistoryView> {
                         exportBusy: _exportBusy || _serviceBusy,
                         onExport: _onExportAllStrength,
                       ),
+                    ),
+                  WorkoutSportTab.sports => _SportSessionPanel(
+                      workouts: state.workouts,
+                      match: (type) {
+                        if (!isSportsWorkout(type)) return false;
+                        if (_sportsFilter.isEmpty) return true;
+                        return _sportsFilter.contains(type);
+                      },
+                      countSuffix: 'sports',
+                      emptyBody: _sportsFilter.isEmpty
+                          ? 'No sports sessions yet.\n'
+                              'Complete a racket sport, ball sport, or other activity\n'
+                              'on the watch, then Sync.'
+                          : 'No matching sports sessions.\n'
+                              'Try selecting different sports or tap "All".',
+                      thirdLabel: 'Sport',
+                      thirdValue: (w) => workoutTypeLabel(w.type),
                     ),
                 },
               ),
