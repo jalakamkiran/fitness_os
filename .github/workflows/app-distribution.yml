@@ -98,6 +98,7 @@ jobs:
           BUILD_NUMBER="${{ github.run_number }}"
           
           # Build release without obfuscation for now (easier debugging)
+          # Pass SENTRY_RAW_WORKOUT_DUMP to Android BuildConfig via Gradle property
           flutter build apk \
             --release \
             --target-platform android-arm64 \
@@ -105,7 +106,8 @@ jobs:
             --dart-define=APP_VERSION="$VERSION" \
             --dart-define=APP_BUILD_NUMBER="$BUILD_NUMBER" \
             --build-name="${VERSION}+${BUILD_NUMBER}" \
-            --build-number="$BUILD_NUMBER"
+            --build-number="$BUILD_NUMBER" \
+            -PSENTRY_RAW_WORKOUT_DUMP=true
           
           echo "✅ Built release APK: com.example.fitness_os@${VERSION}+${BUILD_NUMBER}"
         env:
