@@ -22,6 +22,7 @@ import 'package:fitness_os/features/workout_history/domain/swim_session_insight.
 import 'package:fitness_os/features/workout_history/domain/swim_trends_diagnosis.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/coach_settings_route.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
+import 'package:fitness_os/features/workout_history/presentation/widgets/racket_session_analytics.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/run_session_analytics.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/strava_mark_icon.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/strength_session_analytics.dart';
@@ -139,6 +140,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
   bool get _isStrength => isStrengthWorkout(workout.type);
   bool get _isSwim => isSwimWorkout(workout.type);
+  bool get _isRacket => isRacketSport(workout.type);
   bool get _supportsJsonExport => _isStrength || _isSwim;
 
   StrengthSessionExportService get _strengthExport =>
@@ -422,6 +424,13 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                     preloadedPaceSplits: widget.preloadedPaceSplits,
                     preloadedStreamPoints: widget.preloadedStreamPoints,
                     preloadedLeftovers: widget.preloadedLeftovers,
+                    onAllSessions: () => Navigator.of(context).maybePop(),
+                  ),
+                ] else if (_isRacket) ...[
+                  RacketSessionAnalytics(
+                    workout: workout,
+                    runSessionStore: widget.runSessionStore,
+                    preloadedStreamPoints: widget.preloadedStreamPoints,
                     onAllSessions: () => Navigator.of(context).maybePop(),
                   ),
                 ] else if (isSwim) ...[
