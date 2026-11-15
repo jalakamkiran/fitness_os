@@ -2,6 +2,7 @@ import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/workout_history/data/run_session_store.dart';
+import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/in_session_hr_curve_host.dart';
 import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
 
@@ -273,11 +274,19 @@ class _SessionSummaryCard extends StatelessWidget {
   }
 
   String _formatWhen(int unixTimestamp) {
-    return formatWorkoutTimestamp(unixTimestamp);
+    return formatWorkoutWhen(unixTimestamp);
   }
 
   String _formatDuration(int seconds) {
-    return formatDuration(seconds);
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    final s = seconds % 60;
+    if (h > 0) {
+      if (m > 0) return '${h}h ${m}m';
+      return '${h}h';
+    }
+    if (m > 0) return '${m}m ${s}s';
+    return '${s}s';
   }
 }
 
