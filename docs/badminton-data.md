@@ -126,21 +126,42 @@ These metrics are **not confirmed** for the GT5 Pro. They may be:
 4. **Graceful fallback**: Unknown types display as "Workout type N"
 5. **Sentry breadcrumbs**: Observability for unknown types and parse failures
 
-### ⚠️ TODO (Needs Device Capture)
+### ✅ Implemented (Needs Real-Device Verification)
 
 1. **HR sample parsing**: WorkoutData pages (`0x17:0x0a`)
-   - Current sync fetches if `dataCount > 0`
-   - Parsing exists for swim/run but needs badminton verification
-   - May require `bitmap` field interpretation (tag `0x08`)
+   - ✅ Parser added for racket sports (consecutive u8 BPM at ~1 s interval)
+   - ✅ Reuses existing in-session HR lock infrastructure
+   - ✅ UI shows HR-over-time chart and HR zones when samples available
+   - ⚠️ Format not yet verified with real GT5 Pro badminton dump
+   - ⚠️ May need adjustment after capture (interval, format, bitmap usage)
 
-2. **Racket-specific metrics**: Swing count, rally count, etc.
-   - Add parsing when TLV tags are identified
+2. **Training metrics display**: Load, TE, recovery
+   - ✅ Card shows training load, aerobic/anaerobic TE, recovery time, training points
+   - ✅ HR min/max/peak displayed
+   - ✅ Session summary with duration, calories, distance
+   - ✅ Empty state when samples missing
+
+3. **Raw workout dumps**: Observability for reverse-engineering
+   - ✅ Gated by BuildConfig.SENTRY_RAW_WORKOUT_DUMP (from Gradle property)
+   - ✅ Enabled in CI via `-PSENTRY_RAW_WORKOUT_DUMP=true`
+   - ✅ Breadcrumb added at end of enrichWorkout with page counts and sample status
+   - ✅ Captures totals, data pages, and pace blocks for racket sports
+
+### ⚠️ TODO (Needs Real-Device Dump)
+
+1. **Verify HR sample format**: Real GT5 Pro badminton capture needed
+   - Current parser assumes consecutive u8 BPM at 1 s (similar to strength)
+   - May need to adjust interval, detect marker byte, or interpret bitmap
+   - Test with workout #2 re-sync after dump enabled
+
+2. **Racket-specific metrics**: Swing count, rally count, speed
+   - Add parsing when TLV tags are identified from raw dumps
    - Show on workout detail screen for type 129-133
    - Behind clear TODOs with documented verification status
 
 3. **Leftover TLV exploration**:
-   - Unknown tags ride "leftover" channel
-   - Dump leftover tag IDs/lengths for analysis
+   - Unknown tags ride "leftover" channel and raw dumps
+   - Analyze leftover tag IDs/lengths from Sentry
    - Correlate with Huawei Workout app displayed metrics
 
 ### ❌ Out of Scope
@@ -292,6 +313,14 @@ For reverse-engineering unknown fields, enable `SENTRY_RAW_WORKOUT_DUMP=true`:
 See `docs/sentry-setup.md` for complete configuration instructions.
 
 ## Changelog
+
+- **2026-11-15**: HR parsing and UI implementation
+  - ✅ Added racket sport HR parser (consecutive u8 BPM at ~1 s)
+  - ✅ Workout detail screen branches on isRacketSport
+  - ✅ Shows HR chart, training metrics, and recovery for badminton
+  - ✅ BuildConfig flag gates raw dumps (from Gradle property)
+  - ✅ Enrichment breadcrumb with page/sample counts
+  - ⚠️ HR format not yet verified with real device — needs workout #2 re-sync
 
 - **2026-11-14**: Initial documentation
   - Type 129 confirmed as Badminton

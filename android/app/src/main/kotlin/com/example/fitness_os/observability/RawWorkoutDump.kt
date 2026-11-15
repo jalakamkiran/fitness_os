@@ -15,8 +15,8 @@ import org.json.JSONObject
  * Captures full TLV hex for racket sports (badminton, tennis, etc.) to identify
  * unknown fields like swing count, rally data, cadence.
  *
- * Controlled by build config: `SENTRY_RAW_WORKOUT_DUMP` property.
- * Default: on for debug, off for release.
+ * Controlled by BuildConfig.SENTRY_RAW_WORKOUT_DUMP (set from Gradle property
+ * or --dart-define in CI). Check isEnabled before calling dump methods.
  *
  * **Privacy**: MAC addresses still redacted. Health data included by owner request
  * for debugging only.
@@ -291,13 +291,9 @@ object RawWorkoutDump {
     }
 
     private fun shouldDumpRawWorkouts(): Boolean {
-        // Check build config or system property
-        // For now, default to true in debug builds
         return try {
-            // In a real build, this would check BuildConfig.SENTRY_RAW_WORKOUT_DUMP
-            // For now, we'll make it opt-in via a simple check
-            val debugMode = android.os.Build.TYPE == "userdebug" || android.os.Build.TYPE == "eng"
-            debugMode
+            // Check BuildConfig flag (set from Gradle property or dart-define)
+            com.example.fitness_os.BuildConfig.SENTRY_RAW_WORKOUT_DUMP
         } catch (e: Exception) {
             false
         }

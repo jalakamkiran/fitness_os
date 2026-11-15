@@ -575,10 +575,12 @@ class HuaweiWorkoutSync(
                 else -> "partial"
             }
             out["sampleFetch"] = sampleFetch
+            val samplesPersisted: Boolean
             if (pointPages.isNotEmpty()) {
                 val fileBytes = encodeWorkoutSampleFile(pointPages)
                 val sampleId = "${totals.number}_${totals.startTime}"
                 val path = persistWorkoutSamples?.invoke(sampleId, fileBytes)
+                samplesPersisted = path != null
                 if (path != null) {
                     out["samplePath"] = path
                 }
@@ -589,6 +591,7 @@ class HuaweiWorkoutSync(
                         "pointsPages=${pointPages.size} persisted=${path != null}",
                 )
             } else {
+                samplesPersisted = false
                 Log.i(
                     TAG,
                     "workout-sync data number=${totals.number} " +
@@ -596,6 +599,17 @@ class HuaweiWorkoutSync(
                         "pointsPages=0 sampleFetch=$sampleFetch",
                 )
             }
+            
+            // Breadcrumb: enrichment summary
+            HuaweiSyncBreadcrumbs.workoutEnrichmentComplete(
+                workoutNumber = totals.number,
+                pagesRequested = totals.dataCount,
+                pagesFetched = pages.size,
+                sampleFetchStatus = sampleFetch,
+                pointPages = pointPages.size,
+                sampleCount = sampleTotal,
+                samplesPersisted = samplesPersisted,
+            )
         } else {
             out["sampleFetch"] = "none"
         }

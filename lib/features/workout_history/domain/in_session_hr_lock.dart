@@ -14,6 +14,9 @@ import 'package:fitness_os/features/workout_history/domain/run_session_metrics.d
 /// Strength (140) uses packed consecutive u8 BPM (~5 s).
 /// Swim pool (6) / open water (8) use 7-byte `HR 00 A 00 B 00 C` records
 /// (~5 s); first byte is BPM. Native `hr_samples` is not a lock source.
+///
+/// Racket sports (129-133) use consecutive u8 BPM (~1 s interval), same
+/// format as strength but denser sampling.
 List<RunStreamPoint> lockInSessionHrPoints(
   List<PeeledPageBodies> pages, {
   required int workoutType,
@@ -36,6 +39,16 @@ List<RunStreamPoint> lockInSessionHrPoints(
       workoutType == openWaterSwimWorkoutType) {
     return _lockPackedBpmSeries(
       decodeSwimSevenByteHrPoints(pages),
+      hrMin: hrMin,
+      hrMax: hrMax,
+      agreementToleranceBpm: agreementToleranceBpm,
+    );
+  }
+
+  // Racket sports use consecutive u8 BPM at ~1 s interval
+  if (_isRacketSport(workoutType)) {
+    return _lockPackedBpmSeries(
+      decodeRacketPackedHrPoints(pages),
       hrMin: hrMin,
       hrMax: hrMax,
       agreementToleranceBpm: agreementToleranceBpm,
@@ -109,6 +122,31 @@ List<RunStreamPoint> decodeSwimSevenByteHrPoints(
   return points;
 }
 
+/// Racket sports (129-133) WorkoutData `0x05`: consecutive u8 BPM at ~1 s.
+///
+/// Per-second HR sampling for badminton, tennis, table tennis, squash.
+/// Similar format to strength but with 1-second interval instead of 5-second.
+/// Out-of-band bytes become null HR slots to maintain wall-clock alignment.
+List<RunStreamPoint> decodeRacketPackedHrPoints(
+  List<PeeledPageBodies> pages,
+) {
+  final stream = _concatOx05Bodies(pages);
+  if (stream.isEmpty) return const [];
+
+  const intervalSec = 1; // Per-second sampling for racket sports
+  final points = <RunStreamPoint>[];
+  for (var i = 0; i < stream.length; i++) {
+    final hr = stream[i];
+    points.add(
+      RunStreamPoint(
+        offsetSec: i * intervalSec,
+        hrBpm: (hr >= 40 && hr <= 220) ? hr : null,
+      ),
+    );
+  }
+  return points;
+}
+
 List<RunStreamPoint> _lockPackedBpmSeries(
   List<RunStreamPoint> decoded, {
   int? hrMin,
@@ -152,6 +190,14 @@ const poolSwimWorkoutType = 6;
 
 /// Huawei open-water swim.
 const openWaterSwimWorkoutType = 8;
+
+/// Racket sport workout types (badminton, table tennis, tennis, squash).
+bool _isRacketSport(int workoutType) {
+  return workoutType == 129 || // Badminton
+      workoutType == 130 || // Table tennis
+      workoutType == 131 || // Tennis
+      workoutType == 133; // Squash
+}
 
 List<int> _concatOx05Bodies(List<PeeledPageBodies> pages) {
   if (pages.isEmpty) return const [];
