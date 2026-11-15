@@ -14,6 +14,7 @@ import 'package:fitness_os/features/workout_history/data/strength_session_export
 import 'package:fitness_os/features/workout_history/data/swim_session_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/workout_tcx_export_service.dart';
 import 'package:fitness_os/features/workout_history/domain/canonical_swim_session.dart';
+import 'package:fitness_os/features/workout_history/domain/huawei_workout_types.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 import 'package:fitness_os/features/workout_history/domain/run_session_metrics.dart';
 import 'package:fitness_os/features/workout_history/domain/swim_p0_metrics.dart';
