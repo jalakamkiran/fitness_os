@@ -163,7 +163,7 @@ void main() {
     expect(find.textContaining('Plan adherence'), findsOneWidget);
     expect(find.byKey(const Key('home-programs-cta')), findsOneWidget);
     expect(find.text('Agon plan'), findsOneWidget);
-  }, skip: 'TODO(CI): Pre-existing failure - investigate widget test environment');
+  }, skip: true // TODO(CI): Pre-existing failure);
 
   testWidgets('Agon plan CTA opens programs hub', (tester) async {
     await tester.runAsync(() async {
@@ -262,7 +262,7 @@ void main() {
 
     expect(find.byKey(const Key('home-chore-receipt')), findsOneWidget);
     expect(find.byKey(const Key('home-chore-cta')), findsNothing);
-  }, skip: 'TODO(CI): Pre-existing failure - investigate widget test environment');
+  }, skip: true // TODO(CI): Pre-existing failure);
 
   testWidgets('no Agon shows Odyssey upsell under sessions', (tester) async {
     await tester.runAsync(() async {
