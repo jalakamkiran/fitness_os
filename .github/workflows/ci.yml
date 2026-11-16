@@ -53,6 +53,14 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android/sdk/ndk
+          sudo rm -rf /opt/ghc
+          sudo docker system prune -af
+          df -h
+      
       - name: Checkout repository
         uses: actions/checkout@v4
 
