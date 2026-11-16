@@ -117,7 +117,7 @@ class _FilterChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  final FathomColorsScheme colors;
+  final FathomColors colors;
 
   @override
   Widget build(BuildContext context) {
