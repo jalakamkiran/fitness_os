@@ -26,7 +26,7 @@ class HuaweiWireParserRegressionTest {
                 HuaweiFraming.Tlv(0x04, byteArrayOf(0x01)), // day-anchor slot (1=today)
                 HuaweiFraming.Tlv(0x05, HuaweiPacketCrypto.intBe(7825)), // steps
                 HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(525)), // calories (kcal)
-                HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.intBe(5064)), // unknown duration field
+                HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.intBe(5064)), // exerciseDurationSec
             )
         )
         val container = HuaweiFraming.encodeTlvs(
@@ -35,21 +35,24 @@ class HuaweiWireParserRegressionTest {
                 HuaweiFraming.Tlv(0x83, dayRecord),
             )
         )
-        val frame = HuaweiFraming.Frame(
+
+        // Build outer frame with 0x81 container
+        val outerTlv = HuaweiFraming.Tlv(0x81, container)
+        val outerFrame = HuaweiFraming.Frame(
             serviceId = 0x07,
             commandId = 0x03,
-            tlvs = HuaweiFraming.decodeTlvs(container),
+            tlvs = listOf(outerTlv),
         )
 
         // Parse using real production function
-        val result = HuaweiFitnessDataSync.parseFitnessTotals(frame, endUnix = 1700000000L, tz = TimeZone.getTimeZone("UTC"))
+        val result = HuaweiFitnessDataSync.parseFitnessTotals(outerFrame, endUnix = 1700000000L, tz = TimeZone.getTimeZone("UTC"))
 
         // Should have 1 day of data (today)
         assertEquals(1, result.days.size)
         val day = result.days[0]
         assertEquals(7825, day.steps)
         assertEquals(525, day.calories)
-        assertEquals(0, result.unknownTagCount)
+        assertEquals(0, result.unknownTags)
     }
 
     @Test
@@ -76,13 +79,14 @@ class HuaweiWireParserRegressionTest {
                 HuaweiFraming.Tlv(0x83, yesterday),
             )
         )
-        val frame = HuaweiFraming.Frame(
+        val outerTlv = HuaweiFraming.Tlv(0x81, container)
+        val outerFrame = HuaweiFraming.Frame(
             serviceId = 0x07,
             commandId = 0x03,
-            tlvs = HuaweiFraming.decodeTlvs(container),
+            tlvs = listOf(outerTlv),
         )
 
-        val result = HuaweiFitnessDataSync.parseFitnessTotals(frame, endUnix = 1700000000L, tz = TimeZone.getTimeZone("UTC"))
+        val result = HuaweiFitnessDataSync.parseFitnessTotals(outerFrame, endUnix = 1700000000L, tz = TimeZone.getTimeZone("UTC"))
 
         assertEquals(2, result.days.size)
         // Days are returned in order encountered
@@ -93,7 +97,7 @@ class HuaweiWireParserRegressionTest {
     @Test
     fun workoutTotals_parsesBasicFields() {
         // Workout totals 0x17:0x08 with number, timestamps, calories, distance, type
-        val tlvs = HuaweiFraming.encodeTlvs(
+        val tlvsInner = HuaweiFraming.encodeTlvs(
             listOf(
                 HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(42)), // workout number
                 HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(1700000000)), // startTime
@@ -103,10 +107,11 @@ class HuaweiWireParserRegressionTest {
                 HuaweiFraming.Tlv(0x14, byteArrayOf(0x01)), // type: Run
             )
         )
+        val outerTlv = HuaweiFraming.Tlv(0x81, tlvsInner)
         val frame = HuaweiFraming.Frame(
             serviceId = 0x17,
             commandId = 0x08,
-            tlvs = HuaweiFraming.decodeTlvs(tlvs),
+            tlvs = listOf(outerTlv),
         )
 
         val result = HuaweiWorkoutSync.parseTotals(frame)
@@ -124,7 +129,7 @@ class HuaweiWireParserRegressionTest {
     @Test
     fun workoutTotals_parsesBadmintonRacketSport() {
         // Racket sport (badminton type 129) with HR fields
-        val tlvs = HuaweiFraming.encodeTlvs(
+        val tlvsInner = HuaweiFraming.encodeTlvs(
             listOf(
                 HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(1403)),
                 HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(1700000000)),
@@ -134,10 +139,11 @@ class HuaweiWireParserRegressionTest {
                 HuaweiFraming.Tlv(0x0c, byteArrayOf(0x50, 0xB4.toByte(), 0x8C.toByte())), // HR: min=80, max=180, peak=140
             )
         )
+        val outerTlv = HuaweiFraming.Tlv(0x81, tlvsInner)
         val frame = HuaweiFraming.Frame(
             serviceId = 0x17,
             commandId = 0x08,
-            tlvs = HuaweiFraming.decodeTlvs(tlvs),
+            tlvs = listOf(outerTlv),
         )
 
         val result = HuaweiWorkoutSync.parseTotals(frame)
@@ -153,7 +159,7 @@ class HuaweiWireParserRegressionTest {
     @Test
     fun workoutTotals_parsesSwimFields() {
         // Pool swim with swim-specific fields
-        val tlvs = HuaweiFraming.encodeTlvs(
+        val tlvsInner = HuaweiFraming.encodeTlvs(
             listOf(
                 HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(11)),
                 HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(1700000000)),
@@ -168,10 +174,11 @@ class HuaweiWireParserRegressionTest {
                 HuaweiFraming.Tlv(0x1a, HuaweiPacketCrypto.shortBe(45)), // avgSwolf
             )
         )
+        val outerTlv = HuaweiFraming.Tlv(0x81, tlvsInner)
         val frame = HuaweiFraming.Frame(
             serviceId = 0x17,
             commandId = 0x08,
-            tlvs = HuaweiFraming.decodeTlvs(tlvs),
+            tlvs = listOf(outerTlv),
         )
 
         val result = HuaweiWorkoutSync.parseTotals(frame)
@@ -191,7 +198,7 @@ class HuaweiWireParserRegressionTest {
     fun workoutDataPage_parsesIntervalAndSampleCount() {
         // Data page 0x17:0x0A with interval and sample count
         // Using short 0x04 (timestamp) and short 0x05 (interval)
-        val tlvs = HuaweiFraming.encodeTlvs(
+        val tlvsInner = HuaweiFraming.encodeTlvs(
             listOf(
                 HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(42)), // workout number
                 HuaweiFraming.Tlv(0x03, HuaweiPacketCrypto.shortBe(0)), // page index
@@ -201,10 +208,11 @@ class HuaweiWireParserRegressionTest {
                 HuaweiFraming.Tlv(0x08, byteArrayOf(0x01)), // bitmap
             )
         )
+        val outerTlv = HuaweiFraming.Tlv(0x81, tlvsInner)
         val frame = HuaweiFraming.Frame(
             serviceId = 0x17,
             commandId = 0x0A,
-            tlvs = HuaweiFraming.decodeTlvs(tlvs),
+            tlvs = listOf(outerTlv),
         )
 
         val result = HuaweiWorkoutSync.parseWorkoutDataPage(frame, dataIndex = 0)
@@ -220,7 +228,7 @@ class HuaweiWireParserRegressionTest {
     @Test
     fun workoutDataPage_strengthFiveSecondInterval() {
         // Strength workout page with 5-second interval
-        val tlvs = HuaweiFraming.encodeTlvs(
+        val tlvsInner = HuaweiFraming.encodeTlvs(
             listOf(
                 HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(34)),
                 HuaweiFraming.Tlv(0x03, HuaweiPacketCrypto.shortBe(0)),
@@ -230,10 +238,11 @@ class HuaweiWireParserRegressionTest {
                 HuaweiFraming.Tlv(0x08, byteArrayOf(0x01)),
             )
         )
+        val outerTlv = HuaweiFraming.Tlv(0x81, tlvsInner)
         val frame = HuaweiFraming.Frame(
             serviceId = 0x17,
             commandId = 0x0A,
-            tlvs = HuaweiFraming.decodeTlvs(tlvs),
+            tlvs = listOf(outerTlv),
         )
 
         val result = HuaweiWorkoutSync.parseWorkoutDataPage(frame, dataIndex = 0)
