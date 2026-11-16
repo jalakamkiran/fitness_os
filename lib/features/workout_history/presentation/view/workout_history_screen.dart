@@ -14,7 +14,8 @@ import 'package:fitness_os/features/workout_history/presentation/bloc/workout_hi
 import 'package:fitness_os/features/workout_history/domain/huawei_workout_types.dart'
     show isSportsWorkout, workoutTypeLabel, workoutTypeCategory;
 import 'package:fitness_os/features/workout_history/presentation/view/workout_detail_route.dart';
-import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart';
+import 'package:fitness_os/features/workout_history/presentation/view/workout_history_formatters.dart'
+    hide workoutTypeLabel;
 import 'package:fitness_os/features/workout_history/presentation/widgets/sport_tabs.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/sports_filter_chips.dart';
 import 'package:fitness_os/features/workout_history/presentation/widgets/workout_session_row.dart';
