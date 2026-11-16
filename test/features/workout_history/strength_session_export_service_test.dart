@@ -31,7 +31,9 @@ class _FakeRepo implements WorkoutHistoryRepository {
   Future<List<WorkoutSummary>> loadLocal() async => List.of(workouts);
 
   @override
-  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch() async =>
+  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch({
+    bool forceFullHistory = false,
+  }) async =>
       Right(workouts);
 
   @override
