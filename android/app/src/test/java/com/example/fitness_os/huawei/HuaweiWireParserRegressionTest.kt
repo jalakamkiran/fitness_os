@@ -132,6 +132,7 @@ class HuaweiWireParserRegressionTest {
     @Test
     fun workoutTotals_parsesBadmintonRacketSport() {
         // Racket sport (badminton type 129) with HR fields
+        // TLV 0x0c with 2 bytes → (hrMin, hrMax)
         val tlvsInner = HuaweiFraming.encodeTlvs(
             listOf(
                 HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(1403)),
@@ -139,7 +140,7 @@ class HuaweiWireParserRegressionTest {
                 HuaweiFraming.Tlv(0x05, HuaweiPacketCrypto.intBe(1700003600)),
                 HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.intBe(420)),
                 HuaweiFraming.Tlv(0x14, byteArrayOf(0x81.toByte())), // type: 129 (badminton)
-                HuaweiFraming.Tlv(0x0c, byteArrayOf(0x50, 0xB4.toByte(), 0x8C.toByte())), // HR: min=80, max=180, peak=140
+                HuaweiFraming.Tlv(0x0c, byteArrayOf(0x50, 0xB4.toByte())), // HR: min=80, max=180 (u8 pair)
             )
         )
         val outerTlv = HuaweiFraming.Tlv(0x81, tlvsInner)
@@ -156,7 +157,7 @@ class HuaweiWireParserRegressionTest {
         assertEquals(129, result.type) // badminton
         assertEquals(80, result.hrMin)
         assertEquals(180, result.hrMax)
-        assertEquals(140, result.hrPeak)
+        assertNull(result.hrPeak) // Not included in 2-byte format
     }
 
     @Test
@@ -200,15 +201,15 @@ class HuaweiWireParserRegressionTest {
     @Test
     fun workoutDataPage_parsesIntervalAndSampleCount() {
         // Data page 0x17:0x0A with interval and sample count
-        // Using short 0x04 (timestamp) and short 0x05 (interval)
         val tlvsInner = HuaweiFraming.encodeTlvs(
             listOf(
                 HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(42)), // workout number
                 HuaweiFraming.Tlv(0x03, HuaweiPacketCrypto.shortBe(0)), // page index
                 HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(1700000000)), // timestamp
-                HuaweiFraming.Tlv(0x05, byteArrayOf(0x05)), // intervalSec: 5 seconds
+                HuaweiFraming.Tlv(0x05, HuaweiPacketCrypto.shortBe(5)), // intervalSec: 5 seconds
                 HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(120)), // sampleCount
-                HuaweiFraming.Tlv(0x08, byteArrayOf(0x01)), // bitmap
+                HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.shortBe(600)), // dataLength
+                HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(0x01)), // bitmap
             )
         )
         val outerTlv = HuaweiFraming.Tlv(0x81, tlvsInner)
@@ -236,9 +237,10 @@ class HuaweiWireParserRegressionTest {
                 HuaweiFraming.Tlv(0x02, HuaweiPacketCrypto.shortBe(34)),
                 HuaweiFraming.Tlv(0x03, HuaweiPacketCrypto.shortBe(0)),
                 HuaweiFraming.Tlv(0x04, HuaweiPacketCrypto.intBe(1700000000)),
-                HuaweiFraming.Tlv(0x05, byteArrayOf(0x05)), // 5-second interval
+                HuaweiFraming.Tlv(0x05, HuaweiPacketCrypto.shortBe(5)), // 5-second interval
                 HuaweiFraming.Tlv(0x06, HuaweiPacketCrypto.shortBe(240)), // 240 samples = 20 min at 5s
-                HuaweiFraming.Tlv(0x08, byteArrayOf(0x01)),
+                HuaweiFraming.Tlv(0x07, HuaweiPacketCrypto.shortBe(1200)), // dataLength
+                HuaweiFraming.Tlv(0x08, HuaweiPacketCrypto.shortBe(0x01)),
             )
         )
         val outerTlv = HuaweiFraming.Tlv(0x81, tlvsInner)
