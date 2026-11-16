@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any */
 import {Request} from "express";
 
 jest.mock("firebase-admin", () => ({

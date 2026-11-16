@@ -23,15 +23,15 @@ function cleanupExpiredEntries(): void {
 setInterval(cleanupExpiredEntries, 5 * 60 * 1000);
 
 export function rateLimit(
-  req: Request,
-  res: Response,
-  next: NextFunction
+    req: Request,
+    res: Response,
+    next: NextFunction
 ): void {
   const identifier = req.ip || "unknown";
   const now = Date.now();
-  
+
   let entry = rateLimitCache.get(identifier);
-  
+
   if (!entry || entry.resetAt < now) {
     entry = {
       count: 1,
@@ -41,7 +41,7 @@ export function rateLimit(
     next();
     return;
   }
-  
+
   if (entry.count >= MAX_REQUESTS_PER_HOUR) {
     const resetInSeconds = Math.ceil((entry.resetAt - now) / 1000);
     res.status(429).json({
@@ -50,28 +50,28 @@ export function rateLimit(
     });
     return;
   }
-  
+
   entry.count++;
   next();
 }
 
 export async function persistentRateLimit(
-  req: Request,
-  res: Response,
-  next: NextFunction
+    req: Request,
+    res: Response,
+    next: NextFunction
 ): Promise<void> {
   const identifier = req.ip || "unknown";
   const now = Date.now();
   const hourKey = Math.floor(now / RATE_LIMIT_WINDOW_MS);
   const docId = `${identifier}_${hourKey}`;
-  
+
   try {
     const db = admin.firestore();
     const rateLimitRef = db.collection("_rateLimit").doc(docId);
-    
+
     await db.runTransaction(async (transaction) => {
       const doc = await transaction.get(rateLimitRef);
-      
+
       if (!doc.exists) {
         transaction.set(rateLimitRef, {
           count: 1,
@@ -79,18 +79,18 @@ export async function persistentRateLimit(
         });
         return;
       }
-      
+
       const data = doc.data()!;
       if (data.count >= MAX_REQUESTS_PER_HOUR) {
         const resetInSeconds = Math.ceil((data.resetAt - now) / 1000);
         throw new Error(`RATE_LIMIT:${resetInSeconds}`);
       }
-      
+
       transaction.update(rateLimitRef, {
         count: admin.firestore.FieldValue.increment(1),
       });
     });
-    
+
     next();
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("RATE_LIMIT:")) {
@@ -101,7 +101,7 @@ export async function persistentRateLimit(
       });
       return;
     }
-    
+
     console.error("Rate limit error:", error);
     next();
   }

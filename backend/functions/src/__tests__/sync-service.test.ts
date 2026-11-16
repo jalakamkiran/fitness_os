@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any */
 import {syncFromApp} from "../services/sync-service";
 
 jest.mock("firebase-admin", () => {
