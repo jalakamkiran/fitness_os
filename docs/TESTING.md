@@ -174,17 +174,23 @@ The CI pipeline runs automatically on:
 
 ### CI Triggers and [skip ci] Behavior
 
-**Important:** The `ci.yml` workflow uses `on: pull_request` triggers, which run on PR events (opened, synchronize, reopened) **regardless of commit messages**. Unlike `on: push` triggers, which skip when `[skip ci]` or `[ci skip]` is in the commit message, `pull_request` triggers **always run** on PR activity.
+**Important:** GitHub Actions skips **both** `push` and `pull_request` workflow runs when the head commit message contains `[skip ci]` or `[ci skip]`.
 
 This means:
-- ✅ **CI runs on every PR sync**, even if commits have `[skip ci]`
-- ✅ **CI runs when PR is opened or reopened**
-- ⚠️  **Push to main with `[skip ci]` skips CI** (only the `on: push` trigger is skipped)
+- ⚠️  **Commits with `[skip ci]` skip ALL CI runs** (both push to main and PR sync events)
+- ⚠️  **Agents must NOT use `[skip ci]` on PR branches** — it prevents CI from validating the PR
+- ✅ **App Distribution workflow (main-only) is separate** — CI runs don't consume its build quota
 
 **For agents/automation:**
-- **Do NOT use `[skip ci]` on PR branches** — it has no effect on PR CI runs, but may confuse readers
-- **Use `[skip ci]` sparingly on main** — only for docs-only commits where CI is truly unnecessary
+- **Never use `[skip ci]` on PR branches** — CI validation is required before merge
+- **Keep App Distribution separate** — it only runs on main, not affected by PR CI
+- **Use `[skip ci]` on main sparingly** — only for docs-only commits where CI is truly unnecessary (e.g., README typo fixes)
 - **Manual override:** Use `workflow_dispatch` to manually trigger CI if needed
+
+The CI workflow runs on:
+- Every PR event (opened, synchronize, reopened) — validates code before merge
+- Every push to main — ensures main stays green
+- Manual workflow_dispatch — for debugging or re-running failed checks
 
 ### Test Requirements for PRs
 
@@ -370,7 +376,7 @@ When making changes to this repository:
 1. **Always run tests locally** before pushing
 2. **Add tests for your changes** — CI will fail if coverage drops
 3. **Fix any analyze/lint warnings** introduced by your PR
-4. **Do not skip CI on PR branches** — `[skip ci]` has no effect on PR events
+4. **Never use `[skip ci]` on PR branches** — it prevents CI validation (GitHub skips all workflow runs)
 5. **Wait for green checkmarks** before marking PR ready for review
 6. **If CI fails, read the logs** — failure messages are detailed and actionable
 

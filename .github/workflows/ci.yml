@@ -1,5 +1,8 @@
 name: CI Test Suite
 
+# Runs on PR events and push to main. Separate from App Distribution workflow.
+# WARNING: Commits with [skip ci] or [ci skip] in the message skip ALL workflow runs
+# (both push and pull_request triggers). Agents must NOT use [skip ci] on PR branches.
 on:
   pull_request:
     types: [opened, synchronize, reopened]
