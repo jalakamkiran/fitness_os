@@ -171,7 +171,7 @@ void main() {
           expect(hasFiles, isFalse, reason: rel);
         }
       }
-    }, skip: true // TODO(CI): Pre-existing failure);
+    }, skip: true); // TODO(CI): Pre-existing failure
 
     test('planted residue under leftovers fails verify', () async {
       pairing.onForgetWipeExtras = () async {
@@ -195,7 +195,7 @@ void main() {
         (failure as ValidationFailure).message,
         contains('run session files residue'),
       );
-    }, skip: true // TODO(CI): Pre-existing failure);
+    }, skip: true); // TODO(CI): Pre-existing failure
 
     test('planted run-export cache residue fails verify', () async {
       pairing.onForgetWipeExtras = () async {
@@ -216,7 +216,7 @@ void main() {
         result.fold((l) => (l as ValidationFailure).message, (_) => ''),
         contains('run session export cache residue'),
       );
-    }, skip: true // TODO(CI): Pre-existing failure);
+    }, skip: true); // TODO(CI): Pre-existing failure
 
     test('Forget blocked while session exportInFlight', () async {
       runExport.inFlight = true;
@@ -226,6 +226,6 @@ void main() {
         result.fold((l) => (l as ValidationFailure).message, (_) => ''),
         contains('Sync in progress'),
       );
-    }, skip: true // TODO(CI): Pre-existing failure);
+    }, skip: true); // TODO(CI): Pre-existing failure
   });
 }
