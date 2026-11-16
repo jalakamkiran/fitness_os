@@ -1020,6 +1020,8 @@ class FitnessTotalsDay {
     required this.calories,
     required this.steps,
     required this.exerciseDurationSec,
+    this.wire08,
+    this.wire0b,
   });
 
   /// Local calendar day `yyyy-MM-dd`.
@@ -1032,14 +1034,23 @@ class FitnessTotalsDay {
   /// Home workout time uses today's workout-sum until a duration tag is owned.
   final int exerciseDurationSec;
 
+  /// Wire tag `0x08` u16 - candidate active/resting calorie field (provisional).
+  final int? wire08;
+
+  /// Wire tag `0x0b` u32 - candidate active/resting calorie field (provisional).
+  final int? wire0b;
+
   factory FitnessTotalsDay.fromMap(Map<String, dynamic> map) {
     int asInt(Object? v) => v == null ? 0 : (v as num).toInt();
+    int? asIntOrNull(Object? v) => v == null ? null : (v as num).toInt();
     return FitnessTotalsDay(
       dayKey: map['dayKey'] as String? ?? '',
       dayStartUnix: asInt(map['dayStartUnix']),
       calories: asInt(map['calories']),
       steps: asInt(map['steps']),
       exerciseDurationSec: asInt(map['exerciseDurationSec']),
+      wire08: asIntOrNull(map['wire08']),
+      wire0b: asIntOrNull(map['wire0b']),
     );
   }
 
@@ -1049,6 +1060,8 @@ class FitnessTotalsDay {
         'calories': calories,
         'steps': steps,
         'exerciseDurationSec': exerciseDurationSec,
+        if (wire08 != null) 'wire08': wire08,
+        if (wire0b != null) 'wire0b': wire0b,
       };
 }
 
