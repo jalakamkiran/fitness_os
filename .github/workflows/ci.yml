@@ -75,7 +75,7 @@ jobs:
 
       - name: Run Gradle unit tests
         working-directory: android
-        run: ./gradlew testDebugUnitTest --stacktrace
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
