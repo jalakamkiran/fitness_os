@@ -17,6 +17,9 @@ import java.util.TimeZone
  */
 class HuaweiWireParserRegressionTest {
 
+    private val fitnessSync = HuaweiFitnessDataSync(exchangeEncrypted = { _, _, _, _ -> null })
+    private val workoutSync = HuaweiWorkoutSync(exchangeEncrypted = { _, _, _, _ -> null })
+
     @Test
     fun fitnessTotals_parsesStepsAndCalories() {
         // FitnessTotals 0x07:0x03 response format per wire-spec
@@ -45,7 +48,7 @@ class HuaweiWireParserRegressionTest {
         )
 
         // Parse using real production function
-        val result = HuaweiFitnessDataSync.parseFitnessTotals(outerFrame, endUnix = 1700000000L, tz = TimeZone.getTimeZone("UTC"))
+        val result = fitnessSync.parseFitnessTotals(outerFrame, endUnix = 1700000000L, tz = TimeZone.getTimeZone("UTC"))
 
         // Should have 1 day of data (today)
         assertEquals(1, result.days.size)
@@ -86,7 +89,7 @@ class HuaweiWireParserRegressionTest {
             tlvs = listOf(outerTlv),
         )
 
-        val result = HuaweiFitnessDataSync.parseFitnessTotals(outerFrame, endUnix = 1700000000L, tz = TimeZone.getTimeZone("UTC"))
+        val result = fitnessSync.parseFitnessTotals(outerFrame, endUnix = 1700000000L, tz = TimeZone.getTimeZone("UTC"))
 
         assertEquals(2, result.days.size)
         // Days are returned in order encountered
@@ -114,7 +117,7 @@ class HuaweiWireParserRegressionTest {
             tlvs = listOf(outerTlv),
         )
 
-        val result = HuaweiWorkoutSync.parseTotals(frame)
+        val result = workoutSync.parseTotals(frame)
 
         assertNotNull(result)
         assertEquals(42, result!!.number)
@@ -146,7 +149,7 @@ class HuaweiWireParserRegressionTest {
             tlvs = listOf(outerTlv),
         )
 
-        val result = HuaweiWorkoutSync.parseTotals(frame)
+        val result = workoutSync.parseTotals(frame)
 
         assertNotNull(result)
         assertEquals(1403, result!!.number)
@@ -181,7 +184,7 @@ class HuaweiWireParserRegressionTest {
             tlvs = listOf(outerTlv),
         )
 
-        val result = HuaweiWorkoutSync.parseTotals(frame)
+        val result = workoutSync.parseTotals(frame)
 
         assertNotNull(result)
         assertEquals(11, result!!.number)
@@ -215,7 +218,7 @@ class HuaweiWireParserRegressionTest {
             tlvs = listOf(outerTlv),
         )
 
-        val result = HuaweiWorkoutSync.parseWorkoutDataPage(frame, dataIndex = 0)
+        val result = workoutSync.parseWorkoutDataPage(frame, dataIndex = 0)
 
         assertNotNull(result)
         assertEquals(0, result!!.index)
@@ -245,7 +248,7 @@ class HuaweiWireParserRegressionTest {
             tlvs = listOf(outerTlv),
         )
 
-        val result = HuaweiWorkoutSync.parseWorkoutDataPage(frame, dataIndex = 0)
+        val result = workoutSync.parseWorkoutDataPage(frame, dataIndex = 0)
 
         assertNotNull(result)
         assertEquals(5, result!!.intervalSec)
