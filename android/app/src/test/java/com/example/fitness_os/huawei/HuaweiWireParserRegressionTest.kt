@@ -1,8 +1,5 @@
 package com.example.fitness_os.huawei
 
-import com.example.fitness_os.huawei.HuaweiWorkoutSync.Companion.parseTotals
-import com.example.fitness_os.huawei.HuaweiWorkoutSync.Companion.parseWorkoutDataPage
-import com.example.fitness_os.huawei.HuaweiFitnessDataSync.Companion.parseFitnessTotals
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.TimeZone
@@ -39,13 +36,13 @@ class HuaweiWireParserRegressionTest {
             )
         )
         val frame = HuaweiFraming.Frame(
-            service = 0x07,
-            command = 0x03,
+            serviceId = 0x07,
+            commandId = 0x03,
             tlvs = HuaweiFraming.decodeTlvs(container),
         )
 
         // Parse using real production function
-        val result = parseFitnessTotals(frame, endUnix = 1700000000L, tz = TimeZone.getTimeZone("UTC"))
+        val result = HuaweiFitnessDataSync.parseFitnessTotals(frame, endUnix = 1700000000L, tz = TimeZone.getTimeZone("UTC"))
 
         // Should have 1 day of data (today)
         assertEquals(1, result.days.size)
@@ -80,12 +77,12 @@ class HuaweiWireParserRegressionTest {
             )
         )
         val frame = HuaweiFraming.Frame(
-            service = 0x07,
-            command = 0x03,
+            serviceId = 0x07,
+            commandId = 0x03,
             tlvs = HuaweiFraming.decodeTlvs(container),
         )
 
-        val result = parseFitnessTotals(frame, endUnix = 1700000000L, tz = TimeZone.getTimeZone("UTC"))
+        val result = HuaweiFitnessDataSync.parseFitnessTotals(frame, endUnix = 1700000000L, tz = TimeZone.getTimeZone("UTC"))
 
         assertEquals(2, result.days.size)
         // Days are returned in order encountered
@@ -107,12 +104,12 @@ class HuaweiWireParserRegressionTest {
             )
         )
         val frame = HuaweiFraming.Frame(
-            service = 0x17,
-            command = 0x08,
+            serviceId = 0x17,
+            commandId = 0x08,
             tlvs = HuaweiFraming.decodeTlvs(tlvs),
         )
 
-        val result = parseTotals(frame)
+        val result = HuaweiWorkoutSync.parseTotals(frame)
 
         assertNotNull(result)
         assertEquals(42, result!!.number)
@@ -138,12 +135,12 @@ class HuaweiWireParserRegressionTest {
             )
         )
         val frame = HuaweiFraming.Frame(
-            service = 0x17,
-            command = 0x08,
+            serviceId = 0x17,
+            commandId = 0x08,
             tlvs = HuaweiFraming.decodeTlvs(tlvs),
         )
 
-        val result = parseTotals(frame)
+        val result = HuaweiWorkoutSync.parseTotals(frame)
 
         assertNotNull(result)
         assertEquals(1403, result!!.number)
@@ -172,12 +169,12 @@ class HuaweiWireParserRegressionTest {
             )
         )
         val frame = HuaweiFraming.Frame(
-            service = 0x17,
-            command = 0x08,
+            serviceId = 0x17,
+            commandId = 0x08,
             tlvs = HuaweiFraming.decodeTlvs(tlvs),
         )
 
-        val result = parseTotals(frame)
+        val result = HuaweiWorkoutSync.parseTotals(frame)
 
         assertNotNull(result)
         assertEquals(11, result!!.number)
@@ -205,12 +202,12 @@ class HuaweiWireParserRegressionTest {
             )
         )
         val frame = HuaweiFraming.Frame(
-            service = 0x17,
-            command = 0x0A,
+            serviceId = 0x17,
+            commandId = 0x0A,
             tlvs = HuaweiFraming.decodeTlvs(tlvs),
         )
 
-        val result = parseWorkoutDataPage(frame, dataIndex = 0)
+        val result = HuaweiWorkoutSync.parseWorkoutDataPage(frame, dataIndex = 0)
 
         assertNotNull(result)
         assertEquals(0, result!!.index)
@@ -234,12 +231,12 @@ class HuaweiWireParserRegressionTest {
             )
         )
         val frame = HuaweiFraming.Frame(
-            service = 0x17,
-            command = 0x0A,
+            serviceId = 0x17,
+            commandId = 0x0A,
             tlvs = HuaweiFraming.decodeTlvs(tlvs),
         )
 
-        val result = parseWorkoutDataPage(frame, dataIndex = 0)
+        val result = HuaweiWorkoutSync.parseWorkoutDataPage(frame, dataIndex = 0)
 
         assertNotNull(result)
         assertEquals(5, result!!.intervalSec)
@@ -275,12 +272,12 @@ class HuaweiWireParserRegressionTest {
             )
         )
         val frame = HuaweiFraming.Frame(
-            service = 0x17,
-            command = 0x0A,
+            serviceId = 0x17,
+            commandId = 0x0A,
             tlvs = HuaweiFraming.decodeTlvs(tlvs),
         )
 
-        val result = parseWorkoutDataPage(frame, dataIndex = 0)
+        val result = HuaweiWorkoutSync.parseWorkoutDataPage(frame, dataIndex = 0)
 
         assertNotNull(result)
         // Parser should extract interval from 0x04 header byte 8
