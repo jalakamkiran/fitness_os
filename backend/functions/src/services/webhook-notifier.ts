@@ -35,20 +35,20 @@ export interface WebhookPayload {
 
 /**
  * Send a sync notification webhook.
- * 
+ *
  * Fire-and-forget with short timeout. Webhook failures never fail the sync.
  * If FATHOM_SYNC_WEBHOOK_URL is unset, skips silently.
- * 
+ *
  * @param webhookUrl URL to POST to (from Firebase secret)
  * @param webhookKey Bearer token for Authorization header (from Firebase secret)
  * @param syncPayload Original sync payload from app
  * @param userId User ID (typically "owner" for single-user app)
  */
 export async function sendSyncWebhook(
-  webhookUrl: string | undefined,
-  webhookKey: string | undefined,
-  syncPayload: AppSyncPayload,
-  userId: string = "owner"
+    webhookUrl: string | undefined,
+    webhookKey: string | undefined,
+    syncPayload: AppSyncPayload,
+    userId: string = "owner"
 ): Promise<void> {
   // Skip silently if webhook URL not configured
   if (!webhookUrl || webhookUrl.trim() === "") {
@@ -145,11 +145,11 @@ function buildSummary(payload: AppSyncPayload): WebhookPayload["summary"] {
 }
 
 function postWebhook(
-  webhookUrl: string,
-  webhookKey: string | undefined,
-  payload: WebhookPayload
+    webhookUrl: string,
+    webhookKey: string | undefined,
+    payload: WebhookPayload
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const url = new URL(webhookUrl);
     const protocol = url.protocol === "https:" ? https : http;
 

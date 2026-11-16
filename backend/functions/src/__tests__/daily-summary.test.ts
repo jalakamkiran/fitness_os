@@ -10,14 +10,14 @@ jest.mock("firebase-admin", () => {
     })),
     get: mockGet,
   }));
-  
+
   const mockCollection = jest.fn(() => ({
     doc: jest.fn(() => ({
       get: mockGet,
     })),
     where: mockWhere,
   }));
-  
+
   return {
     initializeApp: jest.fn(),
     auth: jest.fn(() => ({
@@ -40,7 +40,7 @@ describe("Daily Summary Service", () => {
       empty: true,
       docs: [],
     };
-    
+
     admin.firestore = jest.fn(() => ({
       collection: jest.fn(() => ({
         doc: jest.fn(() => ({
@@ -59,29 +59,29 @@ describe("Daily Summary Service", () => {
         })),
       })),
     }));
-    
+
     const summary = await computeDailySummary("2026-11-14");
-    
+
     expect(summary.date).toBe("2026-11-14");
     expect(summary.activeKcal).toBeNull();
     expect(summary.totalKcal).toBeNull();
     expect(summary.sleep).toBeNull();
     expect(summary.workouts).toEqual([]);
   });
-  
+
   it("should include workout data when present", async () => {
     const admin = require("firebase-admin");
-    
+
     const mockEmptyDoc = {
       exists: false,
       data: () => null,
     };
-    
+
     const mockEmptySnapshot = {
       empty: true,
       docs: [],
     };
-    
+
     const mockWorkoutsSnapshot = {
       empty: false,
       docs: [{
@@ -98,7 +98,7 @@ describe("Daily Summary Service", () => {
         }),
       }],
     };
-    
+
     admin.firestore = jest.fn(() => ({
       collection: jest.fn((name: string) => {
         if (name === "workouts") {
@@ -130,9 +130,9 @@ describe("Daily Summary Service", () => {
         };
       }),
     }));
-    
+
     const summary = await computeDailySummary("2026-11-14");
-    
+
     expect(summary.workouts).toHaveLength(1);
     expect(summary.workouts[0].type).toBe("running");
     expect(summary.workouts[0].activeKcal).toBe(500);

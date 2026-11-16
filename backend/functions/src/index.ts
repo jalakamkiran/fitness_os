@@ -28,34 +28,34 @@ app.use((req, res, next) => {
 app.get("/api/v1/daily-summary", authenticateRead, rateLimit, async (req, res) => {
   try {
     const {date, from, to} = req.query;
-    
+
     if (date && typeof date === "string") {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         res.status(400).json({error: "Invalid date format. Use YYYY-MM-DD"});
         return;
       }
-      
+
       const summary = await computeDailySummary(date);
       res.json(summary);
       return;
     }
-    
+
     if (from && to && typeof from === "string" && typeof to === "string") {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
         res.status(400).json({error: "Invalid date format. Use YYYY-MM-DD"});
         return;
       }
-      
+
       if (!validateDateRange(from, to)) {
         res.status(400).json({error: "Date range must be 31 days or less"});
         return;
       }
-      
+
       const summaries = await computeDailySummaries(from, to);
       res.json(summaries);
       return;
     }
-    
+
     res.status(400).json({error: "Provide either ?date=YYYY-MM-DD or ?from=YYYY-MM-DD&to=YYYY-MM-DD"});
   } catch (error) {
     console.error("Error fetching daily summary:", error);
@@ -66,31 +66,31 @@ app.get("/api/v1/daily-summary", authenticateRead, rateLimit, async (req, res) =
 app.get("/api/v1/workouts", authenticateRead, rateLimit, async (req, res) => {
   try {
     const {from, to} = req.query;
-    
+
     if (!from || !to || typeof from !== "string" || typeof to !== "string") {
       res.status(400).json({error: "Provide ?from=YYYY-MM-DD&to=YYYY-MM-DD"});
       return;
     }
-    
+
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
       res.status(400).json({error: "Invalid date format. Use YYYY-MM-DD"});
       return;
     }
-    
+
     if (!validateDateRange(from, to)) {
       res.status(400).json({error: "Date range must be 31 days or less"});
       return;
     }
-    
+
     const {startMs, endMs} = parseDateRange(from, to);
     const db = admin.firestore();
-    
+
     const snapshot = await db.collection("workouts")
-      .where("startTime", ">=", new Date(startMs).toISOString())
-      .where("startTime", "<=", new Date(endMs).toISOString())
-      .orderBy("startTime", "desc")
-      .get();
-    
+        .where("startTime", ">=", new Date(startMs).toISOString())
+        .where("startTime", "<=", new Date(endMs).toISOString())
+        .orderBy("startTime", "desc")
+        .get();
+
     const workouts = snapshot.docs.map((doc) => {
       const data = doc.data();
       return {
@@ -114,7 +114,7 @@ app.get("/api/v1/workouts", authenticateRead, rateLimit, async (req, res) => {
         recoveryTime: data.recoveryTime,
       };
     });
-    
+
     res.json(workouts);
   } catch (error) {
     console.error("Error fetching workouts:", error);
@@ -125,31 +125,31 @@ app.get("/api/v1/workouts", authenticateRead, rateLimit, async (req, res) => {
 app.get("/api/v1/weight", authenticateRead, rateLimit, async (req, res) => {
   try {
     const {from, to} = req.query;
-    
+
     if (!from || !to || typeof from !== "string" || typeof to !== "string") {
       res.status(400).json({error: "Provide ?from=YYYY-MM-DD&to=YYYY-MM-DD"});
       return;
     }
-    
+
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
       res.status(400).json({error: "Invalid date format. Use YYYY-MM-DD"});
       return;
     }
-    
+
     if (!validateDateRange(from, to)) {
       res.status(400).json({error: "Date range must be 31 days or less"});
       return;
     }
-    
+
     const {startMs, endMs} = parseDateRange(from, to);
     const db = admin.firestore();
-    
+
     const snapshot = await db.collection("weight")
-      .where("timestamp", ">=", new Date(startMs).toISOString())
-      .where("timestamp", "<=", new Date(endMs).toISOString())
-      .orderBy("timestamp", "desc")
-      .get();
-    
+        .where("timestamp", ">=", new Date(startMs).toISOString())
+        .where("timestamp", "<=", new Date(endMs).toISOString())
+        .orderBy("timestamp", "desc")
+        .get();
+
     const weights = snapshot.docs.map((doc) => {
       const data = doc.data();
       return {
@@ -157,7 +157,7 @@ app.get("/api/v1/weight", authenticateRead, rateLimit, async (req, res) => {
         weightKg: data.weightKg,
       };
     });
-    
+
     res.json(weights);
   } catch (error) {
     console.error("Error fetching weight:", error);
@@ -168,7 +168,7 @@ app.get("/api/v1/weight", authenticateRead, rateLimit, async (req, res) => {
 app.get("/api/v1/sync-status", authenticateRead, rateLimit, async (req, res) => {
   try {
     const db = admin.firestore();
-    
+
     const [workoutsSnap, sleepSnap, totalsSnap, hrSnap, hrvSnap, weightSnap, mealsSnap] =
       await Promise.all([
         db.collection("workouts").orderBy("syncedAt", "desc").limit(1).get(),
@@ -179,7 +179,7 @@ app.get("/api/v1/sync-status", authenticateRead, rateLimit, async (req, res) => 
         db.collection("weight").orderBy("syncedAt", "desc").limit(1).get(),
         db.collection("meals").orderBy("syncedAt", "desc").limit(1).get(),
       ]);
-    
+
     const status: SyncStatus = {
       workouts: !workoutsSnap.empty ? workoutsSnap.docs[0].data().syncedAt : null,
       sleep: !sleepSnap.empty ? sleepSnap.docs[0].data().syncedAt : null,
@@ -189,7 +189,7 @@ app.get("/api/v1/sync-status", authenticateRead, rateLimit, async (req, res) => 
       weight: !weightSnap.empty ? weightSnap.docs[0].data().syncedAt : null,
       meals: !mealsSnap.empty ? mealsSnap.docs[0].data().syncedAt : null,
     };
-    
+
     res.json(status);
   } catch (error) {
     console.error("Error fetching sync status:", error);
@@ -200,9 +200,9 @@ app.get("/api/v1/sync-status", authenticateRead, rateLimit, async (req, res) => 
 app.post("/api/v1/sync", authenticateWrite, async (req, res) => {
   try {
     const result = await syncFromApp(
-      req.body,
-      FATHOM_SYNC_WEBHOOK_URL.value(),
-      FATHOM_SYNC_WEBHOOK_KEY.value()
+        req.body,
+        FATHOM_SYNC_WEBHOOK_URL.value(),
+        FATHOM_SYNC_WEBHOOK_KEY.value()
     );
     res.json(result);
   } catch (error) {
@@ -218,29 +218,29 @@ app.post("/api/v1/meals", authenticateWrite, async (req, res) => {
     res.status(403).json({error: "Meal logging is disabled"});
     return;
   }
-  
+
   try {
     const {timestamp, items, grams, kcal, protein} = req.body;
-    
+
     if (!timestamp || !items || !grams || !kcal) {
       res.status(400).json({error: "Missing required fields: timestamp, items, grams, kcal"});
       return;
     }
-    
+
     if (!Array.isArray(items) || !Array.isArray(grams)) {
       res.status(400).json({error: "items and grams must be arrays"});
       return;
     }
-    
+
     if (items.length !== grams.length) {
       res.status(400).json({error: "items and grams arrays must have the same length"});
       return;
     }
-    
+
     const db = admin.firestore();
     const mealId = `meal_${Date.now()}`;
     const syncedAt = new Date().toISOString();
-    
+
     await db.collection("meals").doc(mealId).set({
       id: mealId,
       timestamp,
@@ -250,7 +250,7 @@ app.post("/api/v1/meals", authenticateWrite, async (req, res) => {
       protein: protein || null,
       syncedAt,
     });
-    
+
     res.json({id: mealId, synced: true});
   } catch (error) {
     console.error("Error logging meal:", error);
@@ -259,18 +259,18 @@ app.post("/api/v1/meals", authenticateWrite, async (req, res) => {
 });
 
 export const api = onRequest(
-  {
-    region: "asia-south1",
-    secrets: [
-      READ_ONLY_API_KEY,
-      DEVICE_WRITE_KEY,
-      FATHOM_SYNC_WEBHOOK_URL,
-      FATHOM_SYNC_WEBHOOK_KEY,
-    ],
-    memory: "256MiB",
-    minInstances: 0,
-    maxInstances: 2,
-    timeoutSeconds: 60,
-  },
-  app
+    {
+      region: "asia-south1",
+      secrets: [
+        READ_ONLY_API_KEY,
+        DEVICE_WRITE_KEY,
+        FATHOM_SYNC_WEBHOOK_URL,
+        FATHOM_SYNC_WEBHOOK_KEY,
+      ],
+      memory: "256MiB",
+      minInstances: 0,
+      maxInstances: 2,
+      timeoutSeconds: 60,
+    },
+    app
 );

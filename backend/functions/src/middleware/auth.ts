@@ -16,13 +16,13 @@ export function initializeKeys(readKey: string, writeKey: string): void {
 }
 
 export async function authenticateWrite(
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction
 ): Promise<void> {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader) {
       res.status(401).json({error: "Missing authorization header"});
       return;
@@ -31,14 +31,14 @@ export async function authenticateWrite(
     // Check device write key first (simple bearer token)
     if (authHeader.startsWith("Bearer ")) {
       const token = authHeader.substring(7);
-      
+
       if (deviceWriteKey && token === deviceWriteKey) {
         req.userId = "device";
         req.isWriteAccess = true;
         next();
         return;
       }
-      
+
       // Try Firebase Auth token
       try {
         const decodedToken = await admin.auth().verifyIdToken(token);
@@ -51,7 +51,7 @@ export async function authenticateWrite(
         return;
       }
     }
-    
+
     res.status(401).json({error: "Invalid authorization format"});
   } catch (error) {
     console.error("Authentication error:", error);
@@ -60,13 +60,13 @@ export async function authenticateWrite(
 }
 
 export async function authenticateRead(
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction
 ): Promise<void> {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader) {
       res.status(401).json({error: "Missing authorization header"});
       return;
@@ -74,17 +74,17 @@ export async function authenticateRead(
 
     if (authHeader.startsWith("Bearer ")) {
       const token = authHeader.substring(7);
-      
+
       if (readOnlyKey && token === readOnlyKey) {
         req.isReadOnly = true;
         next();
         return;
       }
-      
+
       res.status(403).json({error: "Invalid read-only API key"});
       return;
     }
-    
+
     res.status(401).json({error: "Invalid authorization format"});
   } catch (error) {
     console.error("Authentication error:", error);
