@@ -99,7 +99,7 @@ class HuaweiNotifyLiftTest {
     fun buildReplyAck_shape() {
         val ack = HuaweiNotifyLift.buildReplyAck(0)
         assertEquals(0x07, ack.tlvs.single().tag)
-        assertEquals(0x00, ack.tlvs.single().value[0])
+        assertEquals(0x00, ack.tlvs.single().value.first().toInt() and 0xFF)
     }
 
     @Test

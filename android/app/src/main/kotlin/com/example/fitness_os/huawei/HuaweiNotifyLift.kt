@@ -280,12 +280,18 @@ object HuaweiNotifyLift {
         while (end > 0 && (bytes[end - 1].toInt() and 0xC0) == 0x80) {
             end--
         }
-        val truncated = String(bytes, 0, end, Charsets.UTF_8)
-        return if (truncated.length < input.length && end >= 3) {
-            truncated.dropLast(1) + "…"
-        } else {
-            truncated
+        var truncated = String(bytes, 0, end, Charsets.UTF_8)
+        if (truncated.length < input.length) {
+            val ell = "…"
+            val ellBytes = ell.toByteArray(Charsets.UTF_8)
+            while (truncated.isNotEmpty() &&
+                truncated.toByteArray(Charsets.UTF_8).size + ellBytes.size > maxBytes
+            ) {
+                truncated = truncated.dropLast(1)
+            }
+            truncated += ell
         }
+        return truncated
     }
 
     private fun intFromValue(v: ByteArray): Int = when {
