@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any */
 import {computeDailySummary} from "../services/daily-summary";
 import * as admin from "firebase-admin";
 
