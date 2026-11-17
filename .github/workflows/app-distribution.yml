@@ -11,6 +11,11 @@ on:
         description: 'Custom release notes (optional)'
         required: false
         type: string
+      enable_lift_watch:
+        description: 'Enable Fathom Lift watch set-logging (FATHOM_LIFT_WATCH)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build-and-distribute:
@@ -96,6 +101,18 @@ jobs:
           # Set version for Sentry release tracking
           VERSION="0.1.0"
           BUILD_NUMBER="${{ github.run_number }}"
+
+          # Lift watch flag: workflow_dispatch input, or auto-on for the PR #30 branch
+          LIFT_WATCH="${{ github.event.inputs.enable_lift_watch }}"
+          if [ "$LIFT_WATCH" != "true" ]; then
+            if [ "${{ github.ref_name }}" = "cursor/watch-set-logging" ]; then
+              LIFT_WATCH=true
+            else
+              LIFT_WATCH=false
+            fi
+          fi
+          echo "FATHOM_LIFT_WATCH=$LIFT_WATCH"
+          echo "LIFT_WATCH=$LIFT_WATCH" >> "$GITHUB_ENV"
           
           # Build release without obfuscation for now (easier debugging)
           # Pass SENTRY_RAW_WORKOUT_DUMP to Android BuildConfig via Gradle property
@@ -105,11 +122,12 @@ jobs:
             --dart-define-from-file=.env \
             --dart-define=APP_VERSION="$VERSION" \
             --dart-define=APP_BUILD_NUMBER="$BUILD_NUMBER" \
+            --dart-define=FATHOM_LIFT_WATCH="$LIFT_WATCH" \
             --build-name="${VERSION}+${BUILD_NUMBER}" \
             --build-number="$BUILD_NUMBER" \
             -PSENTRY_RAW_WORKOUT_DUMP=true
           
-          echo "✅ Built release APK: com.example.fitness_os@${VERSION}+${BUILD_NUMBER}"
+          echo "✅ Built release APK: com.example.fitness_os@${VERSION}+${BUILD_NUMBER} (FATHOM_LIFT_WATCH=$LIFT_WATCH)"
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -136,6 +154,7 @@ jobs:
           - Sentry observability enabled
           - Raw workout payload dumps (SENTRY_RAW_WORKOUT_DUMP=true)
           - Badminton type 129 mapping + racket sport icons
+          - FATHOM_LIFT_WATCH=${LIFT_WATCH}
           
           Install via Firebase App Tester app."
           fi
@@ -176,4 +195,4 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "📱 **Install**: Open Firebase App Tester on Pixel → Accept invite" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🔍 **Features**: Badminton mapping, Sentry observability, raw dumps enabled" >> $GITHUB_STEP_SUMMARY
+          echo "🔍 **Features**: Badminton mapping, Sentry observability, raw dumps enabled, FATHOM_LIFT_WATCH=${LIFT_WATCH}" >> $GITHUB_STEP_SUMMARY
