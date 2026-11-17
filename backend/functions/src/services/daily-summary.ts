@@ -4,9 +4,9 @@ import {getISTDate, parseDateRange} from "./timezone";
 
 export async function computeDailySummary(date: string): Promise<DailySummary> {
   const db = admin.firestore();
-  
+
   const {startMs, endMs} = parseDateRange(date, date);
-  
+
   const [
     totalsDoc,
     hrDoc,
@@ -19,26 +19,26 @@ export async function computeDailySummary(date: string): Promise<DailySummary> {
     db.collection("heartRate").doc(date).get(),
     db.collection("hrv").doc(date).get(),
     db.collection("sleep")
-      .where("startTime", ">=", new Date(startMs).toISOString())
-      .where("startTime", "<=", new Date(endMs).toISOString())
-      .get(),
+        .where("startTime", ">=", new Date(startMs).toISOString())
+        .where("startTime", "<=", new Date(endMs).toISOString())
+        .get(),
     db.collection("workouts")
-      .where("startTime", ">=", new Date(startMs).toISOString())
-      .where("startTime", "<=", new Date(endMs).toISOString())
-      .orderBy("startTime", "desc")
-      .get(),
+        .where("startTime", ">=", new Date(startMs).toISOString())
+        .where("startTime", "<=", new Date(endMs).toISOString())
+        .orderBy("startTime", "desc")
+        .get(),
     db.collection("weight")
-      .where("timestamp", ">=", new Date(startMs).toISOString())
-      .where("timestamp", "<=", new Date(endMs).toISOString())
-      .orderBy("timestamp", "desc")
-      .limit(1)
-      .get(),
+        .where("timestamp", ">=", new Date(startMs).toISOString())
+        .where("timestamp", "<=", new Date(endMs).toISOString())
+        .orderBy("timestamp", "desc")
+        .limit(1)
+        .get(),
   ]);
-  
+
   const totals = totalsDoc.exists ? totalsDoc.data() : null;
   const hr = hrDoc.exists ? hrDoc.data() : null;
   const hrv = hrvDoc.exists ? hrvDoc.data() : null;
-  
+
   let sleep = null;
   if (!sleepDocs.empty) {
     const sleepData = sleepDocs.docs[0].data();
@@ -53,7 +53,7 @@ export async function computeDailySummary(date: string): Promise<DailySummary> {
       score: sleepData.sleepScore || null,
     };
   }
-  
+
   const workouts = workoutDocs.docs.map((doc) => {
     const data = doc.data();
     return {
@@ -67,9 +67,9 @@ export async function computeDailySummary(date: string): Promise<DailySummary> {
       maxHr: data.maxHr || null,
     };
   });
-  
+
   const weight = !weightDocs.empty ? weightDocs.docs[0].data()?.weightKg || null : null;
-  
+
   const lastSyncedTimes = [
     totals?.syncedAt,
     hr?.syncedAt,
@@ -78,11 +78,11 @@ export async function computeDailySummary(date: string): Promise<DailySummary> {
     ...workoutDocs.docs.map((d) => d.data().syncedAt),
     ...weightDocs.docs.map((d) => d.data().syncedAt),
   ].filter(Boolean);
-  
+
   const lastSyncedAt = lastSyncedTimes.length > 0 ?
     lastSyncedTimes.sort().reverse()[0] :
     null;
-  
+
   return {
     date,
     activeKcal: totals?.activeKcal || null,
@@ -100,13 +100,13 @@ export async function computeDailySummary(date: string): Promise<DailySummary> {
 }
 
 export async function computeDailySummaries(
-  fromDate: string,
-  toDate: string
+    fromDate: string,
+    toDate: string
 ): Promise<DailySummary[]> {
   const summaries: DailySummary[] = [];
   const start = new Date(fromDate + "T00:00:00+05:30");
   const end = new Date(toDate + "T00:00:00+05:30");
-  
+
   for (
     let current = start;
     current <= end;
@@ -116,6 +116,6 @@ export async function computeDailySummaries(
     const summary = await computeDailySummary(dateStr);
     summaries.push(summary);
   }
-  
+
   return summaries;
 }

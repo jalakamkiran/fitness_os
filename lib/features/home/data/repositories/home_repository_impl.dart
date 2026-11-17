@@ -176,7 +176,14 @@ class HomeRepositoryImpl implements HomeRepository {
     String? stepsLabel;
     String? workoutTimeLabel;
     if (everSynced && !chromeOnly) {
-      caloriesLabel = _formatInt(calories);
+      // Debug: show raw wire values to identify active/resting calorie fields
+      if (ft != null && (ft.wire08 != null || ft.wire0b != null)) {
+        caloriesLabel = '${_formatInt(calories)} '
+            '(FT:${ft.calories} w08:${ft.wire08 ?? 0} w0b:${ft.wire0b ?? 0} '
+            'W:$workoutCalories)';
+      } else {
+        caloriesLabel = _formatInt(calories);
+      }
       stepsLabel = _formatInt(steps);
       final mins = displayWorkoutSec ~/ 60;
       final sessionCount = todayWorkouts.length;
