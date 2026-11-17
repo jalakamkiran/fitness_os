@@ -135,3 +135,21 @@ bool isOutdoorLandWorkout(int type) => type == 1 || type == 2;
 bool isRacketSport(int type) {
   return workoutTypeCategory(type) == WorkoutCategory.racket;
 }
+
+/// Returns true if the workout belongs in the Sports tab.
+///
+/// Includes racket sports, ball sports, winter sports, combat sports, flexibility,
+/// outdoor activities, cycling, and other sports (excluding swim, run/walk, strength).
+bool isSportsWorkout(int type) {
+  final category = workoutTypeCategory(type);
+  if (category == null) return false;
+  
+  return category == WorkoutCategory.racket ||
+      category == WorkoutCategory.ballSports ||
+      category == WorkoutCategory.winter ||
+      category == WorkoutCategory.combat ||
+      category == WorkoutCategory.flexibility ||
+      category == WorkoutCategory.outdoor ||
+      category == WorkoutCategory.cycling ||
+      category == WorkoutCategory.other;
+}

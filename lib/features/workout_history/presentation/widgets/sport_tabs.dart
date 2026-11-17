@@ -1,9 +1,11 @@
 import 'package:blueprint_ui/blueprint_ui.dart';
 import 'package:flutter/material.dart';
 
-enum WorkoutSportTab { swim, run, strength }
+enum WorkoutSportTab { swim, run, gym, sports }
 
 /// Top sport switcher for the Workouts tab.
+///
+/// Tabs: Swim, Run/Walk, Gym (strength), Sports (racket, ball, other).
 class SportTabs extends StatelessWidget {
   const SportTabs({
     super.key,
@@ -46,9 +48,16 @@ class SportTabs extends StatelessWidget {
             ),
             Expanded(
               child: _Tab(
-                label: 'Strength',
-                selected: selected == WorkoutSportTab.strength,
-                onTap: () => onSelected(WorkoutSportTab.strength),
+                label: 'Gym',
+                selected: selected == WorkoutSportTab.gym,
+                onTap: () => onSelected(WorkoutSportTab.gym),
+              ),
+            ),
+            Expanded(
+              child: _Tab(
+                label: 'Sports',
+                selected: selected == WorkoutSportTab.sports,
+                onTap: () => onSelected(WorkoutSportTab.sports),
               ),
             ),
           ],
