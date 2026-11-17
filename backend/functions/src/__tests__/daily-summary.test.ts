@@ -1,8 +1,10 @@
 import {computeDailySummary} from "../services/daily-summary";
+import * as admin from "firebase-admin";
 
 jest.mock("firebase-admin", () => {
   const mockGet = jest.fn();
-  const mockWhere: any = jest.fn(() => ({
+  const mockWhere = jest.fn();
+  mockWhere.mockImplementation(() => ({
     where: mockWhere,
     orderBy: jest.fn(() => ({
       get: mockGet,
@@ -29,9 +31,10 @@ jest.mock("firebase-admin", () => {
   };
 });
 
+const mockFirestore = admin.firestore as unknown as jest.Mock;
+
 describe("Daily Summary Service", () => {
   it("should compute daily summary with null values for missing data", async () => {
-    const admin = require("firebase-admin");
     const mockEmptyDoc = {
       exists: false,
       data: () => null,
@@ -41,7 +44,7 @@ describe("Daily Summary Service", () => {
       docs: [],
     };
 
-    admin.firestore = jest.fn(() => ({
+    mockFirestore.mockImplementation(() => ({
       collection: jest.fn(() => ({
         doc: jest.fn(() => ({
           get: jest.fn().mockResolvedValue(mockEmptyDoc),
@@ -70,8 +73,6 @@ describe("Daily Summary Service", () => {
   });
 
   it("should include workout data when present", async () => {
-    const admin = require("firebase-admin");
-
     const mockEmptyDoc = {
       exists: false,
       data: () => null,
@@ -99,7 +100,7 @@ describe("Daily Summary Service", () => {
       }],
     };
 
-    admin.firestore = jest.fn(() => ({
+    mockFirestore.mockImplementation(() => ({
       collection: jest.fn((name: string) => {
         if (name === "workouts") {
           return {
@@ -139,8 +140,6 @@ describe("Daily Summary Service", () => {
   });
 
   it("queries workouts with IST day bounds so evening sessions match", async () => {
-    const admin = require("firebase-admin");
-
     const mockEmptyDoc = {
       exists: false,
       data: () => null,
@@ -168,7 +167,7 @@ describe("Daily Summary Service", () => {
 
     const workoutWhereCalls: Array<[string, string, string]> = [];
 
-    admin.firestore = jest.fn(() => ({
+    mockFirestore.mockImplementation(() => ({
       collection: jest.fn((name: string) => {
         if (name === "workouts") {
           const secondWhere = jest.fn((field: string, op: string, value: string) => {
