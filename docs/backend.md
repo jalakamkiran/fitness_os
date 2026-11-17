@@ -226,8 +226,10 @@ curl -H "Authorization: Bearer <READ_ONLY_API_KEY>" \
 ]
 ```
 
-**Workout types:** All lowercase strings:
-- `running`, `walking`, `cycling`, `swimming`, `strength`, `badminton`, `mma`, `hiking`, `yoga`, `other`
+**Workout types:** All lowercase strings. Unknown Huawei codes are `other`.
+Pool swim (type 6) and open water (type 8) both map to `swimming`.
+`mma` is a legacy backend code (Huawei 150) not in the app type table.
+- `badminton`, `basketball`, `boxing`, `climbing`, `cross_trainer`, `cycling`, `dance`, `elliptical`, `football`, `hiking`, `indoor_cycling`, `indoor_running`, `jump_rope`, `martial_arts`, `mma`, `other`, `pilates`, `rowing`, `running`, `skiing`, `snowboarding`, `squash`, `stepper`, `strength`, `swimming`, `table_tennis`, `tennis`, `volleyball`, `walking`, `yoga`
 
 **Swim extras:** `swimLaps`, `swimStrokes`, `swimAvgSwolf`, `swimPoolLength` are only present for swim workouts.
 

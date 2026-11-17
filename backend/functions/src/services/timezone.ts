@@ -50,6 +50,21 @@ export function parseDateRange(from: string, to: string): {startMs: number; endM
   };
 }
 
+/**
+ * Firestore stores synced timestamps as IST (+05:30) strings via unixToIST/msToIST.
+ * Query bounds must use the same representation so lexical comparisons match instants.
+ */
+export function istQueryBounds(
+    from: string,
+    to: string
+): {start: string; end: string} {
+  const {startMs, endMs} = parseDateRange(from, to);
+  return {
+    start: msToIST(startMs),
+    end: msToIST(endMs),
+  };
+}
+
 export function validateDateRange(from: string, to: string): boolean {
   const {startMs, endMs} = parseDateRange(from, to);
   const daysDiff = (endMs - startMs) / (1000 * 60 * 60 * 24);
