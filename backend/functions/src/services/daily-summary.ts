@@ -1,11 +1,11 @@
 import * as admin from "firebase-admin";
 import {DailySummary} from "../models/types";
-import {getISTDate, parseDateRange} from "./timezone";
+import {getISTDate, istQueryBounds} from "./timezone";
 
 export async function computeDailySummary(date: string): Promise<DailySummary> {
   const db = admin.firestore();
 
-  const {startMs, endMs} = parseDateRange(date, date);
+  const {start, end} = istQueryBounds(date, date);
 
   const [
     totalsDoc,
@@ -19,17 +19,17 @@ export async function computeDailySummary(date: string): Promise<DailySummary> {
     db.collection("heartRate").doc(date).get(),
     db.collection("hrv").doc(date).get(),
     db.collection("sleep")
-        .where("startTime", ">=", new Date(startMs).toISOString())
-        .where("startTime", "<=", new Date(endMs).toISOString())
+        .where("startTime", ">=", start)
+        .where("startTime", "<=", end)
         .get(),
     db.collection("workouts")
-        .where("startTime", ">=", new Date(startMs).toISOString())
-        .where("startTime", "<=", new Date(endMs).toISOString())
+        .where("startTime", ">=", start)
+        .where("startTime", "<=", end)
         .orderBy("startTime", "desc")
         .get(),
     db.collection("weight")
-        .where("timestamp", ">=", new Date(startMs).toISOString())
-        .where("timestamp", "<=", new Date(endMs).toISOString())
+        .where("timestamp", ">=", start)
+        .where("timestamp", "<=", end)
         .orderBy("timestamp", "desc")
         .limit(1)
         .get(),
