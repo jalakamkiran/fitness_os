@@ -123,9 +123,9 @@ object HuaweiNotifyLift {
         val safeBody = truncateUtf8(body, maxBody ?: 240)
 
         val texts = listOf(
-            Triple(TEXT_TITLE, safeTitle),
-            Triple(TEXT_SENDER, safeSender),
-            Triple(TEXT_BODY, safeBody),
+            Pair(TEXT_TITLE, safeTitle),
+            Pair(TEXT_SENDER, safeSender),
+            Pair(TEXT_BODY, safeBody),
         )
         val elements = texts.map { (textType, text) ->
             val inner = listOf(

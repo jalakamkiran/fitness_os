@@ -48,7 +48,8 @@ void main() {
     runner2.start();
     runner2.onNotified(0);
     runner2.onReply(key: 'lift:ps_test:1', text: 'Done', rxAtMs: 1000);
-    clock = 4000;
+    expect(runner2.state.phase, LiftRunnerPhase.resting);
+    clock = 62_000;
     runner2.tick();
     expect(runner2.state.currentIndex, 1);
     expect(runner2.state.phase, LiftRunnerPhase.notifying);

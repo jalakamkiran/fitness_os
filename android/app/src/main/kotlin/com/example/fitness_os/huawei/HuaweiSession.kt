@@ -220,7 +220,7 @@ class HuaweiSession(
     private val liftMsgIdCounter = AtomicInteger(0x4C00)
     private val liftP2pSeq = AtomicInteger(1)
     @Volatile
-    private var cachedNotifyConstraints: NotifyConstraints? = null
+    private var cachedNotifyConstraints: HuaweiNotifyLift.NotifyConstraints? = null
     @Volatile
     private var lastLiftNotification: HuaweiNotifyLift.LastSentNotification? = null
     private val pendingLiftSend = AtomicReference<HuaweiFraming.Frame?>(null)
@@ -2405,7 +2405,9 @@ class HuaweiSession(
             CONFIGURE_TIMEOUT_MS,
         )
         if (resp != null) {
-            val merged = commandsByService.toMutableMap()
+            val merged = commandsByService
+                .mapValues { (_, v) -> v.toMutableSet() }
+                .toMutableMap()
             mergeSupportedCommandsResponse(resp, merged)
             commandsByService = merged
             Log.i(
@@ -2435,19 +2437,13 @@ class HuaweiSession(
             CONFIGURE_TIMEOUT_MS,
         )
         val parsed = if (resp != null) {
-            val n = HuaweiNotifyLift.parseConstraints(resp)
-            NotifyConstraints(n.contentMaxLen, n.contentFormat)
+            HuaweiNotifyLift.parseConstraints(resp)
         } else {
-            NotifyConstraints(null, null)
+            HuaweiNotifyLift.NotifyConstraints(null, null)
         }
         cachedNotifyConstraints = parsed
         return parsed
     }
-
-    private data class NotifyConstraints(
-        val contentMaxLen: Int?,
-        val contentFormat: Int?,
-    )
 
     private fun liftSendEncrypted(frame: HuaweiFraming.Frame) {
         if (!liftEnabled) return

@@ -59,7 +59,7 @@ class LiftStore {
   }
 
   Future<void> upsertStrengthSet(StrengthSet set) async {
-    final all = await loadStrengthSets();
+    final all = List<StrengthSet>.from(await loadStrengthSets());
     final idx = all.indexWhere((s) => s.id == set.id);
     if (idx >= 0) {
       all[idx] = set;
@@ -85,7 +85,7 @@ class LiftStore {
   }
 
   Future<void> enqueueUpload(String id) async {
-    final ids = await loadPendingUploadIds();
+    final ids = List<String>.from(await loadPendingUploadIds());
     if (!ids.contains(id)) {
       ids.add(id);
       await _atomicWrite(
