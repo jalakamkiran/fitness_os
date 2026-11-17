@@ -11,6 +11,8 @@ import {SyncStatus} from "./models/types";
 
 const READ_ONLY_API_KEY = defineSecret("READ_ONLY_API_KEY");
 const DEVICE_WRITE_KEY = defineSecret("DEVICE_WRITE_KEY");
+const FATHOM_SYNC_WEBHOOK_URL = defineSecret("FATHOM_SYNC_WEBHOOK_URL");
+const FATHOM_SYNC_WEBHOOK_KEY = defineSecret("FATHOM_SYNC_WEBHOOK_KEY");
 
 admin.initializeApp();
 
@@ -197,7 +199,11 @@ app.get("/api/v1/sync-status", authenticateRead, rateLimit, async (req, res) => 
 
 app.post("/api/v1/sync", authenticateWrite, async (req, res) => {
   try {
-    const result = await syncFromApp(req.body);
+    const result = await syncFromApp(
+        req.body,
+        FATHOM_SYNC_WEBHOOK_URL.value(),
+        FATHOM_SYNC_WEBHOOK_KEY.value()
+    );
     res.json(result);
   } catch (error) {
     console.error("Error syncing data:", error);
@@ -255,7 +261,12 @@ app.post("/api/v1/meals", authenticateWrite, async (req, res) => {
 export const api = onRequest(
     {
       region: "asia-south1",
-      secrets: [READ_ONLY_API_KEY, DEVICE_WRITE_KEY],
+      secrets: [
+        READ_ONLY_API_KEY,
+        DEVICE_WRITE_KEY,
+        FATHOM_SYNC_WEBHOOK_URL,
+        FATHOM_SYNC_WEBHOOK_KEY,
+      ],
       memory: "256MiB",
       minInstances: 0,
       maxInstances: 2,
