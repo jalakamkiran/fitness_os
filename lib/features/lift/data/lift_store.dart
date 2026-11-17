@@ -12,7 +12,8 @@ class LiftStore {
   final Directory? Function()? _rootOverride;
 
   Future<Directory> _liftRoot() async {
-    if (_rootOverride != null) return _rootOverride!();
+    final override = _rootOverride?.call();
+    if (override != null) return override;
     final docs = await getApplicationDocumentsDirectory();
     final dir = Directory('${docs.path}/lift');
     if (!await dir.exists()) await dir.create(recursive: true);

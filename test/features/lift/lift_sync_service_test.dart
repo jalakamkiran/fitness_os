@@ -27,7 +27,7 @@ void main() {
       ),
     );
 
-    const set = StrengthSet(
+    final set = StrengthSet(
       id: 'ps_bench_1',
       sessionId: 'ps',
       exerciseId: 'bench',

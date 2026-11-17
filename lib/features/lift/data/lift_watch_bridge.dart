@@ -36,34 +36,37 @@ class LiftWatchBridge {
 
   bool get isConfigured => _configured;
 
-  Stream<LiftReplyEvent> get events => _events.map((e) {
-        final map = switch (e) {
-          UnknownEvent(:final raw) => raw,
-          _ => null,
-        };
-        if (map == null) return null;
-        final type = map['type'] as String?;
-        if (type != 'lift_reply' &&
-            type != 'lift_frame' &&
-            type != 'lift_quick_replies') {
-          return null;
-        }
-        if (type == 'lift_reply') {
-          return LiftReplyEvent(
-            key: map['key'] as String? ?? '',
-            text: map['text'] as String? ?? '',
-            replyType: map['replyType'] as int? ?? 0,
-            rxAtMs: map['rxAtMs'] as int? ?? 0,
-          );
-        }
-        return LiftReplyEvent(
+  Stream<LiftReplyEvent> get events async* {
+    await for (final e in _events) {
+      final map = switch (e) {
+        UnknownEvent(:final raw) => raw,
+        _ => null,
+      };
+      if (map == null) continue;
+      final type = map['type'] as String?;
+      if (type != 'lift_reply' &&
+          type != 'lift_frame' &&
+          type != 'lift_quick_replies') {
+        continue;
+      }
+      if (type == 'lift_reply') {
+        yield LiftReplyEvent(
+          key: map['key'] as String? ?? '',
+          text: map['text'] as String? ?? '',
+          replyType: map['replyType'] as int? ?? 0,
+          rxAtMs: map['rxAtMs'] as int? ?? 0,
+        );
+      } else {
+        yield LiftReplyEvent(
           kind: type ?? 'lift_frame',
           key: '',
           text: map['tlvSummary'] as String? ?? '',
           replyType: map['cmd'] as int? ?? 0,
           rxAtMs: map['rxAtMs'] as int? ?? 0,
         );
-      }).whereType<LiftReplyEvent>();
+      }
+    }
+  }
 
   Future<Map<String, dynamic>> capabilities() =>
       _channel.liftCapabilities(enabled: _configured);
