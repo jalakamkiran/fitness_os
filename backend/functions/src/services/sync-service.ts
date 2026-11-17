@@ -7,10 +7,12 @@ import {
   HrvRecord,
   WeightRecord,
   MealRecord,
+  WorkoutHrStreamRecord,
 } from "../models/types";
 import {unixToIST, msToIST} from "./timezone";
 import {mapWorkoutType} from "../models/workout-type-mapping";
 import {sendSyncWebhook} from "./webhook-notifier";
+import {MAX_STREAM_POINTS, recomputeSetHrForWorkout} from "./set-hr";
 
 export interface AppSyncPayload {
   workouts?: Array<{
@@ -75,6 +77,14 @@ export interface AppSyncPayload {
     grams: number[];
     kcal: number;
     protein?: number;
+  }>;
+  workoutHrStreams?: Array<{
+    id: string;
+    type: number;
+    startMs: number;
+    intervalSec: number;
+    bpm: number[];
+    clockSkewMs?: number | null;
   }>;
 }
 
@@ -254,7 +264,44 @@ export async function syncFromApp(
     }
   }
 
+  const hrStreamIds: string[] = [];
+
+  if (payload.workoutHrStreams) {
+    for (const stream of payload.workoutHrStreams) {
+      if (!stream.id || !Array.isArray(stream.bpm)) {
+        continue;
+      }
+      if (stream.bpm.length > MAX_STREAM_POINTS) {
+        console.warn(
+            `[Sync] Rejecting workoutHrStream ${stream.id}: too many points`
+        );
+        continue;
+      }
+      const docRef = db.collection("workoutHrStreams").doc(stream.id);
+
+      const record: WorkoutHrStreamRecord = {
+        id: stream.id,
+        type: stream.type,
+        startMs: stream.startMs,
+        intervalSec: stream.intervalSec,
+        bpm: stream.bpm,
+        clockSkewMs: stream.clockSkewMs ?? null,
+        syncedAt,
+      };
+
+      batch.set(docRef, record, {merge: true});
+      syncCount++;
+      hrStreamIds.push(stream.id);
+    }
+  }
+
   await batch.commit();
+
+  for (const wid of hrStreamIds) {
+    await recomputeSetHrForWorkout(wid).catch((err) => {
+      console.error(`[Sync] set-hr recompute failed for ${wid}:`, err);
+    });
+  }
 
   // Fire webhook notification (fire-and-forget, never fails the sync)
   sendSyncWebhook(webhookUrl, webhookKey, payload, "owner").catch((error) => {

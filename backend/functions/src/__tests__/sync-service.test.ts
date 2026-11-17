@@ -340,4 +340,71 @@ describe("Sync Service", () => {
     expect(result.synced).toBe(1);
     expect(mockCommit).toHaveBeenCalled();
   });
+
+  it("should sync workoutHrStreams when present", async () => {
+    const admin = require("firebase-admin");
+    const mockCommit = jest.fn().mockResolvedValue({});
+    const mockSet = jest.fn();
+    const mockBatch = {
+      set: mockSet,
+      commit: mockCommit,
+    };
+    const mockDoc = jest.fn(() => ({}));
+    const mockCollection = jest.fn((name: string) => ({
+      doc: mockDoc,
+      _name: name,
+    }));
+
+    admin.firestore = jest.fn(() => ({
+      collection: mockCollection,
+      batch: () => mockBatch,
+    }));
+
+    const bpm = new Array(100).fill(90);
+    const streamPayload = {
+      workoutHrStreams: [{
+        id: "workout_42",
+        type: 140,
+        startMs: 1700000000000,
+        intervalSec: 5,
+        bpm,
+        clockSkewMs: 0,
+      }],
+    };
+
+    const result = await syncFromApp(streamPayload);
+
+    expect(result.synced).toBe(1);
+    expect(mockCollection).toHaveBeenCalledWith("workoutHrStreams");
+    expect(mockSet).toHaveBeenCalled();
+    const written = mockSet.mock.calls[0][1];
+    expect(written.id).toBe("workout_42");
+    expect(written.bpm).toHaveLength(100);
+    expect(written.syncedAt).toBeDefined();
+  });
+
+  it("should remain backward compatible without workoutHrStreams", async () => {
+    const admin = require("firebase-admin");
+    const mockCommit = jest.fn().mockResolvedValue({});
+    const mockSet = jest.fn();
+    const mockBatch = {
+      set: mockSet,
+      commit: mockCommit,
+    };
+
+    const mockDoc = jest.fn(() => ({}));
+    const mockCollection = jest.fn(() => ({doc: mockDoc}));
+    admin.firestore = jest.fn(() => ({
+      collection: mockCollection,
+      batch: () => mockBatch,
+    }));
+
+    const result = await syncFromApp({dailyTotals: [{
+      dayKey: "2026-11-14",
+      steps: 100,
+    }]});
+
+    expect(result.synced).toBe(1);
+    expect(mockCommit).toHaveBeenCalled();
+  });
 });

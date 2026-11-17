@@ -124,4 +124,71 @@ export interface SyncStatus {
   hrv: string | null;
   weight: string | null;
   meals: string | null;
+  strengthSets: string | null;
+}
+
+export interface PlannedExercise {
+  exerciseId: string;
+  name: string;
+  sets: number;
+  targetKg: number;
+  targetReps: number;
+  restSec: number;
+}
+
+export interface PlannedSessionRecord {
+  id: string;
+  title: string;
+  plannedFor: string;
+  exercises: PlannedExercise[];
+  source: "arjun" | "manual" | "debug";
+  status: "planned" | "in_progress" | "done" | "skipped";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StrengthSetRecord {
+  id: string;
+  sessionId: string;
+  exerciseId: string;
+  exercise: string;
+  setIndex: number;
+  plannedKg: number;
+  plannedReps: number;
+  actualKg: number;
+  actualReps: number;
+  failed: boolean;
+  replyText: string | null;
+  unknownReply: boolean;
+  notifiedAtMs: number;
+  loggedAtMs: number;
+  loggedAt: string;
+  source: "watch_reply" | "watch_ack";
+  workoutId: string | null;
+  syncedAt: string;
+}
+
+export interface WorkoutHrStreamRecord {
+  id: string;
+  type: number;
+  startMs: number;
+  intervalSec: number;
+  bpm: number[];
+  clockSkewMs: number | null;
+  syncedAt: string;
+}
+
+export interface SetHrRecord {
+  setId: string;
+  windowStartMs: number;
+  windowEndMs: number;
+  avgHr: number | null;
+  maxHr: number | null;
+  hrAtEnd: number | null;
+  drop30: number | null;
+  drop60: number | null;
+  recoverySec: number | null;
+  baselineHr: number | null;
+  samples: number;
+  reason?: string | null;
 }
