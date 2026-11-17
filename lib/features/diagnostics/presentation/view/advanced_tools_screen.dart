@@ -7,7 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/diagnostics/data/app_data_export_envelope.dart';
+import 'package:fitness_os/core/feature_flags.dart';
 import 'package:fitness_os/features/diagnostics/data/app_data_export_service.dart';
+import 'package:fitness_os/features/lift/presentation/view/lift_debug_screen.dart';
+import 'package:fitness_os/features/lift/presentation/view/lift_home_screen.dart';
 
 /// Permanent dig-deeper host: swim pipeline toggle + App Data Export.
 ///
@@ -219,6 +222,29 @@ class _AdvancedToolsScreenState extends State<AdvancedToolsScreen> {
             ),
           ),
           const SizedBox(height: 8),
+          if (FeatureFlags.liftWatch) ...[
+            ListTile(
+              key: const Key('lift-beta-tile'),
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.fitness_center),
+              title: const Text('Lift (beta)'),
+              subtitle: const Text('Start a flagged strength session'),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const LiftHomeScreen()),
+              ),
+            ),
+            ListTile(
+              key: const Key('lift-watch-debug-tile'),
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.watch),
+              title: const Text('Lift watch debug'),
+              subtitle: const Text('Phase 0 GT5 notification / reply probe'),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const LiftDebugScreen()),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           ListTile(
             key: const Key('advanced-export-tile'),
             contentPadding: EdgeInsets.zero,

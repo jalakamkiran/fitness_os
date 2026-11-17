@@ -88,6 +88,81 @@ class HuaweiBtChannel {
 
   Future<void> clearSecrets() => _method.invokeMethod<void>('clearSecrets');
 
+  Future<void> liftConfigure({required bool enabled}) =>
+      _method.invokeMethod<void>('liftConfigure', {'enabled': enabled});
+
+  Future<Map<String, dynamic>> liftCapabilities({required bool enabled}) async {
+    final raw = await _method.invokeMethod<dynamic>('liftCapabilities', {
+      'enabled': enabled,
+    });
+    return Map<String, dynamic>.from(raw as Map? ?? {});
+  }
+
+  Future<Map<String, dynamic>> liftSendTestNotification({
+    required bool enabled,
+    required String title,
+    required String sender,
+    required String body,
+    required bool withReplyKey,
+    required int type,
+    required String key,
+    String? category,
+  }) async {
+    final raw = await _method.invokeMethod<dynamic>(
+      'liftSendTestNotification',
+      {
+        'enabled': enabled,
+        'title': title,
+        'sender': sender,
+        'body': body,
+        'withReplyKey': withReplyKey,
+        'type': type,
+        'key': key,
+        'category': category,
+      },
+    );
+    return Map<String, dynamic>.from(raw as Map? ?? {});
+  }
+
+  Future<Map<String, dynamic>> liftRemove({required bool enabled}) async {
+    final raw =
+        await _method.invokeMethod<dynamic>('liftRemove', {'enabled': enabled});
+    return Map<String, dynamic>.from(raw as Map? ?? {});
+  }
+
+  Future<Map<String, dynamic>> liftQueryQuickReplies({
+    required bool enabled,
+  }) async {
+    final raw = await _method.invokeMethod<dynamic>(
+      'liftQueryQuickReplies',
+      {'enabled': enabled},
+    );
+    return Map<String, dynamic>.from(raw as Map? ?? {});
+  }
+
+  Future<void> liftStartForeground({
+    required String title,
+    required String body,
+  }) =>
+      _method.invokeMethod<void>('liftStartForeground', {
+        'title': title,
+        'body': body,
+      });
+
+  Future<void> liftStopForeground() =>
+      _method.invokeMethod<void>('liftStopForeground');
+
+  Future<Map<String, dynamic>> liftSetQuickReplies({
+    required bool enabled,
+    required List<String> replies,
+  }) async {
+    final raw = await _method.invokeMethod<dynamic>(
+      'liftSetQuickReplies',
+      {'enabled': enabled, 'replies': replies},
+    );
+    return Map<String, dynamic>.from(raw as Map? ?? {});
+  }
+
   /// Gate B: native Count→Totals. Returns `{status, message?, workouts: [...]}`.
   ///
   /// [enrichStartUnix] gates Data/Pace/Swim (defaults to [startUnix] when omitted).
