@@ -34,7 +34,7 @@ const mockLimit = jest.fn().mockReturnThis();
 jest.mock("firebase-admin", () => ({
   firestore: jest.fn(() => ({
     collection: jest.fn(() => ({
-      doc: jest.fn((id: string) => ({
+      doc: jest.fn(() => ({
         set: mockSet,
         get: mockGet.mockResolvedValue({exists: false, data: () => null}),
       })),
