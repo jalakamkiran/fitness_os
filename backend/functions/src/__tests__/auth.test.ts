@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any */
 import {authenticateRead, authenticateWrite, initializeKeys} from "../middleware/auth";
 import {Request, Response, NextFunction} from "express";
 

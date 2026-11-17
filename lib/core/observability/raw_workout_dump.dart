@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:fitness_os/core/observability/sentry_config.dart';
 import 'package:fitness_os/core/observability/sentry_privacy_scrub.dart';
@@ -187,7 +188,7 @@ abstract final class RawWorkoutDump {
       for (var i = 0; i < chunks.length; i++) {
         final chunkMessage = SentryMessage('$message.chunk_${i + 1}_of_${chunks.length}');
         final attachment = SentryAttachment.fromUint8List(
-          chunks[i],
+          Uint8List.fromList(chunks[i]),
           'workout_dump_chunk_${i + 1}.json',
           contentType: 'application/json',
         );
