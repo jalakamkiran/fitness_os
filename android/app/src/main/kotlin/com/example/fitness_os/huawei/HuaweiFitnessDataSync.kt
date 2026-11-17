@@ -273,14 +273,20 @@ class HuaweiFitnessDataSync(
          * (watch 58m vs wire 5064) rejected exercise-minute semantics.
          */
         val exerciseDurationSec: Int,
+        /** Wire `0x08` u16 - candidate active/resting calorie field (provisional). */
+        val wire08: Int?,
+        /** Wire `0x0b` u32 - candidate active/resting calorie field (provisional). */
+        val wire0b: Int?,
     ) {
-        fun toMap(): Map<String, Any?> = mapOf(
-            "dayKey" to dayKey,
-            "dayStartUnix" to dayStartUnix,
-            "calories" to calories,
-            "steps" to steps,
-            "exerciseDurationSec" to exerciseDurationSec,
-        )
+        fun toMap(): Map<String, Any?> = buildMap {
+            put("dayKey", dayKey)
+            put("dayStartUnix", dayStartUnix)
+            put("calories", calories)
+            put("steps", steps)
+            put("exerciseDurationSec", exerciseDurationSec)
+            if (wire08 != null) put("wire08", wire08)
+            if (wire0b != null) put("wire0b", wire0b)
+        }
     }
 
     data class FitnessTotalsParse(
@@ -719,6 +725,24 @@ class HuaweiFitnessDataSync(
                 "activity-sync fitnessTotals parsedDays=${parsed.days.size} " +
                     "unknownTags=${parsed.unknownTags}",
             )
+            // Sentry debug breadcrumb: log today's calorie fields to match watch values
+            if (parsed.days.isNotEmpty()) {
+                val today = parsed.days.firstOrNull()
+                if (today != null) {
+                    io.sentry.Sentry.addBreadcrumb(
+                        io.sentry.Breadcrumb().apply {
+                            category = "fitness_totals"
+                            message = "FitnessTotals today: " +
+                                "tag0x06=${today.calories} " +
+                                "tag0x08=${today.wire08} " +
+                                "tag0x0b=${today.wire0b} " +
+                                "steps=${today.steps} " +
+                                "dayKey=${today.dayKey}"
+                            level = io.sentry.SentryLevel.INFO
+                        }
+                    )
+                }
+            }
             parsed.days.map { it.toMap() }
         } catch (t: Throwable) {
             Log.w(TAG, "activity-sync fitnessTotals parse failed: ${t.message}")
@@ -772,6 +796,8 @@ class HuaweiFitnessDataSync(
                     calories = leaves.calories,
                     steps = leaves.steps,
                     exerciseDurationSec = leaves.wire07,
+                    wire08 = leaves.wire08,
+                    wire0b = leaves.wire0b,
                 ),
             )
         }
@@ -790,6 +816,8 @@ class HuaweiFitnessDataSync(
         val steps: Int,
         val calories: Int,
         val wire07: Int,
+        val wire08: Int?,
+        val wire0b: Int?,
     )
 
     private fun parseFitnessTotalsSlotLeaves(value: ByteArray): FitnessTotalsSlotLeaves {
@@ -798,6 +826,8 @@ class HuaweiFitnessDataSync(
         var steps = 0
         var calories = 0
         var wire07 = 0
+        var wire08: Int? = null
+        var wire0b: Int? = null
         for (child in inner) {
             when (child.tag) {
                 0x04 -> if (child.value.isNotEmpty()) {
@@ -808,7 +838,8 @@ class HuaweiFitnessDataSync(
                 0x07 -> if (child.value.size >= 4) {
                     wire07 = u32(child.value).toInt().coerceAtLeast(0)
                 }
-                0x08, 0x0B -> Unit // present; meaning unknown
+                0x08 -> if (child.value.size >= 2) wire08 = u16(child.value)
+                0x0B -> if (child.value.size >= 4) wire0b = u32(child.value).toInt()
                 else -> Unit
             }
         }
@@ -817,6 +848,8 @@ class HuaweiFitnessDataSync(
             steps = steps.coerceAtLeast(0),
             calories = calories.coerceAtLeast(0),
             wire07 = wire07,
+            wire08 = wire08,
+            wire0b = wire0b,
         )
     }
 

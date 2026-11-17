@@ -231,11 +231,11 @@ abstract final class RawWorkoutDump {
     return result;
   }
 
-  static List<List<int>> _chunkBytes(List<int> bytes, int chunkSize) {
-    final chunks = <List<int>>[];
+  static List<Uint8List> _chunkBytes(List<int> bytes, int chunkSize) {
+    final chunks = <Uint8List>[];
     for (var i = 0; i < bytes.length; i += chunkSize) {
       final end = (i + chunkSize < bytes.length) ? i + chunkSize : bytes.length;
-      chunks.add(bytes.sublist(i, end));
+      chunks.add(Uint8List.fromList(bytes.sublist(i, end)));
     }
     return chunks;
   }

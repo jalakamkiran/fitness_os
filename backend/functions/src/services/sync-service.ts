@@ -10,6 +10,7 @@ import {
 } from "../models/types";
 import {unixToIST, msToIST} from "./timezone";
 import {mapWorkoutType} from "../models/workout-type-mapping";
+import {sendSyncWebhook} from "./webhook-notifier";
 
 export interface AppSyncPayload {
   workouts?: Array<{
@@ -77,7 +78,11 @@ export interface AppSyncPayload {
   }>;
 }
 
-export async function syncFromApp(payload: AppSyncPayload): Promise<{synced: number}> {
+export async function syncFromApp(
+    payload: AppSyncPayload,
+    webhookUrl?: string,
+    webhookKey?: string
+): Promise<{synced: number}> {
   const db = admin.firestore();
   const batch = db.batch();
   let syncCount = 0;
@@ -250,6 +255,11 @@ export async function syncFromApp(payload: AppSyncPayload): Promise<{synced: num
   }
 
   await batch.commit();
+
+  // Fire webhook notification (fire-and-forget, never fails the sync)
+  sendSyncWebhook(webhookUrl, webhookKey, payload, "owner").catch((error) => {
+    console.error("[Sync] Webhook notification failed:", error);
+  });
 
   return {synced: syncCount};
 }

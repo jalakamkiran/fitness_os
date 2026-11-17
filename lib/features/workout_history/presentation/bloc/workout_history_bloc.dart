@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:fitness_os/core/storage/store_invalidation.dart';
 import 'package:fitness_os/core/utils/either.dart';
+import 'package:fitness_os/features/workout_history/domain/huawei_workout_types.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_event.dart';
 import 'package:fitness_os/features/workout_history/presentation/bloc/workout_history_state.dart';
@@ -81,6 +83,9 @@ class WorkoutHistoryBloc
           ),
         );
       case Right(:final value):
+        // Add Sentry breadcrumb for sync results
+        _addSyncBreadcrumb(value, event.forceFullHistory);
+        
         final prefix = event.forceFullHistory ? 'Full-history sync: ' : '';
         emit(
           state.copyWith(
@@ -93,6 +98,41 @@ class WorkoutHistoryBloc
                     'Synced ${value.length} workout(s)',
           ),
         );
+    }
+  }
+
+  void _addSyncBreadcrumb(
+    List<dynamic> workouts,
+    bool forceFullHistory,
+  ) {
+    try {
+      final typeCounts = <int, int>{};
+      for (final workout in workouts) {
+        if (workout is Map && workout.containsKey('type')) {
+          final type = workout['type'] as int;
+          typeCounts[type] = (typeCounts[type] ?? 0) + 1;
+        }
+      }
+
+      final typeSummary = typeCounts.entries
+          .map((e) => '${workoutTypeLabel(e.key)}: ${e.value}')
+          .join(', ');
+
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          message: 'Workout sync completed',
+          category: 'workout.sync',
+          level: SentryLevel.info,
+          data: {
+            'count': workouts.length,
+            'forceFullHistory': forceFullHistory,
+            'types': typeSummary,
+            'isEmpty': workouts.isEmpty,
+          },
+        ),
+      );
+    } catch (e) {
+      // Never crash on observability
     }
   }
 
