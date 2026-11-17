@@ -6,7 +6,7 @@ import {authenticateRead, authenticateWrite, initializeKeys} from "./middleware/
 import {rateLimit} from "./middleware/rate-limit";
 import {computeDailySummary, computeDailySummaries} from "./services/daily-summary";
 import {syncFromApp} from "./services/sync-service";
-import {validateDateRange, parseDateRange} from "./services/timezone";
+import {validateDateRange, istQueryBounds} from "./services/timezone";
 import {SyncStatus} from "./models/types";
 
 const READ_ONLY_API_KEY = defineSecret("READ_ONLY_API_KEY");
@@ -82,12 +82,12 @@ app.get("/api/v1/workouts", authenticateRead, rateLimit, async (req, res) => {
       return;
     }
 
-    const {startMs, endMs} = parseDateRange(from, to);
+    const {start, end} = istQueryBounds(from, to);
     const db = admin.firestore();
 
     const snapshot = await db.collection("workouts")
-        .where("startTime", ">=", new Date(startMs).toISOString())
-        .where("startTime", "<=", new Date(endMs).toISOString())
+        .where("startTime", ">=", start)
+        .where("startTime", "<=", end)
         .orderBy("startTime", "desc")
         .get();
 
@@ -141,12 +141,12 @@ app.get("/api/v1/weight", authenticateRead, rateLimit, async (req, res) => {
       return;
     }
 
-    const {startMs, endMs} = parseDateRange(from, to);
+    const {start, end} = istQueryBounds(from, to);
     const db = admin.firestore();
 
     const snapshot = await db.collection("weight")
-        .where("timestamp", ">=", new Date(startMs).toISOString())
-        .where("timestamp", "<=", new Date(endMs).toISOString())
+        .where("timestamp", ">=", start)
+        .where("timestamp", "<=", end)
         .orderBy("timestamp", "desc")
         .get();
 

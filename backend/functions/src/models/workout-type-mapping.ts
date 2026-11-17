@@ -1,26 +1,58 @@
 /**
  * Huawei workout type to lowercase string mapping
- * Consumed by adapter; can be updated as new types are added
+ * Aligned with lib/features/workout_history/domain/huawei_workout_types.dart
  */
 
 export const WORKOUT_TYPE_MAP: Record<number, string> = {
-  1: "running",
-  2: "walking",
+  // Cardio / Running
+  1: "walking",
+  2: "running",
+  5: "indoor_running",
+  9: "elliptical",
+  10: "rowing",
+  13: "cross_trainer",
+  147: "stepper",
+
+  // Cycling
   3: "cycling",
-  4: "swimming",
-  5: "hiking",
-  6: "indoor_running",
   7: "indoor_cycling",
-  8: "elliptical",
-  9: "rowing",
-  10: "strength",
-  11: "yoga",
-  12: "indoor_walking",
-  // Badminton type 129 handled by concurrent PR - consume whatever exists
+
+  // Swimming
+  6: "swimming",
+  8: "swimming",
+
+  // Climbing / Mountain
+  4: "climbing",
+  11: "hiking",
+
+  // Racket sports
   129: "badminton",
-  // MMA and other types
+  130: "table_tennis",
+  131: "tennis",
+  133: "squash",
+
+  // Ball sports
+  134: "basketball",
+  135: "football",
+  137: "volleyball",
+
+  // Winter sports
+  138: "skiing",
+  139: "snowboarding",
+
+  // Strength & Combat
+  140: "strength",
+  141: "yoga",
+  142: "pilates",
+  143: "boxing",
+  144: "martial_arts",
+
+  // Other
+  145: "dance",
+  146: "jump_rope",
+
+  // Legacy / unverified in Dart table
   150: "mma",
-  // Add more mappings as discovered
 };
 
 export function mapWorkoutType(type: number): string {
