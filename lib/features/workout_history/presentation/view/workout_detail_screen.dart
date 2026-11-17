@@ -469,7 +469,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                           '${workout.type} (${workoutTypeLabel(workout.type)})',
                         ),
                         if (workout.calories != null)
-                          _Row('Calories', '${workout.calories} kcal'),
+                          _Row('Calories (wire tag 0x06)', '${workout.calories} kcal'),
                         if (workout.distanceM != null)
                           _Row('Distance', '${workout.distanceM} m'),
                       ],
@@ -523,7 +523,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                         '${workout.type} (${workoutTypeLabel(workout.type)})',
                       ),
                       if (workout.calories != null)
-                        _Row('Calories', '${workout.calories} kcal'),
+                        _Row('Calories (wire tag 0x06)', '${workout.calories} kcal'),
                       if (workout.distanceM != null)
                         _Row('Distance', '${workout.distanceM} m'),
                       if (workout.steps != null)
