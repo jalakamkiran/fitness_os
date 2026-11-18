@@ -14,12 +14,12 @@ class LiftSessionController extends ChangeNotifier {
     required LiftStore store,
     required LiftWatchBridge bridge,
     required LiftSyncService sync,
-    HuaweiBtChannel? channel,
+    required HuaweiBtChannel channel,
     LiftCaptureMode captureMode = LiftCaptureMode.reply,
   })  : _store = store,
         _bridge = bridge,
         _sync = sync,
-        _channel = channel ?? HuaweiBtChannel(),
+        _channel = channel,
         _captureMode = captureMode;
 
   final LiftStore _store;

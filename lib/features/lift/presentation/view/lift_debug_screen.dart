@@ -172,7 +172,7 @@ class _LiftDebugScreenState extends State<LiftDebugScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_liftFlagOn) {
+    if (!LiftDebugScreen._liftFlagOn) {
       return const Scaffold(
         body: Center(child: Text('Lift watch flag is off')),
       );

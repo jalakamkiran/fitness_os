@@ -26,6 +26,7 @@ void initLiftDependencies(GetIt sl) {
         store: sl<LiftStore>(),
         bridge: sl<LiftWatchBridge>(),
         sync: sl<LiftSyncService>(),
+        channel: sl<HuaweiBtChannel>(),
       ),
     );
   }
