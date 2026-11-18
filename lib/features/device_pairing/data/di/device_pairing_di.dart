@@ -1,6 +1,7 @@
 import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:fitness_os/core/feature_flags.dart';
 import 'package:fitness_os/core/huawei/huawei_bt_channel.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/device_pairing/data/repositories/device_pairing_repository_impl.dart';
@@ -15,6 +16,9 @@ Future<void> initDevicePairingDependencies(GetIt sl) async {
 
   if (!sl.isRegistered<HuaweiBtChannel>()) {
     sl.registerLazySingleton<HuaweiBtChannel>(() => HuaweiBtChannel());
+  }
+  if (FeatureFlags.liftWatch) {
+    await sl<HuaweiBtChannel>().liftSetBuildFlag(enabled: true);
   }
   sl.registerLazySingleton<HuaweiLink>(
     () => HuaweiLink(channel: sl<HuaweiBtChannel>()),

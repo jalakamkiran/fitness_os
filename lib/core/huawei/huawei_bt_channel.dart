@@ -91,6 +91,15 @@ class HuaweiBtChannel {
   Future<void> liftConfigure({required bool enabled}) =>
       _method.invokeMethod<void>('liftConfigure', {'enabled': enabled});
 
+  Future<void> liftSetBuildFlag({required bool enabled}) =>
+      _method.invokeMethod<void>('liftSetBuildFlag', {'enabled': enabled});
+
+  Future<Map<String, dynamic>> liftEnableWatchNotifications() async {
+    final raw =
+        await _method.invokeMethod<dynamic>('liftEnableWatchNotifications');
+    return Map<String, dynamic>.from(raw as Map? ?? {});
+  }
+
   Future<Map<String, dynamic>> liftCapabilities({required bool enabled}) async {
     final raw = await _method.invokeMethod<dynamic>('liftCapabilities', {
       'enabled': enabled,
@@ -107,6 +116,7 @@ class HuaweiBtChannel {
     required int type,
     required String key,
     String? category,
+    String? sourceAppId,
   }) async {
     final raw = await _method.invokeMethod<dynamic>(
       'liftSendTestNotification',
@@ -119,6 +129,27 @@ class HuaweiBtChannel {
         'type': type,
         'key': key,
         'category': category,
+        'sourceAppId': sourceAppId,
+      },
+    );
+    return Map<String, dynamic>.from(raw as Map? ?? {});
+  }
+
+  Future<Map<String, dynamic>> liftSendPlainTestNotification({
+    required bool enabled,
+    required String title,
+    required String body,
+    required int type,
+    String? sourceAppId,
+  }) async {
+    final raw = await _method.invokeMethod<dynamic>(
+      'liftSendPlainTestNotification',
+      {
+        'enabled': enabled,
+        'title': title,
+        'body': body,
+        'type': type,
+        'sourceAppId': sourceAppId,
       },
     );
     return Map<String, dynamic>.from(raw as Map? ?? {});

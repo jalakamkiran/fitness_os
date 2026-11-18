@@ -31,8 +31,11 @@ class _LiftDebugScreenState extends State<LiftDebugScreen> {
   final _title = TextEditingController(text: 'Set 1/4 · Bench press');
   final _body = TextEditingController(text: '60 kg × 8 · rest 120s');
   int _notifyType = 0x7F;
+  int _plainType = 0x7F;
   bool _replyKey = true;
   String? _category;
+  String _sourceAppId = 'com.example.fitness_os';
+  String _plainSourceAppId = 'com.example.fitness_os';
   int? _lastSentAtMs;
 
   LiftWatchBridge? _bridge;
@@ -162,11 +165,57 @@ class _LiftDebugScreenState extends State<LiftDebugScreen> {
         type: _notifyType,
         withReplyKey: _replyKey,
         category: _category,
+        sourceAppId: _sourceAppId,
       );
       _lastSentAtMs = result['sentAtMs'] as int?;
       _appendLog('Sent test set msgId=${result['msgId']} error=${result['error']}');
     } catch (e) {
       _appendLog('Send test set failed: $e');
+    }
+  }
+
+  Future<void> _enableWatchNotifications() async {
+    final bridge = _bridge;
+    if (bridge == null) return;
+    try {
+      await bridge.configure(enabled: true);
+      final result = await bridge.enableWatchNotifications();
+      final steps = (result['steps'] as List?)?.cast<Map>() ?? const [];
+      _appendLog('Enable watch notifications (${steps.length} steps):');
+      for (final step in steps) {
+        _appendLog(
+          '  ${step['step']}: ok=${step['ok']} code=${step['resultCode']} '
+          '${step['resultLabel'] ?? ''}',
+        );
+        final req = step['requestHex'];
+        final resp = step['responseHex'];
+        if (req != null) _appendLog('    req $req');
+        if (resp != null) _appendLog('    resp $resp');
+      }
+      final cmds = result['svc02Commands'];
+      if (cmds != null) _appendLog('svc02Commands after enable: $cmds');
+    } catch (e) {
+      _appendLog('Enable watch notifications failed: $e');
+    }
+  }
+
+  Future<void> _sendPlainTest() async {
+    final bridge = _bridge;
+    if (bridge == null) return;
+    try {
+      final result = await bridge.sendPlainTestNotification(
+        title: _title.text,
+        body: _body.text,
+        type: _plainType,
+        sourceAppId: _plainSourceAppId,
+      );
+      _lastSentAtMs = result['sentAtMs'] as int?;
+      _appendLog(
+        'Plain test type=0x${_plainType.toRadixString(16)} pkg=$_plainSourceAppId '
+        'msgId=${result['msgId']} req=${result['requestHex']}',
+      );
+    } catch (e) {
+      _appendLog('Plain test failed: $e');
     }
   }
 
@@ -237,8 +286,16 @@ class _LiftDebugScreenState extends State<LiftDebugScreen> {
                 child: const Text('Set Fathom quick replies'),
               ),
               FilledButton(
+                onPressed: _bridge == null ? null : _enableWatchNotifications,
+                child: const Text('Enable watch notifications'),
+              ),
+              FilledButton(
                 onPressed: _bridge == null ? null : _sendTest,
                 child: const Text('Send test set'),
+              ),
+              FilledButton(
+                onPressed: _bridge == null ? null : _sendPlainTest,
+                child: const Text('Send plain test'),
               ),
               OutlinedButton(
                 onPressed: _bridge == null
@@ -263,6 +320,21 @@ class _LiftDebugScreenState extends State<LiftDebugScreen> {
             controller: _body,
             decoration: const InputDecoration(labelText: 'Body'),
           ),
+          DropdownButton<String>(
+            value: _sourceAppId,
+            isExpanded: true,
+            items: const [
+              DropdownMenuItem(
+                value: 'com.example.fitness_os',
+                child: Text('Source pkg: Fathom (com.example.fitness_os)'),
+              ),
+              DropdownMenuItem(
+                value: 'com.google.android.apps.messaging',
+                child: Text('Source pkg: Android Messages'),
+              ),
+            ],
+            onChanged: (v) => setState(() => _sourceAppId = v ?? _sourceAppId),
+          ),
           DropdownButton<int>(
             value: _notifyType,
             isExpanded: true,
@@ -276,6 +348,32 @@ class _LiftDebugScreenState extends State<LiftDebugScreen> {
             title: const Text('Reply key'),
             value: _replyKey,
             onChanged: (v) => setState(() => _replyKey = v),
+          ),
+          Text('Plain test (no reply TLVs)', style: Theme.of(context).textTheme.titleSmall),
+          DropdownButton<String>(
+            value: _plainSourceAppId,
+            isExpanded: true,
+            items: const [
+              DropdownMenuItem(
+                value: 'com.example.fitness_os',
+                child: Text('Plain pkg: Fathom'),
+              ),
+              DropdownMenuItem(
+                value: 'com.google.android.apps.messaging',
+                child: Text('Plain pkg: Android Messages (0x02 SMS)'),
+              ),
+            ],
+            onChanged: (v) => setState(() => _plainSourceAppId = v ?? _plainSourceAppId),
+          ),
+          DropdownButton<int>(
+            value: _plainType,
+            isExpanded: true,
+            items: const [
+              DropdownMenuItem(value: 0x01, child: Text('Plain type 0x01 generic')),
+              DropdownMenuItem(value: 0x7F, child: Text('Plain type 0x7F generic')),
+              DropdownMenuItem(value: 0x02, child: Text('Plain type 0x02 SMS')),
+            ],
+            onChanged: (v) => setState(() => _plainType = v ?? _plainType),
           ),
           DropdownButton<String?>(
             value: _category,

@@ -46,7 +46,9 @@ class LiftWatchBridge {
       final type = map['type'] as String?;
       if (type != 'lift_reply' &&
           type != 'lift_frame' &&
-          type != 'lift_quick_replies') {
+          type != 'lift_quick_replies' &&
+          type != 'lift_enable_step' &&
+          type != 'lift_notify_error') {
         continue;
       }
       if (type == 'lift_reply') {
@@ -57,11 +59,20 @@ class LiftWatchBridge {
           rxAtMs: map['rxAtMs'] as int? ?? 0,
         );
       } else {
+        final text = switch (type) {
+          'lift_notify_error' =>
+            'error ${map['resultLabel']} code=${map['resultCode']} '
+                'step=${map['step']}',
+          'lift_enable_step' =>
+            '${map['step']}: ${map['resultLabel'] ?? 'ok'} '
+                'req=${map['requestHex']}',
+          _ => map['tlvSummary'] as String? ?? map['responseHex'] as String? ?? '',
+        };
         yield LiftReplyEvent(
           kind: type ?? 'lift_frame',
-          key: '',
-          text: map['tlvSummary'] as String? ?? '',
-          replyType: map['cmd'] as int? ?? 0,
+          key: map['step'] as String? ?? '',
+          text: text,
+          replyType: map['cmd'] as int? ?? map['resultCode'] as int? ?? 0,
           rxAtMs: map['rxAtMs'] as int? ?? 0,
         );
       }
@@ -79,6 +90,7 @@ class LiftWatchBridge {
     int type = 0x7F,
     bool withReplyKey = true,
     String? category,
+    String? sourceAppId,
   }) async {
     final key = set.notificationKey(sessionId);
     return _channel.liftSendTestNotification(
@@ -90,8 +102,26 @@ class LiftWatchBridge {
       type: type,
       key: key,
       category: category,
+      sourceAppId: sourceAppId,
     );
   }
+
+  Future<Map<String, dynamic>> enableWatchNotifications() =>
+      _channel.liftEnableWatchNotifications();
+
+  Future<Map<String, dynamic>> sendPlainTestNotification({
+    required String title,
+    required String body,
+    required int type,
+    String? sourceAppId,
+  }) =>
+      _channel.liftSendPlainTestNotification(
+        enabled: _configured,
+        title: title,
+        body: body,
+        type: type,
+        sourceAppId: sourceAppId,
+      );
 
   Future<void> removeLast() => _channel.liftRemove(enabled: _configured);
 

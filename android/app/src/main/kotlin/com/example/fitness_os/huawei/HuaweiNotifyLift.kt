@@ -162,6 +162,46 @@ object HuaweiNotifyLift {
         return HuaweiFraming.Frame(SVC_NOTIFY, CMD_SEND, tlvs)
     }
 
+    /**
+     * Minimal notify (title + body, no reply-key / keyed / vibrate extras) for Phase 0 A/B.
+     */
+    fun buildSendPlainNotification(
+        msgId: Int,
+        type: Int,
+        title: String,
+        body: String,
+        sourceAppId: String,
+        contentFormat: Int = 0x02,
+        contentMaxLen: Int? = null,
+    ): HuaweiFraming.Frame {
+        val maxBody = contentMaxLen?.let { (it - 3).coerceAtLeast(8) }
+        val safeTitle = truncateUtf8(title, 120)
+        val safeBody = truncateUtf8(body, maxBody ?: 240)
+        val elements = listOf(
+            Pair(TEXT_TITLE, safeTitle),
+            Pair(TEXT_BODY, safeBody),
+        ).map { (textType, text) ->
+            val inner = listOf(
+                HuaweiFraming.Tlv(0x0E, byteArrayOf(textType.toByte())),
+                HuaweiFraming.Tlv(0x0F, byteArrayOf(contentFormat.toByte())),
+                HuaweiFraming.Tlv(0x10, text.toByteArray(Charsets.UTF_8)),
+            )
+            HuaweiFraming.Tlv(0x8D, HuaweiFraming.encodeTlvs(inner))
+        }
+        val contentContainer = HuaweiFraming.Tlv(0x8C, HuaweiFraming.encodeTlvs(elements))
+        val outerContent = HuaweiFraming.Tlv(0x84, HuaweiFraming.encodeTlvs(listOf(contentContainer)))
+        return HuaweiFraming.Frame(
+            SVC_NOTIFY,
+            CMD_SEND,
+            listOf(
+                HuaweiFraming.Tlv(0x01, HuaweiPacketCrypto.shortBe(msgId)),
+                HuaweiFraming.Tlv(0x02, byteArrayOf(type.toByte())),
+                outerContent,
+                HuaweiFraming.Tlv(0x11, sourceAppId.toByteArray(Charsets.UTF_8)),
+            ),
+        )
+    }
+
     fun buildRemove(
         type: Int,
         sourceAppId: String,

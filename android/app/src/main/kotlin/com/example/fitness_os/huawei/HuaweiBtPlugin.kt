@@ -29,6 +29,8 @@ class HuaweiBtPlugin(
     private var permissionResult: MethodChannel.Result? = null
     private val sessionIo = Executors.newSingleThreadExecutor()
     private val syncLock = HuaweiSyncLock()
+    @Volatile
+    private var liftWatchBuildFlag: Boolean = false
 
     fun register(engine: FlutterEngine) {
         MethodChannel(engine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
@@ -454,10 +456,23 @@ class HuaweiBtPlugin(
                         activity.runOnUiThread { result.success(payload) }
                     }
                 }
+                "liftSetBuildFlag" -> {
+                    liftWatchBuildFlag = call.argument<Boolean>("enabled") == true
+                    session?.setLiftWatchAutoEnableOnSession(liftWatchBuildFlag)
+                    result.success(null)
+                }
                 "liftConfigure" -> {
                     val enabled = call.argument<Boolean>("enabled") == true
                     session?.liftConfigure(enabled)
                     result.success(null)
+                }
+                "liftEnableWatchNotifications" -> {
+                    sessionIo.execute {
+                        session?.liftConfigure(true)
+                        val payload = session?.liftEnableWatchNotifications()
+                            ?: mapOf("error" to "no_session")
+                        activity.runOnUiThread { result.success(payload) }
+                    }
                 }
                 "liftCapabilities" -> {
                     if (call.argument<Boolean>("enabled") != true) {
@@ -484,6 +499,24 @@ class HuaweiBtPlugin(
                             notifyType = call.argument<Int>("type") ?: 0x7F,
                             key = call.argument<String>("key") ?: "lift:debug:1",
                             category = call.argument<String>("category"),
+                            sourceAppId = call.argument<String>("sourceAppId")
+                                ?: HuaweiNotifyLift.SRC_PHONE_PKG,
+                        ) ?: mapOf("error" to "no_session")
+                        activity.runOnUiThread { result.success(payload) }
+                    }
+                }
+                "liftSendPlainTestNotification" -> {
+                    if (call.argument<Boolean>("enabled") != true) {
+                        result.error("disabled", "lift not configured", null)
+                        return
+                    }
+                    sessionIo.execute {
+                        val payload = session?.liftSendPlainTestNotification(
+                            title = call.argument<String>("title") ?: "Plain test",
+                            body = call.argument<String>("body") ?: "Hello watch",
+                            notifyType = call.argument<Int>("type") ?: 0x7F,
+                            sourceAppId = call.argument<String>("sourceAppId")
+                                ?: HuaweiNotifyLift.SRC_PHONE_PKG,
                         ) ?: mapOf("error" to "no_session")
                         activity.runOnUiThread { result.success(payload) }
                     }
@@ -611,6 +644,11 @@ class HuaweiBtPlugin(
     }
 
     private fun emitOnUi(event: Map<String, Any?>) {
+        val type = event["type"] as? String
+        val state = event["state"] as? String
+        if (type == "session_state" && state == "session_ready" && liftWatchBuildFlag) {
+            sessionIo.execute { session?.liftOnSessionReady() }
+        }
         activity.runOnUiThread {
             eventSink?.success(event)
         }

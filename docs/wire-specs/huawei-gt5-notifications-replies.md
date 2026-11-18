@@ -20,10 +20,12 @@ Service **Notifications** = `0x02`.
 |-----|-----------|------|
 | `0x01` | Phone → watch | Send notification |
 | `0x02` | Phone → watch | Constraints request |
-| `0x05` | Phone → watch | Capabilities request |
+| `0x04` | Phone → watch | Notification master switches (`0x81` → `0x02`/`0x03` enable) |
+| `0x05` | Phone → watch | Capabilities request (`0x01` empty) |
 | `0x06` | Phone → watch | Remove notification |
+| `0x08` | Phone → watch | Wear message push (`0x01` = `0x00` when push enabled) |
 | `0x10` | Watch → phone | Reply event (phone ACKs `0x07`) |
-| `0x04`, `0x07`, `0x08` | Watch → phone | Possible dismiss/read (log for ack-only path) |
+| `0x07` | Watch → phone | Possible dismiss/read (log for ack-only path) |
 
 ---
 
@@ -38,7 +40,44 @@ Service **Notifications** = `0x02`.
 | 94 | Keyed notifications (`0x19` / `0x1A` / `0x1B`) |
 | 120 | Remove single notification (`0x06`) |
 
-Probe `0x02` supported commands via DeviceConfig `0x01:0x03`. When lift flag is on, include cmd `0x10` in the probe list for service `0x02`.
+Probe `0x02` supported commands via DeviceConfig `0x01:0x03`. When lift flag is on, probe includes `0x02` constraints and `0x10` reply.
+
+---
+
+## GT5 hardware finding (0.1.0+28)
+
+Direct bond **without Huawei Health** paired first: ExpandCapability bits looked fine, but every `0x02:0x01` send was answered with TLV `0x7F` **error 4** and **no wrist notification**. Capabilities dump showed **`svc02Commands: []`** — notification service was never configured on the link.
+
+Interpretation (behavioral oracle, not AGPL): error **4** on send usually means notifications are disabled at the protocol/wear layer (master switch off, wear-message-push off, DND, or **source package not on the Health per-app allowlist**). Huawei Health’s “which apps notify the watch” list is **not** a separate Fathom API today; users must allow packages in Health **or** we pick a commonly allowed `0x11` package (e.g. `com.google.android.apps.messaging` for SMS-shaped tests).
+
+---
+
+## Enable sequence (Fathom, after auth, `FATHOM_LIFT_WATCH`)
+
+Run once per session (auto) or from **Lift watch debug → Enable watch notifications**:
+
+1. Re-probe supported commands for svc `0x02` (adds `0x02`, `0x10` to probe map).
+2. `0x02:0x05` notification capabilities (tag `0x01` empty).
+3. `0x02:0x02` constraints (tag `0x01` empty) — cache body max length.
+4. `0x02:0x04` notification state **on** — nested `0x81` with tags `0x02` and `0x03` = `0x01`.
+5. `0x02:0x08` wear message push **on** — tag `0x01` = `0x00` (inverted boolean on wire).
+6. `0x01:0x21` DeviceConfig default-switch query (tag `0x01` empty) — log TLVs for future allowlist work.
+
+Each step logs request/response TLV hex on the debug screen (`lift_enable_step` events).
+
+---
+
+## Result TLV `0x7F`
+
+Many svc `0x02` responses echo `0x7F`:
+
+| Code | Meaning (Fathom) |
+|------|------------------|
+| `0` / `100000` | Success |
+| `4` | Send rejected — notify path disabled or package not allowlisted |
+| `100004` | System busy |
+
+On `0x7F` after a send, Fathom logs `lift_notify_error` with **decoded label**, **full request TLVs**, and response hex.
 
 ---
 
@@ -62,6 +101,12 @@ TLV order:
 6. If bit 89: `0x18` reply key `lift:<sessionId>:<setIndex>` (≤64 chars)
 7. If bit 77: `0x15` u32 unix seconds
 8. If bit 94 or 120: `0x19` key, `0x1A` notification id (u32), `0x1B` channel `fathom_lift`
+
+**Source app id (`0x11`):** use `com.example.fitness_os` for Fathom-branded tests, or `com.google.android.apps.messaging` when probing SMS type `0x02` if Health has Messages allowed.
+
+### Plain test send (debug)
+
+`0x02:0x01` with only `0x01` msgId, `0x02` type (`0x01`/`0x7F`/`0x02`), `0x84` title+body, `0x11` package — **no** `0x03` vibrate, reply key, or keyed tags. Used to separate “notify disabled” from “reply TLV rejected”.
 
 ---
 

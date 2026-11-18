@@ -18,6 +18,8 @@ void main() {
         case 'liftConfigure':
         case 'liftCapabilities':
         case 'liftSendTestNotification':
+        case 'liftSendPlainTestNotification':
+        case 'liftEnableWatchNotifications':
         case 'liftQueryQuickReplies':
         case 'liftSetQuickReplies':
         case 'liftRemove':
@@ -51,6 +53,8 @@ void main() {
 
     expect(find.text('Lift watch debug'), findsOneWidget);
     expect(find.text('Capabilities'), findsOneWidget);
+    expect(find.text('Enable watch notifications'), findsOneWidget);
+    expect(find.text('Send plain test'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
