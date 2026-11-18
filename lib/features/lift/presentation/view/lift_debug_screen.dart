@@ -1,18 +1,26 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:fitness_os/features/lift/domain/planned_session.dart';
 import 'package:flutter/services.dart';
 import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/core/feature_flags.dart';
 import 'package:fitness_os/features/lift/data/lift_watch_bridge.dart';
+import 'package:fitness_os/features/lift/domain/planned_session.dart';
 
 /// Phase 0 on-watch probe UI (behind [FeatureFlags.liftWatch]).
 class LiftDebugScreen extends StatefulWidget {
   const LiftDebugScreen({super.key, LiftWatchBridge? bridge})
       : _bridge = bridge;
 
+  /// Widget tests only — does not affect release builds.
+  @visibleForTesting
+  static bool debugForceEnabled = false;
+
   final LiftWatchBridge? _bridge;
+
+  static bool get _liftFlagOn =>
+      debugForceEnabled || FeatureFlags.liftWatch;
 
   @override
   State<LiftDebugScreen> createState() => _LiftDebugScreenState();
@@ -27,29 +35,79 @@ class _LiftDebugScreenState extends State<LiftDebugScreen> {
   String? _category;
   int? _lastSentAtMs;
 
-  LiftWatchBridge get _bridge => widget._bridge ?? sl<LiftWatchBridge>();
+  LiftWatchBridge? _bridge;
+  String? _initError;
+  String? _connectionHint = 'Watch link unknown — connect from Home if needed.';
+  StreamSubscription<LiftReplyEvent>? _eventSub;
+  ErrorWidgetBuilder? _priorErrorWidget;
 
   @override
   void initState() {
     super.initState();
-    if (FeatureFlags.liftWatch) {
-      unawaited(_bridge.configure(enabled: true));
-      _bridge.events.listen(_onEvent);
+    _priorErrorWidget = ErrorWidget.builder;
+    ErrorWidget.builder = (FlutterErrorDetails details) {
+      return Material(
+        child: Scaffold(
+          appBar: AppBar(title: const Text('Lift watch debug')),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: SelectableText(
+              details.exceptionAsString(),
+              style: const TextStyle(color: Colors.redAccent),
+            ),
+          ),
+        ),
+      );
+    };
+    if (!LiftDebugScreen._liftFlagOn) return;
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    try {
+      final bridge = widget._bridge ?? sl<LiftWatchBridge>();
+      _bridge = bridge;
+      try {
+        await bridge.configure(enabled: true);
+      } catch (e) {
+        _appendLog('Configure skipped (watch may be disconnected): $e');
+      }
+      _eventSub = bridge.events.listen(
+        _onEvent,
+        onError: (Object e) {
+          if (!mounted) return;
+          _appendLog('Event stream error: $e');
+        },
+      );
+      if (mounted) setState(() => _connectionHint = null);
+    } catch (e, st) {
+      if (!mounted) return;
+      setState(() {
+        _initError = '$e';
+        debugPrint('LiftDebugScreen bootstrap failed: $e\n$st');
+      });
     }
+  }
+
+  void _appendLog(String line) {
+    if (!mounted) return;
+    setState(() => _log.insert(0, line));
   }
 
   void _onEvent(LiftReplyEvent e) {
     final latency = _lastSentAtMs != null ? e.rxAtMs - _lastSentAtMs! : null;
     final ist = _formatIst(e.rxAtMs);
-  final line = e.kind == 'lift_reply'
+    final line = e.kind == 'lift_reply'
         ? '$ist reply "${e.text}" key=${_redactKey(e.key)}'
             '${latency != null ? ' Δ${latency}ms' : ''}'
         : '$ist ${e.kind} cmd=${e.replyType} ${e.text}';
-    setState(() => _log.insert(0, line));
+    _appendLog(line);
   }
 
   String _formatIst(int ms) {
-    final dt = DateTime.fromMillisecondsSinceEpoch(ms).toUtc().add(const Duration(hours: 5, minutes: 30));
+    final dt = DateTime.fromMillisecondsSinceEpoch(ms)
+        .toUtc()
+        .add(const Duration(hours: 5, minutes: 30));
     return '${dt.hour.toString().padLeft(2, '0')}:'
         '${dt.minute.toString().padLeft(2, '0')}:'
         '${dt.second.toString().padLeft(2, '0')}.'
@@ -62,38 +120,73 @@ class _LiftDebugScreenState extends State<LiftDebugScreen> {
     return 'lift:***:${parts.last}';
   }
 
+  Future<void> _safeAction(String label, Future<void> Function() run) async {
+    try {
+      await run();
+    } catch (e) {
+      _appendLog('$label failed: $e');
+    }
+  }
+
   Future<void> _capabilities() async {
-    final snap = await _bridge.capabilities();
-    setState(() => _log.insert(0, 'Capabilities: $snap'));
+    final bridge = _bridge;
+    if (bridge == null) {
+      _appendLog('Capabilities: bridge not ready');
+      return;
+    }
+    try {
+      final snap = await bridge.capabilities();
+      _appendLog('Capabilities: $snap');
+    } catch (e) {
+      _appendLog('Capabilities failed: $e');
+    }
   }
 
   Future<void> _sendTest() async {
-    final result = await _bridge.sendSetNotification(
-      set: PlannedSet(
-        exerciseId: 'debug',
-        name: 'Debug',
-        setIndex: 1,
-        globalIndex: 1,
-        plannedKg: 60,
-        plannedReps: 8,
-        restSec: 120,
-      ),
-      sessionId: 'debug_session',
-      title: _title.text,
-      body: _body.text,
-      type: _notifyType,
-      withReplyKey: _replyKey,
-      category: _category,
-    );
-    _lastSentAtMs = result['sentAtMs'] as int?;
-    setState(() => _log.insert(0, 'Sent test set msgId=${result['msgId']}'));
+    final bridge = _bridge;
+    if (bridge == null) return;
+    try {
+      final result = await bridge.sendSetNotification(
+        set: const PlannedSet(
+          exerciseId: 'debug',
+          name: 'Debug',
+          setIndex: 1,
+          globalIndex: 1,
+          plannedKg: 60,
+          plannedReps: 8,
+          restSec: 120,
+        ),
+        sessionId: 'debug_session',
+        title: _title.text,
+        body: _body.text,
+        type: _notifyType,
+        withReplyKey: _replyKey,
+        category: _category,
+      );
+      _lastSentAtMs = result['sentAtMs'] as int?;
+      _appendLog('Sent test set msgId=${result['msgId']} error=${result['error']}');
+    } catch (e) {
+      _appendLog('Send test set failed: $e');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!FeatureFlags.liftWatch) {
+    if (!_liftFlagOn) {
       return const Scaffold(
         body: Center(child: Text('Lift watch flag is off')),
+      );
+    }
+    if (_initError != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Lift watch debug')),
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SelectableText(
+            'Could not start lift debug:\n$_initError',
+            style: const TextStyle(color: Colors.redAccent),
+          ),
+        ),
       );
     }
     return Scaffold(
@@ -101,27 +194,78 @@ class _LiftDebugScreenState extends State<LiftDebugScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (_connectionHint != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                _connectionHint!,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              FilledButton(onPressed: _capabilities, child: const Text('Capabilities')),
-              FilledButton(onPressed: () => _bridge.queryQuickReplies(), child: const Text('Query quick replies')),
               FilledButton(
-                onPressed: () => _bridge.setQuickReplies(
-                  const ['Done', '-1 rep', '-2 reps', '+2.5 kg', 'Failed'],
-                ),
+                onPressed: _bridge == null ? null : _capabilities,
+                child: const Text('Capabilities'),
+              ),
+              FilledButton(
+                onPressed: _bridge == null
+                    ? null
+                    : () => _safeAction(
+                          'Query quick replies',
+                          () => _bridge!.queryQuickReplies(),
+                        ),
+                child: const Text('Query quick replies'),
+              ),
+              FilledButton(
+                onPressed: _bridge == null
+                    ? null
+                    : () => _safeAction(
+                          'Set quick replies',
+                          () => _bridge!.setQuickReplies(
+                            const [
+                              'Done',
+                              '-1 rep',
+                              '-2 reps',
+                              '+2.5 kg',
+                              'Failed',
+                            ],
+                          ),
+                        ),
                 child: const Text('Set Fathom quick replies'),
               ),
-              FilledButton(onPressed: _sendTest, child: const Text('Send test set')),
-              OutlinedButton(onPressed: () => _bridge.removeLast(), child: const Text('Remove last')),
-              OutlinedButton(onPressed: () => setState(() => _log.clear()), child: const Text('Clear log')),
+              FilledButton(
+                onPressed: _bridge == null ? null : _sendTest,
+                child: const Text('Send test set'),
+              ),
+              OutlinedButton(
+                onPressed: _bridge == null
+                    ? null
+                    : () => _safeAction(
+                          'Remove last',
+                          () => _bridge!.removeLast(),
+                        ),
+                child: const Text('Remove last'),
+              ),
+              OutlinedButton(
+                onPressed: () => setState(() => _log.clear()),
+                child: const Text('Clear log'),
+              ),
             ],
           ),
-          TextField(controller: _title, decoration: const InputDecoration(labelText: 'Title')),
-          TextField(controller: _body, decoration: const InputDecoration(labelText: 'Body')),
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(labelText: 'Title'),
+          ),
+          TextField(
+            controller: _body,
+            decoration: const InputDecoration(labelText: 'Body'),
+          ),
           DropdownButton<int>(
             value: _notifyType,
+            isExpanded: true,
             items: const [
               DropdownMenuItem(value: 0x7F, child: Text('Type 0x7F generic')),
               DropdownMenuItem(value: 0x02, child: Text('Type 0x02 sms')),
@@ -135,6 +279,7 @@ class _LiftDebugScreenState extends State<LiftDebugScreen> {
           ),
           DropdownButton<String?>(
             value: _category,
+            isExpanded: true,
             hint: const Text('Category'),
             items: const [
               DropdownMenuItem(value: null, child: Text('none')),
@@ -144,12 +289,23 @@ class _LiftDebugScreenState extends State<LiftDebugScreen> {
           ),
           const SizedBox(height: 16),
           Text('Event log', style: Theme.of(context).textTheme.titleMedium),
-          ..._log.map((l) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(l, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
-              )),
+          if (_log.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('No events yet — actions log here when the watch replies.'),
+            ),
+          ..._log.map(
+            (l) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                l,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              ),
+            ),
+          ),
           TextButton(
-            onPressed: () => Clipboard.setData(ClipboardData(text: _log.join('\n'))),
+            onPressed: () =>
+                Clipboard.setData(ClipboardData(text: _log.join('\n'))),
             child: const Text('Copy log'),
           ),
         ],
@@ -159,6 +315,10 @@ class _LiftDebugScreenState extends State<LiftDebugScreen> {
 
   @override
   void dispose() {
+    if (_priorErrorWidget != null) {
+      ErrorWidget.builder = _priorErrorWidget!;
+    }
+    _eventSub?.cancel();
     _title.dispose();
     _body.dispose();
     super.dispose();

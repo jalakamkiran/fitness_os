@@ -140,7 +140,7 @@ jobs:
       - name: Verify APK signing certificate (SHA-256)
         run: |
           APK="build/app/outputs/flutter-apk/app-release.apk"
-          EXPECTED="51f2a87991953068a5b4995f4ebb2b2a55b4d145d04bd72b7a972044945bbc9f3"
+          EXPECTED="51f2a87991953068a5b4995f4ebb2ba55b4d145d04bd72b7a972044945bbc9f3"
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
           BUILD_TOOLS="$(ls -d "$SDK_ROOT/build-tools"/* 2>/dev/null | sort -V | tail -1)"
           if [ ! -x "$BUILD_TOOLS/apksigner" ]; then
@@ -157,6 +157,8 @@ jobs:
             echo "❌ APK signer SHA-256 mismatch"
             echo "   expected: $EXPECTED"
             echo "   actual:   $ACTUAL"
+            echo "   apksigner cert excerpt:"
+            echo "$CERT_OUT" | grep -i 'SHA-256' | head -3 || true
             exit 1
           fi
           echo "✅ APK signed with expected SHA-256 digest"
