@@ -3,7 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'package:fitness_os/core/backend/backend_sync_service.dart';
+import 'package:fitness_os/core/backend/sync_models.dart';
 import 'package:fitness_os/core/di/injector.dart';
+import 'package:get_it/get_it.dart';
 import 'package:fitness_os/features/diagnostics/data/app_data_export_envelope.dart';
 import 'package:fitness_os/features/diagnostics/data/app_data_export_service.dart';
 import 'package:fitness_os/features/workout_history/data/qwen3_swim_reasoner.dart';
@@ -294,6 +297,39 @@ class _CoachSettingsScreenState extends State<CoachSettingsScreen> {
             ),
           ),
           const SizedBox(height: 8),
+          if (GetIt.I.isRegistered<BackendPusher>())
+            ValueListenableBuilder<BackendSyncStatus>(
+              valueListenable: GetIt.I<BackendSyncService>().status,
+              builder: (context, syncStatus, _) {
+                final last = syncStatus.lastSuccessfulSync;
+                final lastLabel = last == null
+                    ? 'Never'
+                    : '${last.toLocal()}'.substring(0, 16);
+                var subtitle = 'Last synced $lastLabel';
+                if (syncStatus.pendingCount > 0) {
+                  subtitle += ' · ${syncStatus.pendingCount} pending';
+                }
+                if (syncStatus.quarantinedCount > 0) {
+                  subtitle += ' · ${syncStatus.quarantinedCount} quarantined';
+                }
+                if (syncStatus.inFlight) {
+                  subtitle += ' · syncing…';
+                }
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.cloud_upload_outlined),
+                  title: const Text('Backend sync'),
+                  subtitle: Text(subtitle),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.sync),
+                    onPressed: syncStatus.inFlight
+                        ? null
+                        : () => GetIt.I<BackendPusher>()
+                            .push(SyncTrigger.manual),
+                  ),
+                );
+              },
+            ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.ios_share),
