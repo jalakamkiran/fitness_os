@@ -52,7 +52,6 @@ class FileSyncLedgerStore implements SyncLedgerStore {
   final BackendSyncTelemetry _telemetry;
 
   Future<void> _writeMutex = Future.value();
-  RandomAccessFile? _lockFile;
 
   static const _legacyLastSyncKey = 'backend_last_sync_ms';
 
@@ -76,14 +75,13 @@ class FileSyncLedgerStore implements SyncLedgerStore {
     if (!await lockPath.exists()) {
       await lockPath.create(recursive: true);
     }
-    _lockFile = await lockPath.open(mode: FileMode.write);
-    await _lockFile!.lock(FileLock.blockingExclusive);
+    final lockRaf = await lockPath.open(mode: FileMode.write);
+    await lockRaf.lock(FileLock.blockingExclusive);
     try {
       return await body();
     } finally {
-      await _lockFile!.unlock();
-      await _lockFile!.close();
-      _lockFile = null;
+      await lockRaf.unlock();
+      await lockRaf.close();
     }
   }
 
@@ -184,6 +182,7 @@ class FileSyncLedgerStore implements SyncLedgerStore {
       final main = await _ledgerFile(root);
       final bak = await _bakFile(root);
       final tmp = await _tmpFile(root);
+      await Directory('${root.path}/sync').create(recursive: true);
 
       final dataJson = jsonEncode(data.toJson());
       final envelope = jsonEncode({

@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:fitness_os/core/backend/backend_sync_telemetry.dart';
 import 'package:fitness_os/core/backend/backend_transport.dart';
-import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
+import 'package:fitness_os/core/error/failures.dart';
+import 'package:fitness_os/core/utils/either.dart';
+import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart'
+    show VitalsRepository, VitalsSnapshot;
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 
@@ -13,13 +16,19 @@ class FakeBackendTransport implements BackendTransport {
   final manifestQueue = <TransportResponse>[];
 
   Completer<void>? blockCompleter;
+  var _blockFirstOnlyConsumed = false;
+
+  void resetBlockState() {
+    _blockFirstOnlyConsumed = false;
+  }
 
   @override
   Future<TransportResponse> postSync({
     required List<int> bodyBytes,
     required Map<String, String> headers,
   }) async {
-    if (blockCompleter != null) {
+    if (blockCompleter != null && !_blockFirstOnlyConsumed) {
+      _blockFirstOnlyConsumed = true;
       await blockCompleter!.future;
     }
     capturedBodies.add(bodyBytes);
@@ -65,6 +74,12 @@ class FakeWorkoutRepo implements WorkoutHistoryRepository {
   Future<List<WorkoutSummary>> loadLocal() async => workouts;
 
   @override
+  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch({
+    bool forceFullHistory = false,
+  }) async =>
+      const Right([]);
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -94,6 +109,10 @@ class FakeVitalsRepo implements VitalsRepository {
 
   @override
   Future<List<DailyHrDaySummary>> loadDailyHr() async => dailyHr;
+
+  @override
+  Future<Either<Failure, VitalsSnapshot>> syncFromWatch() async =>
+      Right(VitalsSnapshot(sleepSessions: const [], dailyHr: const []));
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

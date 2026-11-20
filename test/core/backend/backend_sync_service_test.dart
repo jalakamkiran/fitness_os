@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fitness_os/core/backend/backend_sync_service.dart';
 import 'package:fitness_os/core/backend/local_sync_snapshot.dart';
 import 'package:fitness_os/core/backend/sync_ledger_store.dart';
@@ -57,6 +59,44 @@ void main() {
     final second = await svc.push(SyncTrigger.open);
     expect(second.ok, isTrue);
     expect(transport.capturedBodies, isEmpty);
+  });
+
+  test('queueing: in-flight push coalesces to one follow-up HTTP', () async {
+    workouts.workouts = [
+      WorkoutSummary(
+        number: 1,
+        type: 2,
+        startTime: 1700000000,
+        endTime: 1700003600,
+        durationSec: 3600,
+        calories: 50,
+      ),
+    ];
+    final gate = Completer<void>();
+    transport.resetBlockState();
+    transport.blockCompleter = gate;
+    final svc = buildService();
+    final first = svc.push(SyncTrigger.open);
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    workouts.workouts = [
+      WorkoutSummary(
+        number: 1,
+        type: 2,
+        startTime: 1700000000,
+        endTime: 1700003600,
+        durationSec: 3600,
+        calories: 99,
+      ),
+    ];
+    final q1 = await svc.push(SyncTrigger.postWatch);
+    final q2 = await svc.push(SyncTrigger.manual);
+    expect(q1.queued, isTrue);
+    expect(q2.queued, isTrue);
+    gate.complete();
+    await first;
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    // First HTTP + exactly one coalesced follow-up (not three).
+    expect(transport.capturedBodies.length, 2);
   });
 
   test('postWatch after open is not cooldown-blocked', () async {
