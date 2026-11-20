@@ -141,6 +141,42 @@ abstract final class SentrySyncInstrumentation {
     return 'incremental';
   }
 
+  static const _allowedBackendSyncDataKeys = {
+    'trigger',
+    'outcome',
+    'pendingCount',
+    'attempted',
+    'accepted',
+    'rejected',
+    'chunkIndex',
+    'chunkCount',
+    'httpStatus',
+    'durationMs',
+    'reason',
+    'kind',
+  };
+
+  static Future<void> addBackendSyncBreadcrumb(
+    String stage, {
+    Map<String, Object?> data = const {},
+  }) async {
+    if (!Sentry.isEnabled) return;
+    final filtered = <String, Object?>{};
+    for (final e in data.entries) {
+      if (_allowedBackendSyncDataKeys.contains(e.key)) {
+        filtered[e.key] = e.value;
+      }
+    }
+    await Sentry.addBreadcrumb(
+      Breadcrumb(
+        category: 'backend.sync',
+        message: stage,
+        level: SentryLevel.info,
+        data: filtered,
+      ),
+    );
+  }
+
   /// MethodChannel sync watchdog — abandoned is span/breadcrumb only (no Issue).
   static Future<T> invokeWithTimeout<T>({
     required Future<T> future,
