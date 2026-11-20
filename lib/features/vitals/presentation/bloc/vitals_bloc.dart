@@ -1,7 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fitness_os/core/backend/backend_sync_service.dart';
+import 'package:fitness_os/core/backend/sync_models.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
+import 'package:fitness_os/core/observability/sentry_sync_instrumentation.dart';
 import 'package:fitness_os/core/storage/store_invalidation.dart';
 import 'package:fitness_os/core/utils/either.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
@@ -13,8 +16,10 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
     required VitalsRepository repository,
     HuaweiLink? link,
     StoreInvalidation? invalidation,
+    BackendPusher? backendPusher,
   })  : _repository = repository,
         _link = link,
+        _backendPusher = backendPusher,
         super(const VitalsState()) {
     on<VitalsStarted>(_onStarted);
     on<VitalsSyncRequested>(_onSync);
@@ -41,6 +46,7 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
 
   final VitalsRepository _repository;
   final HuaweiLink? _link;
+  final BackendPusher? _backendPusher;
   StreamSubscription<void>? _sub;
   StreamSubscription<HuaweiLinkEvent>? _linkSub;
 
@@ -120,6 +126,15 @@ class VitalsBloc extends Bloc<VitalsEvent, VitalsState> {
     }
     emit(state.copyWith(phase: VitalsPhase.syncing, clearMessage: true));
     final result = await _repository.syncFromWatch();
+  final syncOk = result.isRight;
+    await SentrySyncInstrumentation.addBackendSyncBreadcrumb(
+      'watch_synced',
+      data: {'outcome': syncOk ? 'ok' : 'error'},
+    );
+    unawaited(_backendPusher?.push(SyncTrigger.manual));
+    unawaited(
+      SentrySyncInstrumentation.addBackendSyncBreadcrumb('manual_push'),
+    );
     switch (result) {
       case Left(:final value):
         final msg = value.message;

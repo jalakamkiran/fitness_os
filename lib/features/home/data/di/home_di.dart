@@ -1,6 +1,7 @@
 import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:fitness_os/core/backend/backend_sync_service.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync.dart';
 import 'package:fitness_os/core/storage/store_invalidation.dart';
 import 'package:fitness_os/features/home/data/repositories/home_repository_impl.dart';
@@ -16,6 +17,7 @@ void initHomeDependencies(GetIt sl) {
       workouts: sl(),
       vitals: sl(),
       autoSync: sl.isRegistered<OneShotAutoSync>() ? sl() : null,
+      backendPusher: sl.isRegistered<BackendPusher>() ? sl() : null,
     ),
   );
 

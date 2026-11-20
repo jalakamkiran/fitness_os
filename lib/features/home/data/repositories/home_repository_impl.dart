@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import 'package:fitness_os/core/backend/backend_sync_service.dart';
+import 'package:fitness_os/core/backend/sync_models.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync.dart';
 import 'package:fitness_os/core/observability/sentry_config.dart';
@@ -33,12 +37,14 @@ class HomeRepositoryImpl implements HomeRepository {
     required WorkoutHistoryRepository workouts,
     required VitalsRepository vitals,
     OneShotAutoSync? autoSync,
+    BackendPusher? backendPusher,
     DateTime Function()? now,
   })  : _prefs = prefs,
         _link = link,
         _workouts = workouts,
         _vitals = vitals,
         _autoSync = autoSync,
+        _backendPusher = backendPusher,
         _now = now ?? DateTime.now;
 
   final SharedPreferences _prefs;
@@ -46,6 +52,7 @@ class HomeRepositoryImpl implements HomeRepository {
   final WorkoutHistoryRepository _workouts;
   final VitalsRepository _vitals;
   final OneShotAutoSync? _autoSync;
+  final BackendPusher? _backendPusher;
   final DateTime Function() _now;
 
   @override
@@ -335,6 +342,14 @@ class HomeRepositoryImpl implements HomeRepository {
       await SentrySyncInstrumentation.finishWithStatus(
         pass,
         status: ok ? 'ok' : 'error',
+      );
+      await SentrySyncInstrumentation.addBackendSyncBreadcrumb(
+        'watch_synced',
+        data: {'outcome': ok ? 'ok' : 'error'},
+      );
+      unawaited(_backendPusher?.push(SyncTrigger.manual));
+      unawaited(
+        SentrySyncInstrumentation.addBackendSyncBreadcrumb('manual_push'),
       );
       return ok ? SyncResult.ok() : SyncResult.failed(errorDetails ?? 'Unknown sync error');
     } catch (e, stackTrace) {
