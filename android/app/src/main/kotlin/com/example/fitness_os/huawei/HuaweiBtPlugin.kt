@@ -2,8 +2,11 @@ package com.example.fitness_os.huawei
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.FlutterEngine
@@ -13,13 +16,15 @@ import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
 
 class HuaweiBtPlugin(
-    private val activity: Activity,
+    private val appContext: Context,
+    private val activityProvider: () -> Activity?,
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
 
     companion object {
         const val METHOD_CHANNEL = "fitness_os/huawei_bt"
         const val EVENT_CHANNEL = "fitness_os/huawei_bt_events"
         private const val PERMISSION_REQUEST = 4811
+        private val mainHandler = Handler(Looper.getMainLooper())
     }
 
     private var eventSink: EventChannel.EventSink? = null
@@ -36,15 +41,15 @@ class HuaweiBtPlugin(
         EventChannel(engine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(this)
 
-        secrets = HuaweiSecretStore(activity.applicationContext)
-        transport = RfcommTransport(activity.applicationContext) { event ->
+        secrets = HuaweiSecretStore(appContext)
+        transport = RfcommTransport(appContext) { event ->
             forwardEvent(event)
         }
         session = HuaweiSession(
             transport = transport!!,
             secrets = secrets!!,
             emit = { event -> emitOnUi(event) },
-            appFilesDir = { activity.applicationContext.filesDir },
+            appFilesDir = { appContext.filesDir },
         )
     }
 
@@ -113,7 +118,7 @@ class HuaweiBtPlugin(
                             android.util.Log.e("FOS_HUAWEI", "authenticate error", e)
                             HuaweiSession.SessionOutcome.AuthFailed
                         }
-                        activity.runOnUiThread {
+                        mainHandler.post {
                             result.success(outcome?.name ?: "AuthFailed")
                         }
                     }
@@ -161,7 +166,7 @@ class HuaweiBtPlugin(
                         } finally {
                             syncLock.release()
                         }
-                        activity.runOnUiThread { result.success(payload) }
+                        mainHandler.post { result.success(payload) }
                     }
                 }
                 "syncActivity" -> {
@@ -224,7 +229,7 @@ class HuaweiBtPlugin(
                         } finally {
                             syncLock.release()
                         }
-                        activity.runOnUiThread { result.success(payload) }
+                        mainHandler.post { result.success(payload) }
                     }
                 }
                 "enableAutoTracking" -> {
@@ -268,7 +273,7 @@ class HuaweiBtPlugin(
                         } finally {
                             syncLock.release()
                         }
-                        activity.runOnUiThread { result.success(payload) }
+                        mainHandler.post { result.success(payload) }
                     }
                 }
                 "probePhysioCapture" -> {
@@ -329,7 +334,7 @@ class HuaweiBtPlugin(
                         } finally {
                             syncLock.release()
                         }
-                        activity.runOnUiThread { result.success(payload) }
+                        mainHandler.post { result.success(payload) }
                     }
                 }
                 "persistSleepDataCapture" -> {
@@ -387,7 +392,7 @@ class HuaweiBtPlugin(
                         } finally {
                             syncLock.release()
                         }
-                        activity.runOnUiThread { result.success(payload) }
+                        mainHandler.post { result.success(payload) }
                     }
                 }
                 "persistSleepDetailsSequenceCapture" -> {
@@ -449,7 +454,7 @@ class HuaweiBtPlugin(
                         } finally {
                             syncLock.release()
                         }
-                        activity.runOnUiThread { result.success(payload) }
+                        mainHandler.post { result.success(payload) }
                     }
                 }
                 "setAuthKey" -> {
@@ -525,7 +530,7 @@ class HuaweiBtPlugin(
     }
 
     private fun emitOnUi(event: Map<String, Any?>) {
-        activity.runOnUiThread {
+        mainHandler.post {
             eventSink?.success(event)
         }
     }
@@ -535,6 +540,11 @@ class HuaweiBtPlugin(
             result.success(true)
             return
         }
+        val activity = activityProvider()
+            ?: run {
+                result.error("no_activity", "No activity available for permission request", null)
+                return
+            }
         permissionResult = result
         ActivityCompat.requestPermissions(activity, requiredPermissions(), PERMISSION_REQUEST)
     }
@@ -547,7 +557,7 @@ class HuaweiBtPlugin(
 
     private fun hasAllPermissions(): Boolean {
         return requiredPermissions().all {
-            ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(appContext, it) == PackageManager.PERMISSION_GRANTED
         }
     }
 
@@ -567,7 +577,7 @@ class HuaweiBtPlugin(
     }
 
     private fun isDebuggable(): Boolean {
-        return (activity.applicationInfo.flags and
+        return (appContext.applicationInfo.flags and
             android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
     }
 }
