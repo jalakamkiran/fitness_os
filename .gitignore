@@ -19,3 +19,9 @@ build/
 !.vscode/launch.json
 *.iml
 .worktrees
+
+# Bluetooth / session captures (owner-private; see docs/experiments/2026-07-17-hci-capture-notes.md)
+*.log
+*snoop*
+docs/**/*logcat*
+docs/**/*_logs.txt

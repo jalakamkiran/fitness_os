@@ -4,7 +4,7 @@ import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/features/vitals/domain/trusleep_sleep_sot.dart';
 
 void main() {
-  // Aug 11 owner night fragments (IST wall times from handoff / sleep_logs).
+  // Aug 11 owner night fragments (IST wall times from handoff; raw capture off-repo).
   const i1 = SleepStateInterval(
     beginUnix: 1_754_860_740,
     endUnix: 1_754_872_020,

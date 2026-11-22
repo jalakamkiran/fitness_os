@@ -104,7 +104,7 @@ Commits on this branch (after `7decdb0`):
 
 4. **Later cut:** `sleep_data.bin` parse → TruSleep-owned stages; resume downloading `sleep_data`; retire message-path stages.
 
-5. **Ship process:** branch is **not pushed**; no PR yet. Unrelated dirty tree: catalog/experiment docs, onboarding, swim brainstorm, `docs/sleep_logs.txt`, scripts — do not bundle into SoT PR unless intentional.
+5. **Ship process:** branch is **not pushed**; no PR yet. Unrelated dirty tree: catalog/experiment docs, onboarding, swim brainstorm, owner-private capture logs, scripts — do not bundle into SoT PR unless intentional.
 
 ---
 
@@ -124,7 +124,7 @@ Commits on this branch (after `7decdb0`):
 | `docs/plans/2026-08-11-001-feat-trusleep-primary-sleep-sot-plan.md` | Completed plan (R1–R13, U1–U5) |
 | `docs/handoffs/2026-08-11-trusleep-primary-sleep-handoff.md` | Pre-implement investigation |
 | `docs/wire-specs/huawei-br-gt5-sleep-files.md` | FD SM + SoT note |
-| `docs/sleep_logs.txt` | Zone / skew evidence |
+| Owner-private Sync logcat (off-repo) | Zone / skew evidence |
 | Agent transcript (this session) | Implement + review fixes + device feedback |
 
 ---
