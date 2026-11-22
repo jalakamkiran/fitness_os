@@ -26,8 +26,8 @@ payloads in-repo. Blobs may live under app-private `vitals/sleep_files/` only.
 ## Observed consult (wrong init — historical)
 
 Owner Sync previously sent cmd `0x01` with **filename only** (`sleep_state` /
-`sleep_data`, no filetype, no window). Device replied size `0`. Cite:
-`docs/sleep_logs.txt` (`svc=0x2c cmd=0x1`).
+`sleep_data`, no filetype, no window). Device replied size `0`. Cite owner-private
+Aug 2026 Sync logcat (`svc=0x2c cmd=0x1`; raw capture not in-repo).
 
 ---
 

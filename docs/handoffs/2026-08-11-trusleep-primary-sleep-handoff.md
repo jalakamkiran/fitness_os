@@ -51,7 +51,7 @@ Fitness OS message-path sleep (`FitnessData` `0x0C`/`0x0D`) did **not** match He
 - Watch face matches phone IST; not “stuck on +5:00”
 - Zone is companion→watch (`1:0x05` set-time + `1:0x32` timezone-id)
 - Persist pushed zone (`WatchZone`); format sleep logs with it; re-push on activity Sync
-- Latest evidence (`docs/sleep_logs.txt`): **Asia/Kolkata UTC+05:30**, watch echo `t=2:051e`, **`skewSec=0`**
+- Latest evidence (owner-private Sync logcat, not in-repo): **Asia/Kolkata UTC+05:30**, watch echo `t=2:051e`, **`skewSec=0`**
 - **Conclusion:** Health gap is **not** companion TZ/clock skew
 
 **Side bug (still open):** activity-sync may skip `timezone-id` when `supportsCommand` map is empty (`supported-commands services=0`); post-bind still sends `0x32` via `activeIds.contains(0x32)` (conflates service id vs DeviceConfig cmd — fragile).
@@ -115,7 +115,7 @@ Suggested implementation order after Sentry samples (or in parallel if owner is 
 | Doc / artifact | Why |
 |----------------|-----|
 | `docs/wire-specs/huawei-br-gt5-sleep-files.md` | FileDownload SM + capture sizes |
-| `docs/sleep_logs.txt` | Latest owner Sync / zone / skew evidence |
+| Owner-private Sync logcat (off-repo) | Latest owner Sync / zone / skew evidence |
 | `docs/plans/2026-07-18-004-feat-vitals-sleep-hr-tab-plan.md` | Original Vitals plan (message SoT; FileDownload deferred) |
 | `docs/plans/2026-08-09-002-feat-recovery-sleep-detail-plan.md` | Recovery sleep detail |
 | `docs/brainstorms/2026-08-09-vitals-sleep-detail-stages-hr-requirements.md` | Stages + HR requirements |
