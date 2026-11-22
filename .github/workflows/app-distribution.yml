@@ -11,6 +11,11 @@ on:
         description: 'Custom release notes (optional)'
         required: false
         type: string
+      enable_lift_watch:
+        description: 'Enable Fathom Lift watch set-logging (FATHOM_LIFT_WATCH)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build-and-distribute:
@@ -48,10 +53,25 @@ jobs:
           cache-key: 'flutter-:os:-:channel:-:version:-:arch:-:hash:'
           cache-path: '${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:'
 
-      # Note: Release keystore setup disabled temporarily due to keystore format issues
-      # ("Tag number over 30 is not supported" error with AGP 8.9.1)
-      # The build will use debug signing, which is OK for testing
-      # TODO: Regenerate keystore or upgrade AGP once Flutter 3.44.7 supports it
+      - name: Prepare CI signing keystore
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "❌ ANDROID_KEYSTORE_BASE64 is required for App Distribution signing"
+            exit 1
+          fi
+          KEYSTORE_PATH="${RUNNER_TEMP}/fathom-ci.jks"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          echo "FATHOM_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "FATHOM_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "FATHOM_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "FATHOM_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "✅ CI keystore prepared at runner temp (not logged)"
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: Create .env file from secrets
         run: |
@@ -86,16 +106,21 @@ jobs:
 
       - name: Build release APK with Sentry
         run: |
-          # Check if release keystore is available, otherwise warn
-          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "⚠️  WARNING: No release keystore found. Using debug signing."
-            echo "   Add ANDROID_KEYSTORE_* secrets for production release signing."
-            echo "   See docs/app-distribution.md for setup instructions."
-          fi
-          
           # Set version for Sentry release tracking
           VERSION="0.1.0"
           BUILD_NUMBER="${{ github.run_number }}"
+
+          # Lift watch flag: workflow_dispatch input, or auto-on for the PR #30 branch
+          LIFT_WATCH="${{ github.event.inputs.enable_lift_watch }}"
+          if [ "$LIFT_WATCH" != "true" ]; then
+            if [ "${{ github.ref_name }}" = "cursor/watch-set-logging" ]; then
+              LIFT_WATCH=true
+            else
+              LIFT_WATCH=false
+            fi
+          fi
+          echo "FATHOM_LIFT_WATCH=$LIFT_WATCH"
+          echo "LIFT_WATCH=$LIFT_WATCH" >> "$GITHUB_ENV"
           
           # Build release without obfuscation for now (easier debugging)
           # Pass SENTRY_RAW_WORKOUT_DUMP to Android BuildConfig via Gradle property
@@ -105,16 +130,38 @@ jobs:
             --dart-define-from-file=.env \
             --dart-define=APP_VERSION="$VERSION" \
             --dart-define=APP_BUILD_NUMBER="$BUILD_NUMBER" \
+            --dart-define=FATHOM_LIFT_WATCH="$LIFT_WATCH" \
             --build-name="${VERSION}+${BUILD_NUMBER}" \
             --build-number="$BUILD_NUMBER" \
             -PSENTRY_RAW_WORKOUT_DUMP=true
           
-          echo "✅ Built release APK: com.example.fitness_os@${VERSION}+${BUILD_NUMBER}"
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          echo "✅ Built release APK: com.example.fitness_os@${VERSION}+${BUILD_NUMBER} (FATHOM_LIFT_WATCH=$LIFT_WATCH)"
+
+      - name: Verify APK signing certificate (SHA-256)
+        run: |
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          EXPECTED="51f2a87991953068a5b4995f4ebb2ba55b4d145d04bd72b7a972044945bbc9f3"
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          BUILD_TOOLS="$(ls -d "$SDK_ROOT/build-tools"/* 2>/dev/null | sort -V | tail -1)"
+          if [ ! -x "$BUILD_TOOLS/apksigner" ]; then
+            echo "❌ apksigner not found under $SDK_ROOT/build-tools"
+            exit 1
+          fi
+          CERT_OUT="$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" 2>&1)"
+          ACTUAL="$(echo "$CERT_OUT" | grep -i 'SHA-256' | head -1 | sed -E 's/.*SHA-256[^:]*:[[:space:]]*//; s/://g; s/[^0-9A-Fa-f]//g' | tr '[:upper:]' '[:lower:]')"
+          if [ -z "$ACTUAL" ]; then
+            echo "❌ Could not parse SHA-256 from apksigner output"
+            exit 1
+          fi
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "❌ APK signer SHA-256 mismatch"
+            echo "   expected: $EXPECTED"
+            echo "   actual:   $ACTUAL"
+            echo "   apksigner cert excerpt:"
+            echo "$CERT_OUT" | grep -i 'SHA-256' | head -3 || true
+            exit 1
+          fi
+          echo "✅ APK signed with expected SHA-256 digest"
 
       - name: Prepare release notes
         id: release_notes
@@ -136,6 +183,7 @@ jobs:
           - Sentry observability enabled
           - Raw workout payload dumps (SENTRY_RAW_WORKOUT_DUMP=true)
           - Badminton type 129 mapping + racket sport icons
+          - FATHOM_LIFT_WATCH=${LIFT_WATCH}
           
           Install via Firebase App Tester app."
           fi
@@ -172,8 +220,8 @@ jobs:
           echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Build**: #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **APK**: app-debug.apk (debug-signed)" >> $GITHUB_STEP_SUMMARY
+          echo "- **APK**: app-release.apk (persistent CI release signing)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "📱 **Install**: Open Firebase App Tester on Pixel → Accept invite" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🔍 **Features**: Badminton mapping, Sentry observability, raw dumps enabled" >> $GITHUB_STEP_SUMMARY
+          echo "🔍 **Features**: Badminton mapping, Sentry observability, raw dumps enabled, FATHOM_LIFT_WATCH=${LIFT_WATCH}" >> $GITHUB_STEP_SUMMARY

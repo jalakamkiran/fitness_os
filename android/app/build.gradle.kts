@@ -42,6 +42,19 @@ android {
     }
 
     signingConfigs {
+        // CI / App Distribution: env from GitHub Actions (FATHOM_KEYSTORE_*)
+        create("ci") {
+            val ciPath = System.getenv("FATHOM_KEYSTORE_PATH")
+            if (!ciPath.isNullOrBlank()) {
+                val ciFile = file(ciPath)
+                if (ciFile.exists()) {
+                    storeFile = ciFile
+                    storePassword = System.getenv("FATHOM_KEYSTORE_PASSWORD")
+                    keyAlias = System.getenv("FATHOM_KEY_ALIAS")
+                    keyPassword = System.getenv("FATHOM_KEY_PASSWORD")
+                }
+            }
+        }
         create("release") {
             // Load keystore from key.properties if available
             val keystorePropertiesFile = rootProject.file("key.properties")
@@ -64,13 +77,14 @@ android {
 
     buildTypes {
         release {
-            // Use release signing if keystore exists, otherwise fallback to debug
-            // AGP will auto-generate ~/.android/debug.keystore if missing
+            // CI persistent key → key.properties → debug
             val keystorePropertiesFile = rootProject.file("key.properties")
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            val ciPath = System.getenv("FATHOM_KEYSTORE_PATH")
+            val useCi = !ciPath.isNullOrBlank() && file(ciPath).exists()
+            signingConfig = when {
+                useCi -> signingConfigs.getByName("ci")
+                keystorePropertiesFile.exists() -> signingConfigs.getByName("release")
+                else -> signingConfigs.getByName("debug")
             }
             // Disable minify for now to avoid breaking Huawei BLE stack and Sentry
             // TODO: Add proper proguard rules and re-enable

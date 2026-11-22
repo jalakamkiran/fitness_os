@@ -6,6 +6,7 @@ import 'package:fitness_os/core/storage/store_invalidation.dart';
 import 'package:fitness_os/features/device_pairing/data/di/device_pairing_di.dart';
 import 'package:fitness_os/features/diagnostics/data/diagnostics_di.dart';
 import 'package:fitness_os/features/home/data/di/home_di.dart';
+import 'package:fitness_os/features/lift/data/lift_di.dart';
 import 'package:fitness_os/features/programs/data/programs_di.dart';
 import 'package:fitness_os/features/vitals/data/di/vitals_di.dart';
 import 'package:fitness_os/features/workout_history/data/di/workout_history_di.dart';
@@ -29,6 +30,7 @@ Future<void> initDependencies() async {
   registerOneShotAutoSync(sl);
   await initBackendSync();
   _initHome();
+  initLiftDependencies(sl);
   // [features] — auto-managed by create_feature.sh, do not edit manually
 }
 

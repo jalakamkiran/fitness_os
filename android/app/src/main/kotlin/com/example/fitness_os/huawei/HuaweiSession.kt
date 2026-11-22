@@ -1,5 +1,6 @@
 package com.example.fitness_os.huawei
 
+import android.os.SystemClock
 import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
@@ -27,6 +28,7 @@ class HuaweiSession(
     private val emit: (Map<String, Any?>) -> Unit,
     /** App files root for TruSleep side-files (optional — skip persist when null). */
     private val appFilesDir: (() -> java.io.File)? = null,
+    private val isSyncHeld: () -> Boolean = { false },
 ) {
     companion object {
         private const val TAG = "FOS_HUAWEI"
@@ -141,7 +143,9 @@ class HuaweiSession(
                 0x1A, 0x1B, 0x1D, 0x21, 0x22, 0x23, 0x24, 0x29, 0x2A, 0x2B, 0x2E, 0x2F,
                 0x30, 0x31, 0x32, 0x35, 0x36, 0x37, 0x3E, 0x3F,
             ),
-            0x02 to byteArrayOf(0x01, 0x04, 0x05, 0x06, 0x07, 0x08),
+            0x02 to byteArrayOf(
+                0x01, 0x02, 0x04, 0x05, 0x06, 0x07, 0x08, 0x10,
+            ),
             0x07 to byteArrayOf(
                 0x01, 0x03, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0E, 0x10, 0x13, 0x15,
                 0x16, 0x17, 0x18, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x21, 0x22, 0x23, 0x24,
@@ -212,6 +216,23 @@ class HuaweiSession(
     /** Hard-off FeatureUpload (`0x28`) while product Sync is in flight. */
     @Volatile
     private var productSyncActive: Boolean = false
+
+    @Volatile
+    private var liftEnabled: Boolean = false
+    private val liftMsgIdCounter = AtomicInteger(0x4C00)
+    private val liftP2pSeq = AtomicInteger(1)
+    @Volatile
+    private var cachedNotifyConstraints: HuaweiNotifyLift.NotifyConstraints? = null
+    @Volatile
+    private var lastLiftNotification: HuaweiNotifyLift.LastSentNotification? = null
+    private val pendingLiftSend = AtomicReference<HuaweiFraming.Frame?>(null)
+    private var liftNotifyAutoEnablePending: Boolean = false
+    private var liftNotifyEnableRan: Boolean = false
+    private data class LastLiftOutbound(
+        val step: String,
+        val frame: HuaweiFraming.Frame,
+    )
+    private var lastLiftOutbound: LastLiftOutbound? = null
 
     /**
      * Last zone we pushed to the watch (set-time / timezone-id). Used to format
@@ -954,6 +975,9 @@ class HuaweiSession(
             }
             maybeAckP2P(decrypted)
             maybeAckMusicAsync(decrypted)
+            maybeEmitLiftSvc02Frame(decrypted)
+            maybeHandleNotificationReply(decrypted, decryptOk)
+            maybeHandleLiftP2PInbound(decrypted)
         }
 
         synchronized(frameLock) {
@@ -1506,6 +1530,9 @@ class HuaweiSession(
         runCountryCode(activeIds)
 
         Log.i(TAG, "post-bind: configure complete")
+        if (liftNotifyAutoEnablePending) {
+            runLiftWatchNotificationEnable(autoOnce = true)
+        }
         return true
     }
 
@@ -1712,7 +1739,7 @@ class HuaweiSession(
             var size = 0
             while (remaining.isNotEmpty()) {
                 val svc = remaining.first()
-                val cmds = COMMANDS_PROBE[svc] ?: byteArrayOf(0x01)
+                val cmds = activeCommandsProbe()[svc] ?: byteArrayOf(0x01)
                 val addLen = cmds.size + 5
                 if (batch.isNotEmpty() && size + addLen > maxPlain) break
                 remaining.removeFirst()
@@ -2238,6 +2265,415 @@ class HuaweiSession(
         emit(mapOf("type" to "session_state", "state" to "auth_failed", "message" to message, "hint" to hint))
         try { transport.disconnect() } catch (_: Exception) {}
         return SessionOutcome.AuthFailed
+    }
+
+    private fun activeCommandsProbe(): Map<Int, ByteArray> {
+        if (!liftEnabled) return COMMANDS_PROBE
+        val base = COMMANDS_PROBE[HuaweiNotifyLift.SVC_NOTIFY] ?: byteArrayOf()
+        val replyByte = HuaweiNotifyLift.CMD_REPLY.toByte()
+        val withReply = if (base.any { it == replyByte }) {
+            base
+        } else {
+            base + replyByte
+        }
+        return COMMANDS_PROBE + (HuaweiNotifyLift.SVC_NOTIFY to withReply)
+    }
+
+    fun setLiftWatchAutoEnableOnSession(pending: Boolean) {
+        liftNotifyAutoEnablePending = pending
+        if (pending && sessionKey != null && encryptionEnabled) {
+            liftEnabled = true
+            runLiftWatchNotificationEnable(autoOnce = true)
+        }
+    }
+
+    fun liftConfigure(enabled: Boolean) {
+        liftEnabled = enabled
+        Log.i(TAG, "liftConfigure enabled=$enabled")
+        if (enabled && sessionKey != null && encryptionEnabled) {
+            reprobeNotifyServiceCommands()
+        }
+    }
+
+    fun liftOnSessionReady() {
+        if (!liftNotifyAutoEnablePending) return
+        liftEnabled = true
+        reprobeNotifyServiceCommands()
+        runLiftWatchNotificationEnable(autoOnce = true)
+    }
+
+    fun liftEnableWatchNotifications(): Map<String, Any?> =
+        runLiftWatchNotificationEnable(autoOnce = false)
+
+    private fun runLiftWatchNotificationEnable(autoOnce: Boolean): Map<String, Any?> {
+        if (!liftEnabled && !liftNotifyAutoEnablePending) {
+            return mapOf("error" to "disabled")
+        }
+        if (sessionKey == null || !encryptionEnabled) {
+            return mapOf("error" to "no_session")
+        }
+        if (autoOnce && liftNotifyEnableRan) {
+            return mapOf("skipped" to "already_ran")
+        }
+        liftEnabled = true
+        val steps = mutableListOf<Map<String, Any?>>()
+        fun runStep(name: String, req: HuaweiFraming.Frame): HuaweiFraming.Frame? {
+            lastLiftOutbound = LastLiftOutbound(name, req)
+            val resp = exchangeEncrypted(
+                req,
+                req.serviceId,
+                req.commandId,
+                CONFIGURE_TIMEOUT_MS,
+            )
+            val reqHex = HuaweiNotifyEnable.frameTlvsHex(req)
+            val respHex = resp?.let { HuaweiNotifyEnable.frameTlvsHex(it) }
+            val code = resp?.let { HuaweiNotifyEnable.parseResultCode(it) }
+            val label = HuaweiNotifyEnable.resultLabel(code)
+            val ok = resp != null && (HuaweiNotifyEnable.isSuccess(code) || code == null)
+            steps += mapOf(
+                "step" to name,
+                "svc" to req.serviceId,
+                "cmd" to req.commandId,
+                "requestHex" to reqHex,
+                "responseHex" to respHex,
+                "resultCode" to code,
+                "resultLabel" to label,
+                "ok" to ok,
+            )
+            emit(
+                mapOf(
+                    "type" to "lift_enable_step",
+                    "step" to name,
+                    "requestHex" to reqHex,
+                    "responseHex" to respHex,
+                    "resultCode" to code,
+                    "resultLabel" to label,
+                ),
+            )
+            Log.i(
+                TAG,
+                "lift enable $name ok=$ok code=$code req=[$reqHex] resp=[$respHex]",
+            )
+            return resp
+        }
+
+        reprobeNotifyServiceCommands()
+        steps += mapOf(
+            "step" to "reprobe_svc02",
+            "svc02Commands" to (commandsByService[HuaweiNotifyLift.SVC_NOTIFY]?.sorted() ?: emptyList<Int>()),
+            "ok" to true,
+        )
+        runStep("notification_capabilities", HuaweiNotifyLift.buildCapabilitiesRequest())
+        cachedNotifyConstraints = null
+        runStep("notification_constraints", HuaweiNotifyLift.buildConstraintsRequest())
+        runStep("notification_state_on", HuaweiNotifyEnable.buildNotificationStateEnable(true))
+        runStep("wear_message_push_on", HuaweiNotifyEnable.buildWearMessagePush(true))
+        runStep("default_switch_query", HuaweiNotifyEnable.buildDefaultSwitchQuery())
+
+        liftNotifyEnableRan = true
+        return mapOf(
+            "steps" to steps,
+            "svc02Commands" to (commandsByService[HuaweiNotifyLift.SVC_NOTIFY]?.sorted() ?: emptyList<Int>()),
+            "note" to (
+                "Per-app allowlist is owned by Huawei Health UI; use source package " +
+                    "com.example.fitness_os or com.google.android.apps.messaging on test sends."
+            ),
+        )
+    }
+
+    internal fun liftCapabilitySnapshot(): Map<String, Any?> {
+        val svc02 = commandsByService[HuaweiNotifyLift.SVC_NOTIFY] ?: emptySet()
+        val caps = expandCapabilities
+        return mapOf(
+            "liftEnabled" to liftEnabled,
+            "svc02Active" to (HuaweiNotifyLift.SVC_NOTIFY in commandsByService.keys ||
+                commandsByService.isEmpty()),
+            "svc02Commands" to svc02.sorted(),
+            "bit73ReplyActions" to expandCapabilityBit(73),
+            "bit77Timestamp" to expandCapabilityBit(77),
+            "bit82SmsQuick" to expandCapabilityBit(82),
+            "bit89ReplyKey" to expandCapabilityBit(89),
+            "bit94KeyedNotify" to expandCapabilityBit(94),
+            "bit120Remove" to expandCapabilityBit(120),
+            "expandCapabilityLen" to (caps?.size ?: 0),
+        )
+    }
+
+    fun liftSendTestNotification(
+        title: String,
+        sender: String,
+        body: String,
+        withReplyKey: Boolean,
+        notifyType: Int,
+        key: String,
+        category: String?,
+        sourceAppId: String = HuaweiNotifyLift.SRC_PHONE_PKG,
+    ): Map<String, Any?> {
+        if (!liftEnabled) {
+            return mapOf("error" to "disabled")
+        }
+        val caps = liftCapsFromExpand(withReplyKey)
+        val constraints = fetchNotifyConstraints()
+        val sentAtMs = System.currentTimeMillis()
+        val msgId = liftMsgIdCounter.getAndIncrement()
+        val frame = HuaweiNotifyLift.buildSendNotification(
+            msgId = msgId,
+            type = notifyType,
+            title = title,
+            sender = sender,
+            body = body,
+            sourceAppId = sourceAppId,
+            key = key,
+            caps = caps,
+            nowSec = sentAtMs / 1000L,
+            contentFormat = constraints.contentFormat ?: 0x02,
+            contentMaxLen = constraints.contentMaxLen,
+            notificationId = msgId,
+            category = category,
+        )
+        lastLiftNotification = HuaweiNotifyLift.LastSentNotification(
+            msgId, notifyType, key, msgId, category,
+        )
+        liftSendEncrypted(frame, step = "send_test_set", request = frame)
+        return mapOf(
+            "msgId" to msgId,
+            "key" to key,
+            "sourceAppId" to sourceAppId,
+            "requestHex" to HuaweiNotifyEnable.frameTlvsHex(frame),
+            "contentMaxLen" to constraints.contentMaxLen,
+            "sentAtMs" to sentAtMs,
+        )
+    }
+
+    fun liftSendPlainTestNotification(
+        title: String,
+        body: String,
+        notifyType: Int,
+        sourceAppId: String,
+    ): Map<String, Any?> {
+        if (!liftEnabled) return mapOf("error" to "disabled")
+        val constraints = fetchNotifyConstraints()
+        val sentAtMs = System.currentTimeMillis()
+        val msgId = liftMsgIdCounter.getAndIncrement()
+        val frame = HuaweiNotifyLift.buildSendPlainNotification(
+            msgId = msgId,
+            type = notifyType,
+            title = title,
+            body = body,
+            sourceAppId = sourceAppId,
+            contentFormat = constraints.contentFormat ?: 0x02,
+            contentMaxLen = constraints.contentMaxLen,
+        )
+        lastLiftNotification = HuaweiNotifyLift.LastSentNotification(
+            msgId, notifyType, "", msgId, null,
+        )
+        liftSendEncrypted(frame, step = "send_plain_test", request = frame)
+        return mapOf(
+            "msgId" to msgId,
+            "sourceAppId" to sourceAppId,
+            "notifyType" to notifyType,
+            "requestHex" to HuaweiNotifyEnable.frameTlvsHex(frame),
+            "sentAtMs" to sentAtMs,
+        )
+    }
+
+    fun liftRemoveLast(): Map<String, Any?> {
+        if (!liftEnabled) return mapOf("error" to "disabled")
+        val last = lastLiftNotification ?: return mapOf("error" to "no_last")
+        if (!expandCapabilityBit(120)) return mapOf("error" to "bit120_off")
+        val frame = HuaweiNotifyLift.buildRemove(
+            last.notifyType,
+            HuaweiNotifyLift.SRC_PHONE_PKG,
+            last.key,
+            last.notificationId,
+            last.category,
+        )
+        liftSendEncrypted(frame)
+        return mapOf("removed" to true, "key" to last.key)
+    }
+
+    fun liftQueryQuickReplies(): Map<String, Any?> {
+        if (!liftEnabled) return mapOf("error" to "disabled")
+        val payload = HuaweiNotifyLift.buildQuickReplyQuery()
+        val p2p = HuaweiNotifyLift.buildP2PSend(
+            liftP2pSeq.getAndIncrement(),
+            HuaweiNotifyLift.MODULE_SMS_QUICK,
+            HuaweiNotifyLift.DST_WATCH_HOME,
+            HuaweiNotifyLift.FINGERPRINT_PHONE,
+            HuaweiNotifyLift.FINGERPRINT_WATCH,
+            payload,
+        )
+        liftSendEncrypted(p2p)
+        return mapOf("sent" to true)
+    }
+
+    fun liftSetQuickReplies(replies: List<String>): Map<String, Any?> {
+        if (!liftEnabled) return mapOf("error" to "disabled")
+        val payload = HuaweiNotifyLift.buildQuickReplyUpdate(replies)
+        val p2p = HuaweiNotifyLift.buildP2PSend(
+            liftP2pSeq.getAndIncrement(),
+            HuaweiNotifyLift.MODULE_SMS_QUICK,
+            HuaweiNotifyLift.DST_WATCH_HOME,
+            HuaweiNotifyLift.FINGERPRINT_PHONE,
+            HuaweiNotifyLift.FINGERPRINT_WATCH,
+            payload,
+        )
+        liftSendEncrypted(p2p)
+        return mapOf("sent" to true, "count" to replies.size.coerceAtMost(5))
+    }
+
+    fun flushPendingLiftSend() {
+        val frame = pendingLiftSend.getAndSet(null) ?: return
+        sendEncryptedNoWait(frame)
+    }
+
+    private fun reprobeNotifyServiceCommands() {
+        if (!liftEnabled) return
+        val cmds = activeCommandsProbe()[HuaweiNotifyLift.SVC_NOTIFY] ?: return
+        val batch = listOf(
+            HuaweiFraming.Tlv(0x02, byteArrayOf(HuaweiNotifyLift.SVC_NOTIFY.toByte())),
+            HuaweiFraming.Tlv(0x03, cmds),
+        )
+        val nested = HuaweiFraming.encodeTlvs(batch)
+        val resp = exchangeEncrypted(
+            HuaweiFraming.Frame(
+                SVC,
+                CMD_SUPPORTED_COMMANDS,
+                listOf(HuaweiFraming.Tlv(0x81, nested)),
+            ),
+            SVC,
+            CMD_SUPPORTED_COMMANDS,
+            CONFIGURE_TIMEOUT_MS,
+        )
+        if (resp != null) {
+            val merged = commandsByService
+                .mapValues { (_, v) -> v.toMutableSet() }
+                .toMutableMap()
+            mergeSupportedCommandsResponse(resp, merged)
+            commandsByService = merged
+            Log.i(
+                TAG,
+                "lift: re-probed svc 0x02 cmds=${commandsByService[HuaweiNotifyLift.SVC_NOTIFY]}",
+            )
+        }
+    }
+
+    private fun liftCapsFromExpand(withReplyKey: Boolean): HuaweiNotifyLift.LiftCaps =
+        HuaweiNotifyLift.LiftCaps(
+            bit73ReplyActions = expandCapabilityBit(73),
+            bit77Timestamp = expandCapabilityBit(77),
+            bit82SmsQuick = expandCapabilityBit(82),
+            bit89ReplyKey = withReplyKey && expandCapabilityBit(89),
+            bit94KeyedNotify = expandCapabilityBit(94),
+            bit120Remove = expandCapabilityBit(120),
+        )
+
+    private fun fetchNotifyConstraints(): HuaweiNotifyLift.NotifyConstraints {
+        cachedNotifyConstraints?.let { return it }
+        val req = HuaweiNotifyLift.buildConstraintsRequest()
+        val resp = exchangeEncrypted(
+            req,
+            HuaweiNotifyLift.SVC_NOTIFY,
+            HuaweiNotifyLift.CMD_CONSTRAINTS,
+            CONFIGURE_TIMEOUT_MS,
+        )
+        val parsed = if (resp != null) {
+            HuaweiNotifyLift.parseConstraints(resp)
+        } else {
+            HuaweiNotifyLift.NotifyConstraints(null, null)
+        }
+        cachedNotifyConstraints = parsed
+        return parsed
+    }
+
+    private fun liftSendEncrypted(
+        frame: HuaweiFraming.Frame,
+        step: String? = null,
+        request: HuaweiFraming.Frame? = null,
+    ) {
+        if (!liftEnabled) return
+        if (step != null && request != null) {
+            lastLiftOutbound = LastLiftOutbound(step, request)
+        }
+        if (isSyncHeld()) {
+            pendingLiftSend.set(frame)
+            Log.i(TAG, "lift send queued — sync in flight")
+            return
+        }
+        sendEncryptedNoWait(frame)
+    }
+
+    private fun maybeEmitLiftSvc02Frame(frame: HuaweiFraming.Frame) {
+        if (frame.serviceId != HuaweiNotifyLift.SVC_NOTIFY) return
+        val tags = frame.tlvs.joinToString(",") { "0x${it.tag.toString(16)}:${it.value.size}" }
+        val respHex = HuaweiNotifyEnable.frameTlvsHex(frame)
+        val resultCode = HuaweiNotifyEnable.parseResultCode(frame)
+        val resultLabel = HuaweiNotifyEnable.resultLabel(resultCode)
+        val payload = mutableMapOf<String, Any?>(
+            "type" to "lift_frame",
+            "svc" to frame.serviceId,
+            "cmd" to frame.commandId,
+            "tlvSummary" to tags,
+            "responseHex" to respHex,
+            "rxAtMs" to System.currentTimeMillis(),
+        )
+        if (resultCode != null) {
+            payload["resultCode"] = resultCode
+            payload["resultLabel"] = resultLabel
+            val out = lastLiftOutbound
+            if (out != null) {
+                payload["relatedStep"] = out.step
+                payload["requestHex"] = HuaweiNotifyEnable.frameTlvsHex(out.frame)
+                Log.w(
+                    TAG,
+                    "lift svc02 error step=${out.step} code=$resultCode ($resultLabel) " +
+                        "req=[${payload["requestHex"]}] resp=[$respHex]",
+                )
+                emit(
+                    mapOf(
+                        "type" to "lift_notify_error",
+                        "step" to out.step,
+                        "resultCode" to resultCode,
+                        "resultLabel" to resultLabel,
+                        "requestHex" to payload["requestHex"],
+                        "responseHex" to respHex,
+                        "cmd" to frame.commandId,
+                        "rxAtMs" to payload["rxAtMs"],
+                    ),
+                )
+            }
+        }
+        emit(payload)
+    }
+
+    private fun maybeHandleNotificationReply(frame: HuaweiFraming.Frame, decryptOk: Boolean) {
+        val reply = HuaweiNotifyLift.parseReply(frame) ?: return
+        emit(
+            mapOf(
+                "type" to "lift_reply",
+                "key" to reply.key,
+                "text" to reply.text,
+                "replyType" to reply.replyType,
+                "encoding" to reply.encoding,
+                "rxAtMs" to System.currentTimeMillis(),
+                "rxElapsedNs" to SystemClock.elapsedRealtimeNanos(),
+            ),
+        )
+        if (liftEnabled && decryptOk) {
+            liftSendEncrypted(HuaweiNotifyLift.buildReplyAck(0x00))
+        }
+    }
+
+    private fun maybeHandleLiftP2PInbound(frame: HuaweiFraming.Frame) {
+        if (frame.serviceId != SVC_P2P || frame.commandId != CMD_P2P) return
+        val src = frame.tlvs.firstOrNull { it.tag == 0x03 }?.value?.toString(Charsets.UTF_8).orEmpty()
+        val dst = frame.tlvs.firstOrNull { it.tag == 0x04 }?.value?.toString(Charsets.UTF_8).orEmpty()
+        if (!src.contains("smsquick") && !dst.contains("smsquick")) return
+        val payload = frame.tlvs.firstOrNull { it.tag == 0x07 }?.value ?: return
+        val items = HuaweiNotifyLift.parseQuickReplyList(payload)
+        if (items.isNotEmpty()) {
+            emit(mapOf("type" to "lift_quick_replies", "items" to items))
+        }
     }
 
     fun persistSessionMaterialForTest(material: String) {

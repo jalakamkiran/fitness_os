@@ -8,6 +8,14 @@ import {computeDailySummary, computeDailySummaries} from "./services/daily-summa
 import {syncFromApp} from "./services/sync-service";
 import {validateDateRange, istQueryBounds} from "./services/timezone";
 import {SyncStatus} from "./models/types";
+import {
+  batchUpsertStrengthSets,
+  getNextPlannedSession,
+  getProgression,
+  getSessionDetail,
+  upsertPlannedSession,
+  ValidationError,
+} from "./services/lift-service";
 
 const READ_ONLY_API_KEY = defineSecret("READ_ONLY_API_KEY");
 const DEVICE_WRITE_KEY = defineSecret("DEVICE_WRITE_KEY");
@@ -169,7 +177,16 @@ app.get("/api/v1/sync-status", authenticateRead, rateLimit, async (req, res) => 
   try {
     const db = admin.firestore();
 
-    const [workoutsSnap, sleepSnap, totalsSnap, hrSnap, hrvSnap, weightSnap, mealsSnap] =
+    const [
+      workoutsSnap,
+      sleepSnap,
+      totalsSnap,
+      hrSnap,
+      hrvSnap,
+      weightSnap,
+      mealsSnap,
+      strengthSetsSnap,
+    ] =
       await Promise.all([
         db.collection("workouts").orderBy("syncedAt", "desc").limit(1).get(),
         db.collection("sleep").orderBy("syncedAt", "desc").limit(1).get(),
@@ -178,6 +195,7 @@ app.get("/api/v1/sync-status", authenticateRead, rateLimit, async (req, res) => 
         db.collection("hrv").orderBy("syncedAt", "desc").limit(1).get(),
         db.collection("weight").orderBy("syncedAt", "desc").limit(1).get(),
         db.collection("meals").orderBy("syncedAt", "desc").limit(1).get(),
+        db.collection("strengthSets").orderBy("syncedAt", "desc").limit(1).get(),
       ]);
 
     const status: SyncStatus = {
@@ -188,6 +206,9 @@ app.get("/api/v1/sync-status", authenticateRead, rateLimit, async (req, res) => 
       hrv: !hrvSnap.empty ? hrvSnap.docs[0].data().syncedAt : null,
       weight: !weightSnap.empty ? weightSnap.docs[0].data().syncedAt : null,
       meals: !mealsSnap.empty ? mealsSnap.docs[0].data().syncedAt : null,
+      strengthSets: !strengthSetsSnap.empty ?
+        strengthSetsSnap.docs[0].data().syncedAt :
+        null,
     };
 
     res.json(status);
@@ -212,6 +233,8 @@ app.post("/api/v1/sync", authenticateWrite, async (req, res) => {
 });
 
 const MEALS_WRITE_ENABLED = process.env.MEALS_WRITE_ENABLED === "true";
+const LIFT_WRITE_ENABLED = process.env.LIFT_WRITE_ENABLED === "true";
+const LIFT_READ_ENABLED = process.env.LIFT_READ_ENABLED === "true";
 
 app.post("/api/v1/meals", authenticateWrite, async (req, res) => {
   if (!MEALS_WRITE_ENABLED) {
@@ -254,6 +277,103 @@ app.post("/api/v1/meals", authenticateWrite, async (req, res) => {
     res.json({id: mealId, synced: true});
   } catch (error) {
     console.error("Error logging meal:", error);
+    res.status(500).json({error: "Internal server error"});
+  }
+});
+
+// App uses device write key only — authenticateWrite for next planned session.
+app.post("/api/v1/lift/planned-sessions", authenticateWrite, async (req, res) => {
+  if (!LIFT_WRITE_ENABLED) {
+    res.status(403).json({error: "Lift write is disabled"});
+    return;
+  }
+  try {
+    const record = await upsertPlannedSession(req.body);
+    res.json(record);
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      res.status(400).json({error: error.message, field: error.field});
+      return;
+    }
+    console.error("Error upserting planned session:", error);
+    res.status(500).json({error: "Internal server error"});
+  }
+});
+
+app.get("/api/v1/lift/planned-sessions/next", authenticateWrite, async (req, res) => {
+  if (!LIFT_READ_ENABLED) {
+    res.status(403).json({error: "Lift read is disabled"});
+    return;
+  }
+  try {
+    const session = await getNextPlannedSession();
+    if (!session) {
+      res.status(404).json({error: "No upcoming planned session"});
+      return;
+    }
+    res.json(session);
+  } catch (error) {
+    console.error("Error fetching next planned session:", error);
+    res.status(500).json({error: "Internal server error"});
+  }
+});
+
+app.post("/api/v1/lift/strength-sets", authenticateWrite, async (req, res) => {
+  if (!LIFT_WRITE_ENABLED) {
+    res.status(403).json({error: "Lift write is disabled"});
+    return;
+  }
+  try {
+    const sets = req.body?.sets;
+    const result = await batchUpsertStrengthSets(sets);
+    res.json(result);
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      res.status(400).json({error: error.message, field: error.field});
+      return;
+    }
+    console.error("Error syncing strength sets:", error);
+    res.status(500).json({error: "Internal server error"});
+  }
+});
+
+app.get("/api/v1/lift/progression", authenticateRead, rateLimit, async (req, res) => {
+  if (!LIFT_READ_ENABLED) {
+    res.status(403).json({error: "Lift read is disabled"});
+    return;
+  }
+  try {
+    let weeks = 8;
+    const raw = req.query.weeks;
+    if (raw !== undefined) {
+      weeks = parseInt(String(raw), 10);
+      if (Number.isNaN(weeks) || weeks < 1 || weeks > 26) {
+        res.status(400).json({error: "weeks must be between 1 and 26"});
+        return;
+      }
+    }
+    const rows = await getProgression(weeks);
+    res.json(rows);
+  } catch (error) {
+    console.error("Error fetching lift progression:", error);
+    res.status(500).json({error: "Internal server error"});
+  }
+});
+
+app.get("/api/v1/lift/sessions/:id", authenticateRead, rateLimit, async (req, res) => {
+  if (!LIFT_READ_ENABLED) {
+    res.status(403).json({error: "Lift read is disabled"});
+    return;
+  }
+  try {
+    const detail = await getSessionDetail(req.params.id);
+    if (!detail) {
+      res.status(404).json({error: "Session not found"});
+      return;
+    }
+    res.json(detail);
+  } catch (error) {
+    console.error("Error fetching lift session:", error);
     res.status(500).json({error: "Internal server error"});
   }
 });
