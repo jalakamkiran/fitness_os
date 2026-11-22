@@ -3,8 +3,15 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fitness_os/core/backend/backend_sync_service.dart';
+import 'package:fitness_os/core/error/failures.dart';
+import 'package:fitness_os/core/backend/sync_models.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync.dart';
+import 'package:fitness_os/core/huawei/one_shot_auto_sync_di.dart';
+import 'package:fitness_os/core/utils/either.dart';
+
+import '../../support/backend_fakes.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -204,6 +211,21 @@ void main() {
       expect(sync.passStarts, 0);
     });
 
+    test('runAutoSyncPass pushes postWatch when workouts throw', () async {
+      final events = <SyncTrigger>[];
+      final pusher = _TriggerRecorder(events);
+      final workouts = _ThrowingWorkouts();
+      final vitals = FakeVitalsRepo();
+      try {
+        await runAutoSyncPass(
+          workouts: workouts,
+          vitals: vitals,
+          pusher: pusher,
+        );
+      } catch (_) {}
+      expect(events, contains(SyncTrigger.postWatch));
+    });
+
     test('onPassSettled fires after passInFlight clears', () async {
       final gate = Completer<void>();
       var settledWhileInFlight = true;
@@ -231,4 +253,29 @@ void main() {
       expect(settledWhileInFlight, isFalse);
     });
   });
+}
+
+class _TriggerRecorder implements BackendPusher {
+  _TriggerRecorder(this.log);
+  final List<SyncTrigger> log;
+
+  @override
+  Future<PushOutcome> push(SyncTrigger trigger) async {
+    log.add(trigger);
+    return PushOutcome(trigger: trigger, ok: true);
+  }
+
+  @override
+  void startRetryTimer() {}
+
+  @override
+  void stopRetryTimer() {}
+}
+
+class _ThrowingWorkouts extends FakeWorkoutRepo {
+  @override
+  Future<Either<Failure, List<WorkoutSummary>>> syncFromWatch({
+    bool forceFullHistory = false,
+  }) async =>
+      throw StateError('boom');
 }

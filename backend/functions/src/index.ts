@@ -1,11 +1,12 @@
 import {onRequest} from "firebase-functions/v2/https";
 import {defineSecret} from "firebase-functions/params";
 import * as admin from "firebase-admin";
-import express from "express";
+import express, {Request} from "express";
+import * as crypto from "crypto";
 import {authenticateRead, authenticateWrite, initializeKeys} from "./middleware/auth";
 import {rateLimit} from "./middleware/rate-limit";
 import {computeDailySummary, computeDailySummaries} from "./services/daily-summary";
-import {syncFromApp} from "./services/sync-service";
+import {getSyncManifest, syncFromApp} from "./services/sync-service";
 import {validateDateRange, istQueryBounds} from "./services/timezone";
 import {SyncStatus} from "./models/types";
 
@@ -16,8 +17,15 @@ const FATHOM_SYNC_WEBHOOK_KEY = defineSecret("FATHOM_SYNC_WEBHOOK_KEY");
 
 admin.initializeApp();
 
+type RequestWithRawBody = Request & {rawBody?: Buffer};
+
 const app = express();
-app.use(express.json());
+app.use(express.json({
+  limit: "1mb",
+  verify: (req, _res, buf) => {
+    (req as RequestWithRawBody).rawBody = buf;
+  },
+}));
 
 // Initialize auth keys from secrets
 app.use((req, res, next) => {
@@ -199,14 +207,51 @@ app.get("/api/v1/sync-status", authenticateRead, rateLimit, async (req, res) => 
 
 app.post("/api/v1/sync", authenticateWrite, async (req, res) => {
   try {
+    const checksumHeader = req.headers["x-fathom-body-sha256"];
+    let checksumVerified = false;
+    if (checksumHeader && typeof checksumHeader === "string") {
+      const rawBody = (req as RequestWithRawBody).rawBody;
+      if (!rawBody) {
+        res.status(400).json({error: "checksum_mismatch"});
+        return;
+      }
+      const hash = crypto.createHash("sha256").update(rawBody).digest("hex");
+      if (hash !== checksumHeader.toLowerCase()) {
+        res.status(400).json({error: "checksum_mismatch"});
+        return;
+      }
+      checksumVerified = true;
+    }
+
     const result = await syncFromApp(
         req.body,
         FATHOM_SYNC_WEBHOOK_URL.value(),
-        FATHOM_SYNC_WEBHOOK_KEY.value()
+        FATHOM_SYNC_WEBHOOK_KEY.value(),
+        {checksumVerified}
     );
     res.json(result);
   } catch (error) {
     console.error("Error syncing data:", error);
+    res.status(500).json({error: "Internal server error"});
+  }
+});
+
+app.get("/api/v1/sync-manifest", authenticateWrite, rateLimit, async (req, res) => {
+  try {
+    const {from} = req.query;
+    if (!from || typeof from !== "string") {
+      res.status(400).json({error: "Provide ?from=YYYY-MM-DD"});
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+      res.status(400).json({error: "Invalid date format. Use YYYY-MM-DD"});
+      return;
+    }
+
+    const manifest = await getSyncManifest(from);
+    res.json(manifest);
+  } catch (error) {
+    console.error("Error fetching sync manifest:", error);
     res.status(500).json({error: "Internal server error"});
   }
 });

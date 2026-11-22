@@ -23,6 +23,8 @@ export interface WorkoutRecord {
   anaerobicEffect: number | null;
   recoveryTime: number | null;
   syncedAt: string;
+  contentHash?: string | null;
+  clientId?: string | null;
 }
 
 export interface SleepRecord {
@@ -40,6 +42,8 @@ export interface SleepRecord {
   avgBreathRate: number | null;
   avgSpO2: number | null;
   syncedAt: string;
+  contentHash?: string | null;
+  clientId?: string | null;
 }
 
 export interface DailyTotalsRecord {
@@ -50,6 +54,8 @@ export interface DailyTotalsRecord {
   steps: number | null;
   distanceKm: number | null;
   syncedAt: string;
+  contentHash?: string | null;
+  clientId?: string | null;
 }
 
 export interface HeartRateRecord {
@@ -58,6 +64,8 @@ export interface HeartRateRecord {
   avgHr: number | null;
   maxHr: number | null;
   syncedAt: string;
+  contentHash?: string | null;
+  clientId?: string | null;
 }
 
 export interface HrvRecord {

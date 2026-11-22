@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:get_it/get_it.dart';
 
-import 'package:fitness_os/core/backend/backend_config.dart';
 import 'package:fitness_os/core/backend/backend_sync_service.dart';
+import 'package:fitness_os/core/backend/sync_models.dart';
+import 'package:fitness_os/core/observability/sentry_sync_instrumentation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fitness_os/core/huawei/fos_huawei_log.dart';
 import 'package:fitness_os/core/huawei/huawei_link.dart';
 import 'package:fitness_os/core/huawei/one_shot_auto_sync.dart';
@@ -21,12 +23,14 @@ class AutoSyncLifecycle extends StatefulWidget {
     required this.link,
     required this.pairing,
     required this.child,
+    this.backendPusher,
   });
 
   final OneShotAutoSync autoSync;
   final HuaweiLink link;
   final DevicePairingRepository pairing;
   final Widget child;
+  final BackendPusher? backendPusher;
 
   @override
   State<AutoSyncLifecycle> createState() => _AutoSyncLifecycleState();
@@ -37,10 +41,13 @@ class _AutoSyncLifecycleState extends State<AutoSyncLifecycle>
   StreamSubscription<HuaweiLinkEvent>? _linkSub;
   bool _ensureInFlight = false;
   bool _ensureQueued = false;
+  BackendPusher? _pusher;
 
   @override
   void initState() {
     super.initState();
+    _pusher = widget.backendPusher ??
+        (GetIt.I.isRegistered<BackendPusher>() ? GetIt.I<BackendPusher>() : null);
     WidgetsBinding.instance.addObserver(this);
     _linkSub = widget.link.events.listen(_onLinkEvent);
     // Cold open: treat as resume (lifecycle observer does not re-emit current).
@@ -61,10 +68,26 @@ class _AutoSyncLifecycleState extends State<AutoSyncLifecycle>
     }
     _ensureInFlight = true;
     try {
+      if (GetIt.I.isRegistered<SharedPreferences>()) {
+        try {
+          await GetIt.I<SharedPreferences>().reload();
+        } catch (_) {}
+      }
+      unawaited(_pusher?.push(SyncTrigger.open));
+      unawaited(
+        SentrySyncInstrumentation.addBackendSyncBreadcrumb('open_push'),
+      );
+
       await widget.pairing.startLink();
       if (!widget.link.sessionReady) {
         final remembered = await widget.pairing.loadRemembered();
         if (remembered != null) {
+          unawaited(
+            SentrySyncInstrumentation.addBackendSyncBreadcrumb(
+              'watch_wait',
+              data: const {'outcome': 'disconnected'},
+            ),
+          );
           FosHuaweiLog.i(
             'lifecycle reconnect remembered=${remembered.name}',
             op: 'reconnect',
@@ -88,12 +111,7 @@ class _AutoSyncLifecycleState extends State<AutoSyncLifecycle>
       _ensureInFlight = false;
     }
     widget.autoSync.onResumed();
-    
-    // Trigger backend sync on app open
-    if (BackendConfig.isEnabled && GetIt.I.isRegistered<BackendSyncService>()) {
-      unawaited(GetIt.I<BackendSyncService>().syncToBackend());
-    }
-    
+
     if (_ensureQueued) {
       _ensureQueued = false;
       unawaited(_ensureSessionThenArm());
@@ -104,10 +122,12 @@ class _AutoSyncLifecycleState extends State<AutoSyncLifecycle>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
       case AppLifecycleState.resumed:
+        _pusher?.startRetryTimer();
         unawaited(_ensureSessionThenArm());
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
+        _pusher?.stopRetryTimer();
         widget.autoSync.onBackgrounded();
       case AppLifecycleState.inactive:
         break;

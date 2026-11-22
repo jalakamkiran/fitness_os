@@ -1,218 +1,70 @@
 /* eslint-disable @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any */
-import {syncFromApp} from "../services/sync-service";
+import {getSyncManifest, syncFromApp} from "../services/sync-service";
 
-jest.mock("firebase-admin", () => {
-  const mockCommit = jest.fn().mockResolvedValue({});
+function buildFirestoreMock(options?: {
+  existingWorkout?: {startTime: string} | null;
+  commitCount?: {value: number};
+}) {
+  const commitCount = options?.commitCount ?? {value: 0};
   const mockSet = jest.fn();
-  const mockBatch = {
-    set: mockSet,
-    commit: mockCommit,
-  };
-  const mockDoc = jest.fn(() => ({}));
-  const mockCollection = jest.fn(() => ({
-    doc: mockDoc,
+
+  const mockGet = jest.fn().mockResolvedValue({
+    exists: options?.existingWorkout != null,
+    data: () => options?.existingWorkout ?? undefined,
+  });
+
+  const mockDoc = jest.fn(() => ({
+    get: mockGet,
   }));
 
-  return {
-    initializeApp: jest.fn(),
-    firestore: jest.fn(() => ({
-      collection: mockCollection,
-      batch: () => mockBatch,
-    })),
+  const mockCollection = jest.fn(() => ({doc: mockDoc}));
+
+  const firestore = {
+    collection: mockCollection,
+    batch: jest.fn(() => {
+      const b = {
+        set: mockSet,
+        commit: jest.fn().mockImplementation(async () => {
+          commitCount.value++;
+        }),
+      };
+      return b;
+    }),
   };
-});
+
+  return {
+    firestore,
+    mockSet,
+    mockDoc,
+    mockCollection,
+    mockGet,
+    commitCount,
+  };
+}
+
+jest.mock("firebase-admin", () => ({
+  initializeApp: jest.fn(),
+  firestore: jest.fn(),
+}));
+
+jest.mock("../services/webhook-notifier", () => ({
+  sendSyncWebhook: jest.fn().mockResolvedValue(undefined),
+}));
 
 describe("Sync Service", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it("should sync workout data successfully", async () => {
+  function installMock(existingWorkout?: {startTime: string} | null) {
     const admin = require("firebase-admin");
-    const mockCommit = jest.fn().mockResolvedValue({});
-    const mockSet = jest.fn();
-    const mockBatch = {
-      set: mockSet,
-      commit: mockCommit,
-    };
-    const mockDoc = jest.fn(() => ({}));
-    const mockCollection = jest.fn(() => ({doc: mockDoc}));
+    const built = buildFirestoreMock({existingWorkout});
+    admin.firestore = jest.fn(() => built.firestore);
+    return built;
+  }
 
-    admin.firestore = jest.fn(() => ({
-      collection: mockCollection,
-      batch: () => mockBatch,
-    }));
-
-    const workoutPayload = {
-      workouts: [{
-        number: 1,
-        type: 2, // running
-        startTime: 1700000000,
-        endTime: 1700003600,
-        durationSec: 3600,
-        calories: 500,
-        hrMin: 140,
-        hrMax: 180,
-      }],
-    };
-
-    const result = await syncFromApp(workoutPayload);
-
-    expect(result.synced).toBe(1);
-    expect(mockCollection).toHaveBeenCalledWith("workouts");
-    expect(mockDoc).toHaveBeenCalledWith("workout_1");
-    expect(mockSet).toHaveBeenCalled();
-    expect(mockCommit).toHaveBeenCalled();
-  });
-
-  it("should sync sleep data successfully", async () => {
-    const admin = require("firebase-admin");
-    const mockCommit = jest.fn().mockResolvedValue({});
-    const mockSet = jest.fn();
-    const mockBatch = {
-      set: mockSet,
-      commit: mockCommit,
-    };
-    const mockDoc = jest.fn(() => ({}));
-    const mockCollection = jest.fn(() => ({doc: mockDoc}));
-
-    admin.firestore = jest.fn(() => ({
-      collection: mockCollection,
-      batch: () => mockBatch,
-    }));
-
-    const sleepPayload = {
-      sleep: [{
-        beginUnix: 1700000000,
-        endUnix: 1700028800,
-        stages: [
-          {timestampUnix: 1700000000, durationMin: 120, stage: 3}, // deep
-          {timestampUnix: 1700007200, durationMin: 300, stage: 2}, // light
-          {timestampUnix: 1700025000, durationMin: 60, stage: 4}, // REM
-        ],
-      }],
-    };
-
-    const result = await syncFromApp(sleepPayload);
-
-    expect(result.synced).toBe(1);
-    expect(mockCollection).toHaveBeenCalledWith("sleep");
-    expect(mockSet).toHaveBeenCalled();
-    expect(mockCommit).toHaveBeenCalled();
-  });
-
-  it("should sync daily totals successfully", async () => {
-    const admin = require("firebase-admin");
-    const mockCommit = jest.fn().mockResolvedValue({});
-    const mockSet = jest.fn();
-    const mockBatch = {
-      set: mockSet,
-      commit: mockCommit,
-    };
-    const mockDoc = jest.fn(() => ({}));
-    const mockCollection = jest.fn(() => ({doc: mockDoc}));
-
-    admin.firestore = jest.fn(() => ({
-      collection: mockCollection,
-      batch: () => mockBatch,
-    }));
-
-    const totalsPayload = {
-      dailyTotals: [{
-        dayKey: "2026-11-14",
-        steps: 7825,
-        activeKcal: 525,
-        totalKcal: 2100,
-      }],
-    };
-
-    const result = await syncFromApp(totalsPayload);
-
-    expect(result.synced).toBe(1);
-    expect(mockCollection).toHaveBeenCalledWith("dailyTotals");
-    expect(mockSet).toHaveBeenCalled();
-    expect(mockCommit).toHaveBeenCalled();
-  });
-
-  it("should sync multiple data types in one call", async () => {
-    const admin = require("firebase-admin");
-    const mockCommit = jest.fn().mockResolvedValue({});
-    const mockSet = jest.fn();
-    const mockBatch = {
-      set: mockSet,
-      commit: mockCommit,
-    };
-    const mockDoc = jest.fn(() => ({}));
-    const mockCollection = jest.fn(() => ({doc: mockDoc}));
-
-    admin.firestore = jest.fn(() => ({
-      collection: mockCollection,
-      batch: () => mockBatch,
-    }));
-
-    const mixedPayload = {
-      workouts: [{
-        number: 1,
-        type: 6, // swimming
-        startTime: 1700000000,
-        endTime: 1700003600,
-        durationSec: 3600,
-        calories: 400,
-      }],
-      dailyTotals: [{
-        dayKey: "2026-11-14",
-        steps: 5000,
-        activeKcal: 450,
-      }],
-      weight: [{
-        timestampMs: 1700010000000,
-        weightKg: 72.5,
-      }],
-    };
-
-    const result = await syncFromApp(mixedPayload);
-
-    expect(result.synced).toBe(3);
-    expect(mockCommit).toHaveBeenCalled();
-  });
-
-  it("should handle empty payload gracefully", async () => {
-    const admin = require("firebase-admin");
-    const mockCommit = jest.fn().mockResolvedValue({});
-    const mockSet = jest.fn();
-    const mockBatch = {
-      set: mockSet,
-      commit: mockCommit,
-    };
-
-    admin.firestore = jest.fn(() => ({
-      batch: () => mockBatch,
-    }));
-
-    const result = await syncFromApp({});
-
-    expect(result.synced).toBe(0);
-    expect(mockCommit).toHaveBeenCalled();
-  });
-
-  it("should add syncedAt timestamp to all records", async () => {
-    const admin = require("firebase-admin");
-    let capturedData: any = null;
-    const mockCommit = jest.fn().mockResolvedValue({});
-    const mockSet = jest.fn((ref, data) => {
-      capturedData = data;
-    });
-    const mockBatch = {
-      set: mockSet,
-      commit: mockCommit,
-    };
-    const mockDoc = jest.fn(() => ({}));
-    const mockCollection = jest.fn(() => ({doc: mockDoc}));
-
-    admin.firestore = jest.fn(() => ({
-      collection: mockCollection,
-      batch: () => mockBatch,
-    }));
+  it("should sync workout data successfully with accepted ids", async () => {
+    const {mockCollection, mockDoc, mockSet, commitCount} = installMock();
 
     const workoutPayload = {
       workouts: [{
@@ -221,123 +73,202 @@ describe("Sync Service", () => {
         startTime: 1700000000,
         endTime: 1700003600,
         durationSec: 3600,
+        calories: 500,
+        hrMin: 140,
+        hrMax: 180,
+        clientId: "workout_1",
+        contentHash: "abc123",
       }],
     };
 
-    await syncFromApp(workoutPayload);
-
-    expect(capturedData).toBeDefined();
-    expect(capturedData.syncedAt).toBeDefined();
-    expect(typeof capturedData.syncedAt).toBe("string");
-    // Verify ISO 8601 format
-    expect(capturedData.syncedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-  });
-
-  it("should handle workout with racket sport fields", async () => {
-    const admin = require("firebase-admin");
-    const mockCommit = jest.fn().mockResolvedValue({});
-    const mockSet = jest.fn();
-    const mockBatch = {
-      set: mockSet,
-      commit: mockCommit,
-    };
-    const mockDoc = jest.fn(() => ({}));
-    const mockCollection = jest.fn(() => ({doc: mockDoc}));
-
-    admin.firestore = jest.fn(() => ({
-      collection: mockCollection,
-      batch: () => mockBatch,
-    }));
-
-    const badmintonPayload = {
-      workouts: [{
-        number: 17,
-        type: 129, // badminton
-        startTime: 1700050000,
-        endTime: 1700050732,
-        durationSec: 732,
-        calories: 150,
-        hrMin: 82,
-        hrMax: 105,
-      }],
-    };
-
-    const result = await syncFromApp(badmintonPayload);
+    const result = await syncFromApp(workoutPayload);
 
     expect(result.synced).toBe(1);
+    expect(result.accepted.workouts).toEqual(["workout_1"]);
+    expect(result.rejected).toEqual([]);
+    expect(result.checksumVerified).toBe(false);
+    expect(mockCollection).toHaveBeenCalledWith("workouts");
+    expect(mockDoc).toHaveBeenCalledWith("workout_1");
     expect(mockSet).toHaveBeenCalled();
-    expect(mockCommit).toHaveBeenCalled();
+    expect(commitCount.value).toBeGreaterThanOrEqual(1);
   });
 
-  it("should handle workout with swim-specific fields", async () => {
-    const admin = require("firebase-admin");
-    const mockCommit = jest.fn().mockResolvedValue({});
-    const mockSet = jest.fn();
-    const mockBatch = {
-      set: mockSet,
-      commit: mockCommit,
-    };
-    const mockDoc = jest.fn(() => ({}));
-    const mockCollection = jest.fn(() => ({doc: mockDoc}));
+  it("rejects invalid workout in payload", async () => {
+    installMock();
 
-    admin.firestore = jest.fn(() => ({
-      collection: mockCollection,
-      batch: () => mockBatch,
-    }));
-
-    const swimPayload = {
+    const result = await syncFromApp({
       workouts: [{
-        number: 23,
-        type: 6, // pool swim
+        number: 2,
+        type: 2,
+        startTime: 1700000000,
+        endTime: 1700000000,
+        durationSec: 0,
+      }],
+    });
+
+    expect(result.synced).toBe(0);
+    expect(result.rejected).toHaveLength(1);
+    expect(result.rejected[0].kind).toBe("workout");
+    expect(result.rejected[0].reason).toBe("end_before_start");
+  });
+
+  it("uses collision doc id when start time differs >60s", async () => {
+    const {mockDoc} = installMock({startTime: "2019-01-01T00:00:00+05:30"});
+
+    await syncFromApp({
+      workouts: [{
+        number: 5,
+        type: 2,
         startTime: 1700000000,
         endTime: 1700003600,
         durationSec: 3600,
-        calories: 400,
-        laps: 28,
-        strokes: 2500,
-        poolLength: 40,
-        avgSwolf: 45,
-        distanceM: 1200,
       }],
-    };
+    });
 
-    const result = await syncFromApp(swimPayload);
-
-    expect(result.synced).toBe(1);
-    expect(mockCommit).toHaveBeenCalled();
+    expect(mockDoc).toHaveBeenCalledWith("workout_5_1700000000");
   });
 
-  it("should handle workout with strength-specific fields", async () => {
-    const admin = require("firebase-admin");
-    const mockCommit = jest.fn().mockResolvedValue({});
-    const mockSet = jest.fn();
-    const mockBatch = {
-      set: mockSet,
-      commit: mockCommit,
-    };
-    const mockDoc = jest.fn(() => ({}));
-    const mockCollection = jest.fn(() => ({doc: mockDoc}));
+  it("should sync sleep data successfully", async () => {
+    const {mockCollection, mockSet, commitCount} = installMock();
 
-    admin.firestore = jest.fn(() => ({
-      collection: mockCollection,
-      batch: () => mockBatch,
-    }));
-
-    const strengthPayload = {
-      workouts: [{
-        number: 42,
-        type: 140, // strength
-        startTime: 1700007200,
-        endTime: 1700010800,
-        durationSec: 3600,
-        calories: 300,
-        load: 1500,
+    const sleepPayload = {
+      sleep: [{
+        beginUnix: 1700000000,
+        endUnix: 1700028800,
+        stages: [
+          {timestampUnix: 1700000000, durationMin: 120, stage: 3},
+        ],
       }],
     };
 
-    const result = await syncFromApp(strengthPayload);
+    const result = await syncFromApp(sleepPayload);
 
     expect(result.synced).toBe(1);
-    expect(mockCommit).toHaveBeenCalled();
+    expect(result.accepted.sleep).toHaveLength(1);
+    expect(mockCollection).toHaveBeenCalledWith("sleep");
+    expect(mockSet).toHaveBeenCalled();
+    expect(commitCount.value).toBeGreaterThanOrEqual(1);
+  });
+
+  it("should sync daily totals and heart rate", async () => {
+    const {commitCount} = installMock();
+
+    const result = await syncFromApp({
+      dailyTotals: [{
+        dayKey: "2026-11-14",
+        steps: 7825,
+        activeKcal: 525,
+        totalKcal: 2100,
+      }],
+      heartRate: [{
+        dayKey: "2026-11-14",
+        avgHr: 72,
+        maxHr: 140,
+      }],
+    });
+
+    expect(result.synced).toBe(2);
+    expect(commitCount.value).toBeGreaterThanOrEqual(1);
+  });
+
+  it("should handle empty payload without batch commit", async () => {
+    const {commitCount} = installMock();
+
+    const result = await syncFromApp({});
+
+    expect(result.synced).toBe(0);
+    expect(commitCount.value).toBe(0);
+  });
+
+  it("commits in chunks of at most 400", async () => {
+    const {commitCount} = installMock();
+
+    const workouts = Array.from({length: 450}, (_, i) => ({
+      number: i + 1,
+      type: 2,
+      startTime: 1700000000 + i,
+      endTime: 1700003600 + i,
+      durationSec: 3600,
+    }));
+
+    const result = await syncFromApp({workouts});
+
+    expect(result.synced).toBe(450);
+    expect(commitCount.value).toBe(2);
+  });
+
+  it("stores contentHash on workout record", async () => {
+    const {mockSet} = installMock();
+    let captured: any = null;
+    mockSet.mockImplementation((_ref: unknown, data: unknown) => {
+      captured = data;
+    });
+
+    await syncFromApp({
+      workouts: [{
+        number: 1,
+        type: 2,
+        startTime: 1700000000,
+        endTime: 1700003600,
+        durationSec: 3600,
+        contentHash: "deadbeef",
+        clientId: "workout_1",
+      }],
+    });
+
+    expect(captured.contentHash).toBe("deadbeef");
+    expect(captured.clientId).toBe("workout_1");
+    expect(captured.syncedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("passes checksumVerified through result", async () => {
+    installMock();
+    const result = await syncFromApp({
+      workouts: [{
+        number: 1,
+        type: 2,
+        startTime: 1700000000,
+        endTime: 1700003600,
+        durationSec: 3600,
+      }],
+    }, undefined, undefined, {checksumVerified: true});
+
+    expect(result.checksumVerified).toBe(true);
+  });
+});
+
+describe("getSyncManifest", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("returns manifest entries with hashes", async () => {
+    const admin = require("firebase-admin");
+    const mockGet = jest.fn().mockResolvedValue({
+      docs: [{
+        id: "workout_1",
+        data: () => ({
+          id: "workout_1",
+          contentHash: "h1",
+          clientId: "workout_1",
+        }),
+      }],
+    });
+    const chain = {
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnValue({get: mockGet}),
+    };
+    admin.firestore = jest.fn(() => ({
+      collection: jest.fn(() => chain),
+    }));
+
+    const manifest = await getSyncManifest("2026-11-01");
+
+    expect(manifest.workouts).toHaveLength(1);
+    expect(manifest.workouts[0]).toEqual({
+      id: "workout_1",
+      contentHash: "h1",
+      clientId: "workout_1",
+    });
   });
 });

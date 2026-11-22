@@ -1,6 +1,7 @@
 import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:fitness_os/core/backend/backend_sync_service.dart';
 import 'package:fitness_os/core/storage/store_invalidation.dart';
 import 'package:fitness_os/features/device_pairing/data/repositories/device_pairing_repository_impl.dart';
 import 'package:fitness_os/features/device_pairing/domain/repositories/device_pairing_repository.dart';
@@ -33,6 +34,7 @@ Future<void> initVitalsDependencies(GetIt sl) async {
       repository: sl(),
       link: sl(),
       invalidation: sl<StoreInvalidation>(),
+      backendPusher: sl.isRegistered<BackendPusher>() ? sl() : null,
     ),
   );
 }
