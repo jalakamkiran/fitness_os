@@ -461,4 +461,4 @@ flowchart TB
 - Related requirements (partially superseded): [docs/brainstorms/2026-08-09-vitals-sleep-detail-stages-hr-requirements.md](docs/brainstorms/2026-08-09-vitals-sleep-detail-stages-hr-requirements.md)
 - Wire: [docs/wire-specs/huawei-br-gt5-sleep-files.md](docs/wire-specs/huawei-br-gt5-sleep-files.md), [docs/wire-specs/huawei-br-gt5-fitness-data.md](docs/wire-specs/huawei-br-gt5-fitness-data.md)
 - Prior plans: [docs/plans/2026-07-18-004-feat-vitals-sleep-hr-tab-plan.md](docs/plans/2026-07-18-004-feat-vitals-sleep-hr-tab-plan.md), [docs/plans/2026-08-09-002-feat-recovery-sleep-detail-plan.md](docs/plans/2026-08-09-002-feat-recovery-sleep-detail-plan.md)
-- Evidence: [docs/sleep_logs.txt](docs/sleep_logs.txt)
+- Evidence: owner-private Aug 2026 Sync logcat (off-repo; zone/skew findings summarized in handoff)
