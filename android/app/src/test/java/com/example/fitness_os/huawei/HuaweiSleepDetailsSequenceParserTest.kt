@@ -46,6 +46,20 @@ class HuaweiSleepDetailsSequenceParserTest {
     }
 
     @Test
+    fun toProductStages_subMinuteFragments_doNotInflateToSixtyMinutes() {
+        val begin = 1_700_000_000
+        val segments = List(60) {
+            HuaweiSleepDetailsSequenceParser.StageSegment(
+                durationSec = 10,
+                stage = HuaweiSleepDetailsSequenceParser.STAGE_LIGHT,
+            )
+        }
+        val product = HuaweiSleepDetailsSequenceParser.toProductStages(begin, segments)
+        val sumMin = product.sumOf { (it["durationMin"] as Int) }
+        assertEquals(10, sumMin)
+    }
+
+    @Test
     fun parse_rejectsWrongDictClass() {
         val bytes = buildSynthetic(dictId = 1)
         assertEquals(null, HuaweiSleepDetailsSequenceParser.parse(bytes))

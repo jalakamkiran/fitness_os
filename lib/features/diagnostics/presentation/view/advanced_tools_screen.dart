@@ -8,6 +8,7 @@ import 'package:fitness_os/core/di/injector.dart';
 import 'package:fitness_os/features/device_pairing/domain/gate_a_prefs.dart';
 import 'package:fitness_os/features/diagnostics/data/app_data_export_envelope.dart';
 import 'package:fitness_os/features/diagnostics/data/app_data_export_service.dart';
+import 'package:fitness_os/features/diagnostics/presentation/widgets/backend_sync_tile.dart';
 
 /// Permanent dig-deeper host: swim pipeline toggle + App Data Export.
 ///
@@ -219,6 +220,7 @@ class _AdvancedToolsScreenState extends State<AdvancedToolsScreen> {
             ),
           ),
           const SizedBox(height: 8),
+          const BackendSyncTile(),
           ListTile(
             key: const Key('advanced-export-tile'),
             contentPadding: EdgeInsets.zero,

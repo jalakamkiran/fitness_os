@@ -222,11 +222,24 @@ class PushOutcome {
   final int? httpStatus;
 }
 
+class QuarantinedLedgerItem {
+  const QuarantinedLedgerItem({
+    required this.kind,
+    required this.id,
+    required this.reason,
+  });
+
+  final SyncRecordKind kind;
+  final String id;
+  final String reason;
+}
+
 class BackendSyncStatus {
   const BackendSyncStatus({
     this.lastSuccessfulSync,
     this.pendingCount = 0,
     this.quarantinedCount = 0,
+    this.quarantinedItems = const [],
     this.inFlight = false,
     this.lastError,
   });
@@ -234,6 +247,7 @@ class BackendSyncStatus {
   final DateTime? lastSuccessfulSync;
   final int pendingCount;
   final int quarantinedCount;
+  final List<QuarantinedLedgerItem> quarantinedItems;
   final bool inFlight;
   final String? lastError;
 }

@@ -128,36 +128,44 @@ class BackendSyncService implements BackendPusher {
     final now = _now();
     final pendingRecords = <SyncRecord>[];
     final entries = Map<String, LedgerEntry>.from(ledger.entries);
+    final recordByKey = {for (final r in records) r.ledgerKey: r};
+
+    _recoverSoftQuarantinedSleep(entries, recordByKey, nowMs);
 
     for (final r in records) {
-      final existing = entries[r.ledgerKey];
+      final syncRecord = _recordForSync(r);
+      final existing = entries[syncRecord.ledgerKey];
       final needsPending = ledger.fullResyncRequired ||
           existing == null ||
           existing.state == LedgerState.pending ||
-          existing.hash != r.contentHash;
+          existing.hash != syncRecord.contentHash;
       if (!needsPending) continue;
       if (existing?.state == LedgerState.quarantined &&
-          existing!.hash == r.contentHash) {
+          existing!.hash == syncRecord.contentHash) {
         continue;
       }
-      final validation = _validator.validate(r, now: now);
+      final validation = _validator.validate(syncRecord, now: now);
       if (!validation.ok) {
-        entries[r.ledgerKey] = LedgerEntry(
+        entries[syncRecord.ledgerKey] = LedgerEntry(
           state: LedgerState.quarantined,
-          hash: r.contentHash,
+          hash: syncRecord.contentHash,
           updatedAtMs: nowMs,
           reason: validation.reason,
         );
-        await _reportQuarantine(r, validation.reason!);
+        await _reportQuarantine(
+          syncRecord,
+          validation.reason!,
+          entries: entries,
+        );
         continue;
       }
-      entries[r.ledgerKey] = LedgerEntry(
+      entries[syncRecord.ledgerKey] = LedgerEntry(
         state: LedgerState.pending,
-        hash: r.contentHash,
+        hash: syncRecord.contentHash,
         updatedAtMs: nowMs,
         attempts: existing?.attempts ?? 0,
       );
-      pendingRecords.add(r);
+      pendingRecords.add(syncRecord);
     }
 
     ledger = ledger.copyWith(entries: entries);
@@ -297,6 +305,10 @@ class BackendSyncService implements BackendPusher {
       } else {
         ok = false;
         _incrementPendingAttempts(entries, chunkRecords);
+        await _telemetry.breadcrumb(
+          'chunk_failed',
+          data: _privacySafePushCounts(entries, httpStatus: sendResult.status),
+        );
         break;
       }
     }
@@ -463,13 +475,85 @@ class BackendSyncService implements BackendPusher {
     );
   }
 
-  Future<void> _reportQuarantine(SyncRecord r, String reason) async {
+  SyncRecord _recordForSync(SyncRecord r) {
+    if (r.kind != SyncRecordKind.sleep) return r;
+    final body = Map<String, dynamic>.from(r.body);
+    SyncRecordValidator.sanitizeSleepBody(body);
+    return SyncRecord(
+      kind: r.kind,
+      id: r.id,
+      body: body,
+      contentHash: r.contentHash,
+    );
+  }
+
+  void _recoverSoftQuarantinedSleep(
+    Map<String, LedgerEntry> entries,
+    Map<String, SyncRecord> recordByKey,
+    int nowMs,
+  ) {
+    for (final key in entries.keys.toList()) {
+      if (!key.startsWith('${SyncRecordKind.sleep.name}:')) continue;
+      final entry = entries[key]!;
+      if (entry.state != LedgerState.quarantined) continue;
+      final reason = entry.reason;
+      if (reason == null) continue;
+      final record = recordByKey[key];
+      if (record == null) continue;
+
+      if (reason == 'too_large') {
+        if (SyncRecordValidator.encodedBodyBytes(record.body) >=
+            SyncRecordValidator.maxSleepRecordBytes) {
+          continue;
+        }
+      } else if (!SyncRecordValidator.isSoftSleepQuarantineReason(reason) &&
+          !reason.startsWith('server_')) {
+        continue;
+      } else if (reason.startsWith('server_')) {
+        continue;
+      }
+
+      entries[key] = entry.copyWith(
+        state: LedgerState.pending,
+        hash: record.contentHash,
+        updatedAtMs: nowMs,
+        clearReason: true,
+      );
+    }
+  }
+
+  Map<String, Object?> _privacySafePushCounts(
+    Map<String, LedgerEntry> entries, {
+    int? httpStatus,
+  }) {
+    var pendingCount = 0;
+    var quarantinedCount = 0;
+    for (final e in entries.values) {
+      if (e.state == LedgerState.pending) pendingCount++;
+      if (e.state == LedgerState.quarantined) quarantinedCount++;
+    }
+    return {
+      'pendingCount': pendingCount,
+      'quarantinedCount': quarantinedCount,
+      if (httpStatus != null) 'httpStatus': httpStatus,
+    };
+  }
+
+  Future<void> _reportQuarantine(
+    SyncRecord r,
+    String reason, {
+    required Map<String, LedgerEntry> entries,
+  }) async {
     final key = '${r.ledgerKey}:${r.contentHash}';
     if (_quarantineReported.contains(key)) return;
     _quarantineReported.add(key);
     await _telemetry.breadcrumb(
       'quarantine',
-      data: {'kind': r.kind.name, 'reason': reason},
+      data: {
+        'kind': r.kind.name,
+        'reason': reason,
+        ..._privacySafePushCounts(entries),
+      },
     );
   }
 
@@ -480,19 +564,48 @@ class BackendSyncService implements BackendPusher {
   void _emitStatusFromLedger(SyncLedgerData ledger) {
     var pending = 0;
     var quarantined = 0;
-    for (final e in ledger.entries.values) {
+    final quarantinedItems = <QuarantinedLedgerItem>[];
+    for (final kv in ledger.entries.entries) {
+      final e = kv.value;
       if (e.state == LedgerState.pending) pending++;
-      if (e.state == LedgerState.quarantined) quarantined++;
+      if (e.state == LedgerState.quarantined) {
+        quarantined++;
+        final reason = e.reason ?? 'unknown';
+        final parsed = _parseLedgerKey(kv.key);
+        if (parsed != null) {
+          quarantinedItems.add(
+            QuarantinedLedgerItem(
+              kind: parsed.$1,
+              id: parsed.$2,
+              reason: reason,
+            ),
+          );
+        }
+      }
     }
+    quarantinedItems.sort((a, b) => a.id.compareTo(b.id));
     _status.value = BackendSyncStatus(
       lastSuccessfulSync: ledger.lastSuccessfulSyncMs != null
           ? DateTime.fromMillisecondsSinceEpoch(ledger.lastSuccessfulSyncMs!)
           : null,
       pendingCount: pending,
       quarantinedCount: quarantined,
+      quarantinedItems: quarantinedItems,
       inFlight: _inFlight,
       lastError: _status.value.lastError,
     );
+  }
+
+  (SyncRecordKind, String)? _parseLedgerKey(String ledgerKey) {
+    final sep = ledgerKey.indexOf(':');
+    if (sep <= 0) return null;
+    final kindName = ledgerKey.substring(0, sep);
+    final id = ledgerKey.substring(sep + 1);
+    try {
+      return (SyncRecordKind.values.byName(kindName), id);
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
@@ -606,6 +719,7 @@ extension on BackendSyncStatus {
     DateTime? lastSuccessfulSync,
     int? pendingCount,
     int? quarantinedCount,
+    List<QuarantinedLedgerItem>? quarantinedItems,
     bool? inFlight,
     String? lastError,
   }) {
@@ -613,6 +727,7 @@ extension on BackendSyncStatus {
       lastSuccessfulSync: lastSuccessfulSync ?? this.lastSuccessfulSync,
       pendingCount: pendingCount ?? this.pendingCount,
       quarantinedCount: quarantinedCount ?? this.quarantinedCount,
+      quarantinedItems: quarantinedItems ?? this.quarantinedItems,
       inFlight: inFlight ?? this.inFlight,
       lastError: lastError ?? this.lastError,
     );

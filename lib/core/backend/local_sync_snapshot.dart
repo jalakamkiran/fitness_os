@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:fitness_os/core/backend/canonical_json.dart';
 import 'package:fitness_os/core/backend/sync_models.dart';
+import 'package:fitness_os/core/backend/sync_record_validator.dart';
 import 'package:fitness_os/features/vitals/domain/repositories/vitals_repository.dart';
 import 'package:fitness_os/features/workout_history/domain/repositories/workout_history_repository.dart';
 
@@ -89,16 +90,23 @@ class LocalSyncSnapshot {
             .toList();
       }
       if (enrich != null) {
-        if (enrich.sleepScore != null) body['sleepScore'] = enrich.sleepScore;
-        if (enrich.avgHeartRate != null) body['avgHr'] = enrich.avgHeartRate;
-        if (enrich.avgHrv != null) body['avgHrv'] = enrich.avgHrv;
-        if (enrich.avgBreathRate != null) {
-          body['avgBreathRate'] = enrich.avgBreathRate;
+        final score = enrich.sleepScore;
+        if (score != null && score >= 0 && score <= 100) {
+          body['sleepScore'] = score;
         }
-        if (enrich.avgOxygenSaturation != null) {
-          body['avgSpO2'] = enrich.avgOxygenSaturation;
+        final hr = enrich.avgHeartRate;
+        if (hr != null && hr >= 25 && hr <= 200) body['avgHr'] = hr;
+        if (enrich.avgHrv != null) body['avgHrv'] = enrich.avgHrv;
+        final breath = enrich.avgBreathRate;
+        if (breath != null && breath >= 0 && breath <= 60) {
+          body['avgBreathRate'] = breath;
+        }
+        final spo2 = enrich.avgOxygenSaturation;
+        if (spo2 != null && spo2 >= 50 && spo2 <= 100) {
+          body['avgSpO2'] = spo2;
         }
       }
+      SyncRecordValidator.sanitizeSleepBody(body);
       final hash = _hashBody(body);
       body['contentHash'] = hash;
       records.add(
