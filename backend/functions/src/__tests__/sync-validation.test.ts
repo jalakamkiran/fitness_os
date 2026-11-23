@@ -1,6 +1,7 @@
 import {
   validateWorkout,
   validateSleep,
+  sanitizeSleepBody,
   validateTotals,
   validateHr,
 } from "../services/sync-validation";
@@ -58,6 +59,39 @@ describe("sync-validation", () => {
       }, nowSec);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toBe("span_too_long");
+    });
+
+    it("accepts inflated stage sum after sanitize", () => {
+      const begin = 1700000000;
+      const end = begin + 7 * 3600;
+      const body = {
+        beginUnix: begin,
+        endUnix: end,
+        stages: Array.from({length: 60}, (_, i) => ({
+          timestampUnix: begin + i * 10,
+          durationMin: 1,
+          stage: 1,
+        })),
+      } as Record<string, unknown>;
+      const result = validateSleep(body, nowSec);
+      expect(result).toEqual({ok: true});
+      expect(body.beginUnix).toBe(begin);
+      expect(body.endUnix).toBe(end);
+    });
+
+    it("strips sentinel enrich fields", () => {
+      const body = {
+        beginUnix: 1700000000,
+        endUnix: 1700025200,
+        avgSpO2: 255,
+        sleepScore: 255,
+        avgHr: 0,
+      } as Record<string, unknown>;
+      sanitizeSleepBody(body);
+      expect(body.avgSpO2).toBeUndefined();
+      expect(body.sleepScore).toBeUndefined();
+      expect(body.avgHr).toBeUndefined();
+      expect(validateSleep(body, nowSec)).toEqual({ok: true});
     });
   });
 

@@ -88,6 +88,7 @@ class FakeVitalsRepo implements VitalsRepository {
 
   bool busy;
   List<SleepSessionSummary> sleep = const [];
+  Map<int, TruSleepSequenceSession> truSleepByBegin = {};
   List<FitnessTotalsDay> totals = const [];
   List<DailyHrDaySummary> dailyHr = const [];
 
@@ -102,7 +103,7 @@ class FakeVitalsRepo implements VitalsRepository {
 
   @override
   Future<TruSleepSequenceSession?> loadTruSleepSummary(SleepSessionSummary session) async =>
-      null;
+      truSleepByBegin[session.beginUnix];
 
   @override
   Future<List<FitnessTotalsDay>> loadFitnessTotals() async => totals;

@@ -12,7 +12,108 @@ class ValidationResult {
   final String? reason;
 }
 
+/// Reasons that may be cleared when sleep body is sanitized and re-queued.
+const sleepSoftQuarantineReasons = <String>{
+  'stage_sum_exceeds_span',
+  'bad_stage',
+  'spo2_out_of_range',
+  'hr_out_of_range',
+  'breath_out_of_range',
+  'sleep_score_out_of_range',
+  'negative_duration',
+};
+
 class SyncRecordValidator {
+  static const maxSleepRecordBytes = 200 * 1024;
+  static const stageSpanSlackMin = 30;
+
+  static bool isSoftSleepQuarantineReason(String reason) =>
+      sleepSoftQuarantineReasons.contains(reason);
+
+  /// Drops sentinel/out-of-range enrich fields and normalizes stages for upload.
+  static void sanitizeSleepBody(Map<String, dynamic> body) {
+    _dropOutOfRangeEnrich(body);
+
+    final begin = body['beginUnix'];
+    final end = body['endUnix'];
+    if (begin is! num || end is! num) return;
+    final beginI = begin.toInt();
+    final endI = end.toInt();
+    if (endI <= beginI) return;
+    final spanMin = (endI - beginI) ~/ 60;
+
+    final stages = body['stages'];
+    if (stages is! List || stages.isEmpty) {
+      body.remove('stages');
+      return;
+    }
+
+    final cleaned = <Map<String, dynamic>>[];
+    for (final s in stages) {
+      if (s is! Map) continue;
+      final map = Map<String, dynamic>.from(s);
+      final dur = map['durationMin'];
+      final stage = map['stage'];
+      if (dur is! num || dur < 0) continue;
+      if (stage is! num || ![1, 2, 3, 4].contains(stage.toInt())) continue;
+      cleaned.add(map);
+    }
+
+    if (cleaned.isEmpty) {
+      body.remove('stages');
+      return;
+    }
+
+    var stageSumMin =
+        cleaned.fold<int>(0, (sum, s) => sum + (s['durationMin'] as num).toInt());
+  if (stageSumMin > spanMin + stageSpanSlackMin) {
+      if (spanMin <= 0) {
+        body.remove('stages');
+        return;
+      }
+      _scaleStagesToFit(cleaned, spanMin);
+      stageSumMin =
+          cleaned.fold<int>(0, (sum, s) => sum + (s['durationMin'] as num).toInt());
+      if (stageSumMin > spanMin + stageSpanSlackMin) {
+        body.remove('stages');
+        return;
+      }
+    }
+    body['stages'] = cleaned;
+  }
+
+  static void _dropOutOfRangeEnrich(Map<String, dynamic> body) {
+    void keepIf(String key, bool Function(num v) ok) {
+      final v = body[key];
+      if (v is num && !ok(v)) body.remove(key);
+    }
+
+    keepIf('sleepScore', (v) => v >= 0 && v <= 100);
+    keepIf('avgHr', (v) => v >= 25 && v <= 200);
+    keepIf('avgSpO2', (v) => v >= 50 && v <= 100);
+    keepIf('avgBreathRate', (v) => v >= 0 && v <= 60);
+  }
+
+  static void _scaleStagesToFit(List<Map<String, dynamic>> stages, int targetSum) {
+    final sum =
+        stages.fold<int>(0, (s, st) => s + (st['durationMin'] as num).toInt());
+    if (sum <= targetSum) return;
+    var allocated = 0;
+    for (var i = 0; i < stages.length; i++) {
+      final d = (stages[i]['durationMin'] as num).toInt();
+      if (i == stages.length - 1) {
+        stages[i]['durationMin'] = (targetSum - allocated).clamp(0, targetSum);
+      } else {
+        final scaled = ((d * targetSum) / sum).floor();
+        stages[i]['durationMin'] = scaled;
+        allocated += scaled;
+      }
+    }
+  }
+
+  static int encodedBodyBytes(Map<String, dynamic> body) =>
+      utf8.encode(jsonEncode(body)).length;
+
   ValidationResult validate(SyncRecord r, {required DateTime now}) {
     final body = r.body;
     switch (r.kind) {
@@ -29,7 +130,7 @@ class SyncRecordValidator {
 
   ValidationResult _tooLarge(SyncRecord r) {
     final encoded = utf8.encode(jsonEncode(r.body));
-    if (encoded.length > 200 * 1024) {
+    if (encoded.length > maxSleepRecordBytes) {
       return const ValidationResult.invalid('too_large');
     }
     return const ValidationResult.ok();
@@ -53,7 +154,7 @@ class SyncRecordValidator {
     final endI = end.toInt();
     final durI = durationSec.toInt();
     final nowSec = now.millisecondsSinceEpoch ~/ 1000;
-  final minEpoch = DateTime(2020, 1, 1).millisecondsSinceEpoch ~/ 1000;
+    final minEpoch = DateTime(2020, 1, 1).millisecondsSinceEpoch ~/ 1000;
     if (startI < minEpoch || startI > nowSec + 86400) {
       return const ValidationResult.invalid('future_time');
     }
@@ -121,42 +222,6 @@ class SyncRecordValidator {
     final minEpoch = DateTime(2020, 1, 1).millisecondsSinceEpoch ~/ 1000;
     if (beginI < minEpoch || beginI > nowSec + 86400) {
       return const ValidationResult.invalid('future_time');
-    }
-    final stages = body['stages'] as List?;
-    var stageSumMin = 0;
-    if (stages != null) {
-      for (final s in stages) {
-        if (s is! Map) continue;
-        final dur = s['durationMin'] as num?;
-        final stage = s['stage'] as num?;
-        if (dur != null && dur < 0) {
-          return const ValidationResult.invalid('negative_duration');
-        }
-        if (stage != null && ![1, 2, 3, 4].contains(stage.toInt())) {
-          return const ValidationResult.invalid('bad_stage');
-        }
-        if (dur != null) stageSumMin += dur.toInt();
-      }
-    }
-    final spanMin = (endI - beginI) ~/ 60;
-    if (stageSumMin > spanMin + 30) {
-      return const ValidationResult.invalid('stage_sum_exceeds_span');
-    }
-    final score = body['sleepScore'] as num?;
-    if (score != null && (score < 0 || score > 100)) {
-      return const ValidationResult.invalid('sleep_score_out_of_range');
-    }
-    final avgHr = body['avgHr'] as num?;
-    if (avgHr != null && (avgHr < 25 || avgHr > 200)) {
-      return const ValidationResult.invalid('hr_out_of_range');
-    }
-    final spo2 = body['avgSpO2'] as num?;
-    if (spo2 != null && (spo2 < 50 || spo2 > 100)) {
-      return const ValidationResult.invalid('spo2_out_of_range');
-    }
-    final breath = body['avgBreathRate'] as num?;
-    if (breath != null && (breath < 0 || breath > 60)) {
-      return const ValidationResult.invalid('breath_out_of_range');
     }
     return const ValidationResult.ok();
   }

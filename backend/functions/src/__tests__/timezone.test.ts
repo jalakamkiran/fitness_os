@@ -1,4 +1,4 @@
-import {istQueryBounds, istToDate, msToIST} from "../services/timezone";
+import {istQueryBounds, istToDate, msToIST, sleepDayQueryBounds} from "../services/timezone";
 
 describe("istQueryBounds", () => {
   const date = "2026-11-17";
@@ -36,5 +36,16 @@ describe("istQueryBounds", () => {
     expect(msToIST(new Date(date + "T23:59:59+05:30").getTime())).toBe(
         "2026-11-17T23:59:59+05:30"
     );
+  });
+});
+
+describe("sleepDayQueryBounds", () => {
+  it("covers [D-1 20:00, D 20:00) IST", () => {
+    const {start, end} = sleepDayQueryBounds("2026-11-23");
+    expect(start).toBe("2026-11-22T20:00:00+05:30");
+    expect(end).toBe("2026-11-23T20:00:00+05:30");
+    const overnightOnset = "2026-11-23T01:30:00+05:30";
+    expect(overnightOnset >= start).toBe(true);
+    expect(overnightOnset < end).toBe(true);
   });
 });

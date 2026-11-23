@@ -145,6 +145,7 @@ abstract final class SentrySyncInstrumentation {
     'trigger',
     'outcome',
     'pendingCount',
+    'quarantinedCount',
     'attempted',
     'accepted',
     'rejected',

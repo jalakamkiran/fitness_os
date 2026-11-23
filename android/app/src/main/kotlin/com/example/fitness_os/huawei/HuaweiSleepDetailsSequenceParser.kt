@@ -118,16 +118,21 @@ object HuaweiSleepDetailsSequenceParser {
         stages: List<StageSegment>,
     ): List<Map<String, Any?>> {
         var t = beginUnix
+        var carrySec = 0
         val out = ArrayList<Map<String, Any?>>(stages.size)
         for (seg in stages) {
-            val durMin = (seg.durationSec / 60).coerceAtLeast(1)
-            out.add(
-                mapOf(
-                    "timestampUnix" to t,
-                    "durationMin" to durMin,
-                    "wireType" to toProductWireType(seg.stage),
-                ),
-            )
+            val totalSec = carrySec + seg.durationSec
+            val durMin = totalSec / 60
+            carrySec = totalSec % 60
+            if (durMin > 0) {
+                out.add(
+                    mapOf(
+                        "timestampUnix" to t,
+                        "durationMin" to durMin,
+                        "wireType" to toProductWireType(seg.stage),
+                    ),
+                )
+            }
             t += seg.durationSec
         }
         return out

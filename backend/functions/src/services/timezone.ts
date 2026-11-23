@@ -65,6 +65,16 @@ export function istQueryBounds(
   };
 }
 
+/** Huawei sleep-day window [D-1 20:00, D 20:00) for onset attribution. */
+export function sleepDayQueryBounds(date: string): {start: string; end: string} {
+  const end = new Date(`${date}T20:00:00+05:30`);
+  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+  return {
+    start: msToIST(start.getTime()),
+    end: msToIST(end.getTime()),
+  };
+}
+
 export function validateDateRange(from: string, to: string): boolean {
   const {startMs, endMs} = parseDateRange(from, to);
   const daysDiff = (endMs - startMs) / (1000 * 60 * 60 * 24);

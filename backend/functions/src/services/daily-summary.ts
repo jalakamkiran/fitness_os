@@ -1,11 +1,37 @@
 import * as admin from "firebase-admin";
 import {DailySummary} from "../models/types";
-import {getISTDate, istQueryBounds} from "./timezone";
+import {getISTDate, istQueryBounds, sleepDayQueryBounds} from "./timezone";
+
+function sleepDurationMs(data: Record<string, unknown>): number {
+  const start = data.startTime;
+  const end = data.endTime;
+  if (typeof start !== "string" || typeof end !== "string") return 0;
+  const s = new Date(start).getTime();
+  const e = new Date(end).getTime();
+  if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return 0;
+  return e - s;
+}
+
+function pickLongestSleepDoc<T extends {data:() => Record<string, unknown>}>(
+    docs: T[]
+): T {
+  let best = docs[0];
+  let bestDur = sleepDurationMs(best.data());
+  for (let i = 1; i < docs.length; i++) {
+    const d = sleepDurationMs(docs[i].data());
+    if (d > bestDur) {
+      bestDur = d;
+      best = docs[i];
+    }
+  }
+  return best;
+}
 
 export async function computeDailySummary(date: string): Promise<DailySummary> {
   const db = admin.firestore();
 
   const {start, end} = istQueryBounds(date, date);
+  const sleepBounds = sleepDayQueryBounds(date);
 
   const [
     totalsDoc,
@@ -19,8 +45,8 @@ export async function computeDailySummary(date: string): Promise<DailySummary> {
     db.collection("heartRate").doc(date).get(),
     db.collection("hrv").doc(date).get(),
     db.collection("sleep")
-        .where("startTime", ">=", start)
-        .where("startTime", "<=", end)
+        .where("startTime", ">=", sleepBounds.start)
+        .where("startTime", "<", sleepBounds.end)
         .get(),
     db.collection("workouts")
         .where("startTime", ">=", start)
@@ -41,7 +67,8 @@ export async function computeDailySummary(date: string): Promise<DailySummary> {
 
   let sleep = null;
   if (!sleepDocs.empty) {
-    const sleepData = sleepDocs.docs[0].data();
+    const pick = pickLongestSleepDoc(sleepDocs.docs);
+    const sleepData = pick.data();
     sleep = {
       start: sleepData.startTime || null,
       end: sleepData.endTime || null,
