@@ -12,7 +12,7 @@ function sleepDurationMs(data: Record<string, unknown>): number {
   return e - s;
 }
 
-function pickLongestSleepDoc<T extends {data: () => Record<string, unknown>}>(
+function pickLongestSleepDoc<T extends {data:() => Record<string, unknown>}>(
     docs: T[]
 ): T {
   let best = docs[0];
