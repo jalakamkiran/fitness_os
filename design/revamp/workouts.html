@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workouts — Fathom</title>
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    .app-bar {
+      padding: var(--space-lg);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .app-bar-title {
+      font: var(--text-headline-md);
+      letter-spacing: var(--text-headline-md-tracking);
+      color: var(--ink);
+    }
+
+    .sync-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid var(--line);
+      background-color: var(--bg-elev);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .sport-tabs {
+      display: flex;
+      gap: 8px;
+      padding: var(--space-lg);
+      padding-bottom: 0;
+      overflow-x: auto;
+    }
+
+    .sport-tab {
+      padding: 10px 16px;
+      border-radius: var(--radius-full);
+      border: 1px solid var(--line);
+      background-color: var(--bg-elev);
+      font: var(--text-label-lg);
+      color: var(--ink-dim);
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all 200ms var(--easing-standard);
+    }
+
+    .sport-tab.active {
+      background-color: var(--accent);
+      color: var(--accent-ink);
+      border-color: var(--accent);
+    }
+
+    .trend-chart {
+      padding: 20px;
+      background-color: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      margin-top: var(--card-gap);
+    }
+
+    .trend-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .trend-title {
+      font: var(--text-title-sm);
+      color: var(--ink);
+    }
+
+    .trend-period-toggle {
+      display: flex;
+      gap: 4px;
+      padding: 2px;
+      background-color: var(--bg);
+      border-radius: var(--radius-sm);
+    }
+
+    .trend-period {
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      font: var(--text-label-sm);
+      color: var(--ink-faint);
+      cursor: pointer;
+    }
+
+    .trend-period.active {
+      background-color: var(--bg-elev);
+      color: var(--ink);
+    }
+
+    .trend-chart-area {
+      height: 140px;
+      background: linear-gradient(to bottom, var(--pool) 0%, transparent 100%);
+      border-radius: var(--radius-sm);
+      margin-bottom: 12px;
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+      padding: 12px;
+      gap: 4px;
+    }
+
+    .trend-bar {
+      flex: 1;
+      background-color: var(--accent);
+      border-radius: 2px 2px 0 0;
+      min-height: 8px;
+    }
+
+    .trend-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .trend-stat-value {
+      font: var(--text-title-md);
+      letter-spacing: var(--text-title-md-tracking);
+      color: var(--ink);
+    }
+
+    .trend-stat-label {
+      font: var(--text-label-sm);
+      color: var(--ink-faint);
+      margin-top: 2px;
+    }
+
+    .week-section {
+      margin-top: var(--space-2xl);
+    }
+
+    .week-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .week-title {
+      font: var(--text-title-sm);
+      color: var(--ink);
+    }
+
+    .week-summary {
+      font: var(--text-label-sm);
+      color: var(--ink-faint);
+    }
+
+    .session-row {
+      padding: 16px;
+      background-color: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: all 200ms var(--easing-standard);
+    }
+
+    .session-row:hover {
+      transform: translateX(4px);
+    }
+
+    .session-row-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .session-row-title {
+      font: var(--text-title-md);
+      letter-spacing: var(--text-title-md-tracking);
+      color: var(--ink);
+    }
+
+    .session-row-date {
+      font: var(--text-label-md);
+      color: var(--ink-faint);
+      margin-top: 2px;
+    }
+
+    .session-row-meta {
+      display: flex;
+      gap: 16px;
+    }
+
+    .session-row-metric {
+      font: var(--text-body-sm);
+      color: var(--ink-dim);
+    }
+
+    .session-row-metric strong {
+      font-weight: var(--weight-bold);
+      color: var(--ink);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- App Bar -->
+    <div class="app-bar">
+      <h1 class="app-bar-title">Workouts</h1>
+      <button class="sync-btn">
+        <span style="font-size: 18px;">⟳</span>
+      </button>
+    </div>
+
+    <!-- Sport Tabs -->
+    <div class="sport-tabs">
+      <div class="sport-tab active">Swim</div>
+      <div class="sport-tab">Run</div>
+      <div class="sport-tab">Strength</div>
+    </div>
+
+    <!-- Screen Content -->
+    <div class="screen">
+      
+      <!-- TREND CHART -->
+      <div class="trend-chart">
+        <div class="trend-header">
+          <div class="trend-title">Pace & Volume Trend</div>
+          <div class="trend-period-toggle">
+            <div class="trend-period active">7D</div>
+            <div class="trend-period">14D</div>
+            <div class="trend-period">30D</div>
+          </div>
+        </div>
+        
+        <div class="trend-chart-area">
+          <div class="trend-bar" style="height: 45%;"></div>
+          <div class="trend-bar" style="height: 60%;"></div>
+          <div class="trend-bar" style="height: 55%;"></div>
+          <div class="trend-bar" style="height: 70%;"></div>
+          <div class="trend-bar" style="height: 65%;"></div>
+          <div class="trend-bar" style="height: 80%;"></div>
+          <div class="trend-bar" style="height: 75%;"></div>
+        </div>
+        
+        <div class="trend-stats">
+          <div>
+            <div class="trend-stat-value">1:52/100m</div>
+            <div class="trend-stat-label">AVG PACE</div>
+          </div>
+          <div>
+            <div class="trend-stat-value">9,600m</div>
+            <div class="trend-stat-label">VOLUME</div>
+          </div>
+          <div>
+            <div class="trend-stat-value">-3%</div>
+            <div class="trend-stat-label" style="color: var(--up);">PACE ↓</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- THIS WEEK -->
+      <div class="week-section">
+        <div class="week-header">
+          <div class="week-title">This Week</div>
+          <div class="week-summary">4 sessions · 6,200m</div>
+        </div>
+
+        <div class="session-row">
+          <div class="session-row-header">
+            <div>
+              <div class="session-row-title">Pool Swim</div>
+              <div class="session-row-date">Today, 14:22</div>
+            </div>
+            <span style="font-size: 18px; color: var(--ink-faint);">›</span>
+          </div>
+          <div class="session-row-meta">
+            <div class="session-row-metric"><strong>1,800m</strong></div>
+            <div class="session-row-metric"><strong>56m</strong></div>
+            <div class="session-row-metric"><strong>32</strong> SWOLF</div>
+          </div>
+        </div>
+
+        <div class="session-row">
+          <div class="session-row-header">
+            <div>
+              <div class="session-row-title">Pool Swim</div>
+              <div class="session-row-date">Wednesday, 06:15</div>
+            </div>
+            <span style="font-size: 18px; color: var(--ink-faint);">›</span>
+          </div>
+          <div class="session-row-meta">
+            <div class="session-row-metric"><strong>2,000m</strong></div>
+            <div class="session-row-metric"><strong>1h 2m</strong></div>
+            <div class="session-row-metric"><strong>31</strong> SWOLF</div>
+          </div>
+        </div>
+
+        <div class="session-row">
+          <div class="session-row-header">
+            <div>
+              <div class="session-row-title">Pool Swim</div>
+              <div class="session-row-date">Monday, 18:45</div>
+            </div>
+            <span style="font-size: 18px; color: var(--ink-faint);">›</span>
+          </div>
+          <div class="session-row-meta">
+            <div class="session-row-metric"><strong>1,600m</strong></div>
+            <div class="session-row-metric"><strong>48m</strong></div>
+            <div class="session-row-metric"><strong>33</strong> SWOLF</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ALL SESSIONS -->
+      <div class="week-section">
+        <div class="week-header">
+          <div class="week-title">All Sessions</div>
+          <div class="week-summary">24 pool · 5,200m avg</div>
+        </div>
+
+        <div class="text-label-sm" style="margin-bottom: 8px; color: var(--ink-faint);">
+          Nov 7–13
+        </div>
+
+        <div class="session-row">
+          <div class="session-row-header">
+            <div>
+              <div class="session-row-title">Pool Swim</div>
+              <div class="session-row-date">Sunday, 08:30</div>
+            </div>
+            <span style="font-size: 18px; color: var(--ink-faint);">›</span>
+          </div>
+          <div class="session-row-meta">
+            <div class="session-row-metric"><strong>2,200m</strong></div>
+            <div class="session-row-metric"><strong>1h 8m</strong></div>
+            <div class="session-row-metric"><strong>30</strong> SWOLF</div>
+          </div>
+        </div>
+
+        <!-- More sessions would continue... -->
+      </div>
+
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+      <a href="home.html" class="tab-item">
+        <div class="tab-icon">🏠</div>
+        <span>Today</span>
+      </a>
+      <a href="workouts.html" class="tab-item active">
+        <div class="tab-icon">💪</div>
+        <span>Workouts</span>
+      </a>
+      <a href="recovery.html" class="tab-item">
+        <div class="tab-icon">🌙</div>
+        <span>Recovery</span>
+      </a>
+      <a href="food.html" class="tab-item">
+        <div class="tab-icon">🍽️</div>
+        <span>Food</span>
+      </a>
+      <a href="settings.html" class="tab-item">
+        <div class="tab-icon">⋯</div>
+        <span>More</span>
+      </a>
+    </div>
+  </div>
+
+  <script>
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  </script>
+</body>
+</html>

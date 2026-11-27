@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Today — Fathom</title>
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    .status-bar {
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0 var(--space-lg);
+      font: var(--text-label-sm);
+      color: var(--ink-faint);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .sync-indicator {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .sync-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: var(--accent);
+    }
+
+    .header {
+      padding: var(--space-lg);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .header-title {
+      font: var(--text-headline-md);
+      letter-spacing: var(--text-headline-md-tracking);
+      color: var(--ink);
+    }
+
+    .header-subtitle {
+      font: var(--text-label-sm);
+      color: var(--ink-faint);
+      margin-top: 2px;
+    }
+
+    .readiness-hero {
+      background: linear-gradient(135deg, var(--pool) 0%, var(--bg-elev) 100%);
+      border: 1px solid var(--pool-line);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-top: var(--card-gap);
+    }
+
+    .readiness-score {
+      font-size: 64px;
+      font-weight: var(--weight-extrabold);
+      line-height: 1;
+      letter-spacing: -2px;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .readiness-label {
+      font: var(--text-label-sm);
+      color: var(--ink-faint);
+      margin-bottom: 12px;
+    }
+
+    .readiness-verdict {
+      font: var(--text-title-md);
+      letter-spacing: var(--text-title-md-tracking);
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
+
+    .readiness-reason {
+      font: var(--text-body-sm);
+      color: var(--ink-dim);
+      line-height: 1.5;
+    }
+
+    .contributors {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .contributor {
+      flex: 1;
+      padding: 8px;
+      background-color: var(--bg-elev);
+      border-radius: var(--radius-sm);
+      text-align: center;
+    }
+
+    .contributor-value {
+      font: var(--text-label-md);
+      font-weight: var(--weight-bold);
+      color: var(--ink);
+      display: block;
+    }
+
+    .contributor-label {
+      font: var(--text-label-sm);
+      color: var(--ink-faint);
+      display: block;
+      margin-top: 2px;
+    }
+
+    .balance-card {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 16px;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .balance-col {
+      text-align: center;
+    }
+
+    .balance-number {
+      font-size: 28px;
+      font-weight: var(--weight-extrabold);
+      letter-spacing: -0.8px;
+      color: var(--ink);
+    }
+
+    .balance-label {
+      font: var(--text-label-sm);
+      color: var(--ink-faint);
+      margin-top: 2px;
+    }
+
+    .balance-divider {
+      width: 1px;
+      height: 48px;
+      background-color: var(--line);
+    }
+
+    .balance-result {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-size: 20px;
+      font-weight: var(--weight-extrabold);
+    }
+
+    .balance-surplus {
+      color: var(--up);
+    }
+
+    .load-bar-container {
+      padding: 16px;
+    }
+
+    .load-bar-label {
+      font: var(--text-title-sm);
+      color: var(--ink);
+      margin-bottom: 12px;
+    }
+
+    .load-bar {
+      height: 8px;
+      background-color: var(--gauge-track);
+      border-radius: var(--radius-full);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .load-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--up) 0%, var(--accent) 50%, var(--amber) 80%, var(--hot) 100%);
+      border-radius: var(--radius-full);
+      width: 62%;
+    }
+
+    .load-bar-marker {
+      position: absolute;
+      top: -4px;
+      width: 2px;
+      height: 16px;
+      background-color: var(--ink);
+      left: 62%;
+    }
+
+    .load-bar-values {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+      font: var(--text-label-sm);
+      color: var(--ink-faint);
+    }
+
+    .session-card {
+      padding: 16px;
+      background-color: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      margin-top: var(--space-md);
+    }
+
+    .session-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .session-title {
+      font: var(--text-title-md);
+      letter-spacing: var(--text-title-md-tracking);
+      color: var(--ink);
+    }
+
+    .session-time {
+      font: var(--text-label-md);
+      color: var(--ink-faint);
+      margin-top: 2px;
+    }
+
+    .session-meta {
+      display: flex;
+      gap: 16px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .session-metric {
+      flex: 1;
+    }
+
+    .session-metric-value {
+      font-size: 16px;
+      font-weight: var(--weight-extrabold);
+      color: var(--ink);
+    }
+
+    .session-metric-label {
+      font: var(--text-label-sm);
+      color: var(--ink-faint);
+      margin-top: 2px;
+    }
+
+    .empty-section {
+      padding: 24px;
+      text-align: center;
+      color: var(--ink-dim);
+      font: var(--text-body-sm);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Status Bar -->
+    <div class="status-bar">
+      <div class="sync-indicator">
+        <span class="sync-dot"></span>
+        <span>Synced 12m ago</span>
+      </div>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+      <h1 class="header-title">Today</h1>
+      <p class="header-subtitle">Saturday, Nov 14, 2026</p>
+    </div>
+
+    <!-- Screen Content -->
+    <div class="screen">
+      
+      <!-- READINESS HERO -->
+      <div class="readiness-hero card-lg">
+        <div class="readiness-label">READINESS</div>
+        <div class="readiness-score">82</div>
+        <div class="readiness-verdict">Ready to train</div>
+        <div class="readiness-reason">
+          Well rested (8h 15m, score 86), 2h recovery remaining, moderate load week.
+        </div>
+        
+        <div class="contributors">
+          <div class="contributor">
+            <span class="contributor-value">86</span>
+            <span class="contributor-label">SLEEP</span>
+          </div>
+          <div class="contributor">
+            <span class="contributor-value">2h</span>
+            <span class="contributor-label">RECOVERY</span>
+          </div>
+          <div class="contributor">
+            <span class="contributor-value">MOD</span>
+            <span class="contributor-label">LOAD</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SLEEP SUMMARY -->
+      <div class="card" style="margin-top: var(--card-gap);">
+        <div class="text-label-sm" style="margin-bottom: 8px;">LAST NIGHT</div>
+        <div style="font-size: 32px; font-weight: 800; letter-spacing: -1px; color: var(--ink); margin-bottom: 4px;">
+          8h 15m
+        </div>
+        <div class="text-body-sm" style="font-family: var(--font-mono); color: var(--ink-dim);">
+          23:32 — 07:47
+        </div>
+        <div style="margin-top: 12px; padding: 8px 12px; background-color: var(--pool); border-radius: var(--radius-sm); border: 1px solid var(--pool-line);">
+          <span style="font-weight: 700; color: var(--ink);">Feel on wake:</span>
+          <span style="color: var(--ink-dim);"> Good 🙂</span>
+        </div>
+      </div>
+
+      <!-- CALORIE BALANCE -->
+      <div class="card balance-card" style="margin-top: var(--card-gap);">
+        <div class="balance-col">
+          <div class="balance-number">2,340</div>
+          <div class="balance-label">BURNED</div>
+        </div>
+        <div class="balance-result balance-surplus">
+          +240
+        </div>
+        <div class="balance-col">
+          <div class="balance-number">2,580</div>
+          <div class="balance-label">INTAKE</div>
+        </div>
+      </div>
+
+      <!-- TRAINING LOAD -->
+      <div class="card load-bar-container" style="margin-top: var(--card-gap);">
+        <div class="load-bar-label">Training Load (7 days)</div>
+        <div class="load-bar">
+          <div class="load-bar-fill"></div>
+          <div class="load-bar-marker"></div>
+        </div>
+        <div class="load-bar-values">
+          <span>0</span>
+          <span style="color: var(--ink);">Today: 450</span>
+          <span>800</span>
+        </div>
+      </div>
+
+      <!-- TODAY'S PLAN -->
+      <div class="card" style="margin-top: var(--space-2xl);">
+        <div class="text-label-sm" style="margin-bottom: 8px;">TODAY'S PLAN</div>
+        <div class="text-title-md" style="margin-bottom: 4px;">Swim — Endurance</div>
+        <div class="text-body-sm" style="margin-bottom: 16px;">
+          2,000m · 1,200m main set · Due today
+        </div>
+        <button class="btn btn-primary w-full">Open today's course</button>
+      </div>
+
+      <!-- COMPLETED SESSIONS -->
+      <div style="margin-top: var(--space-2xl);">
+        <div class="text-label-sm" style="margin-bottom: 12px;">TODAY'S SESSIONS</div>
+        
+        <div class="session-card">
+          <div class="session-header">
+            <div>
+              <div class="session-title">Pool Swim</div>
+              <div class="session-time">14:22 — 15:18</div>
+            </div>
+            <span style="font-size: 18px; color: var(--ink-faint);">›</span>
+          </div>
+          <div class="session-meta">
+            <div class="session-metric">
+              <div class="session-metric-value">1,800m</div>
+              <div class="session-metric-label">DISTANCE</div>
+            </div>
+            <div class="session-metric">
+              <div class="session-metric-value">56m</div>
+              <div class="session-metric-label">TIME</div>
+            </div>
+            <div class="session-metric">
+              <div class="session-metric-value">32</div>
+              <div class="session-metric-label">SWOLF</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BODY HR (Below fold) -->
+      <div class="card" style="margin-top: var(--space-2xl);">
+        <div class="text-label-sm" style="margin-bottom: 8px;">BODY · TODAY</div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 22px; font-weight: 800; letter-spacing: -0.6px; color: var(--ink);">
+              52 · 68 · 142 bpm
+            </div>
+            <div class="text-body-sm" style="margin-top: 2px;">min · avg · max</div>
+          </div>
+          <div style="width: 80px; height: 32px; background-color: var(--pool); border-radius: var(--radius-sm);">
+            <!-- Sparkline placeholder -->
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+      <a href="home.html" class="tab-item active">
+        <div class="tab-icon">🏠</div>
+        <span>Today</span>
+      </a>
+      <a href="workouts.html" class="tab-item">
+        <div class="tab-icon">💪</div>
+        <span>Workouts</span>
+      </a>
+      <a href="recovery.html" class="tab-item">
+        <div class="tab-icon">🌙</div>
+        <span>Recovery</span>
+      </a>
+      <a href="food.html" class="tab-item">
+        <div class="tab-icon">🍽️</div>
+        <span>Food</span>
+      </a>
+      <a href="settings.html" class="tab-item">
+        <div class="tab-icon">⋯</div>
+        <span>More</span>
+      </a>
+    </div>
+  </div>
+
+  <script>
+    // Detect system preference for dark mode
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  </script>
+</body>
+</html>
